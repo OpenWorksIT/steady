@@ -21,12 +21,13 @@
 - APNs request format and token expiry handling against a local HTTP/2 server.
 - The `/send` endpoint: authentication, mixed providers, invalid token reporting, message clamping.
 
+`deploy/test/smoke.py` (run by CI's `e2e` job against the real PocketBase, and runnable against your own test server): config, clinician sign-in, invite, join with and without consent, single-use codes, what a patient can see, check-in and its notification, licence gate, sending PHQ-9, refusing incomplete answers, server-side scoring and the item 9 flag, the overview, FHIR import, and stopping a patient's access.
+
 `.github/workflows/ci.yml` also boots the real PocketBase image with the migrations and hooks and checks it starts without errors and answers `/api/steady/config`, and runs `flutter analyze` and `flutter test` on the app. These run on GitHub as soon as the repository is pushed.
 
 ## Not yet tested
 
-- **The full API flow on a running PocketBase.** CI proves the real server starts with the migrations and hooks and serves `/api/steady/config` without errors; the invite-to-result flow has only been run against the imitation. Run the manual script below.
-- **The app on devices.** It resolves its packages, passes `flutter analyze` with no issues and passes its unit tests in CI, but hasn't been built for or run on an iPhone or Android phone.
+- **The app on devices.** It passes `flutter analyze` and its unit tests, and the Android APK and web app build in CI (`test-builds.yml`), but neither has been run on a phone yet. The iOS app hasn't been built (needs a Mac and an Apple Developer account).
 - Real delivery through Apple and a UnifiedPush distributor.
 - Load, backups and restores on the production server.
 
