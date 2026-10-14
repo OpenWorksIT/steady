@@ -11,8 +11,8 @@ jobs:
   server:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: node --test server/tests/*.test.js
@@ -21,7 +21,7 @@ jobs:
     # Boots the real PocketBase with Steady's migrations and hooks and checks it starts cleanly.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker build -t steady-server server
       - run: |
           docker run -d --name pb -p 8090:8090 steady-server
@@ -33,8 +33,8 @@ jobs:
   pusher:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.24"
       - run: cd pusher && go vet ./... && go test ./...
@@ -42,8 +42,24 @@ jobs:
   app:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: cd app && flutter pub get && flutter analyze && flutter test
+      # Each step reports its full output as one annotation, so it can be read with
+      # `gh run view` even where log downloads aren't available.
+      - name: pub get
+        working-directory: app
+        run: |
+          set -o pipefail
+          flutter pub get 2>&1 | tee ../pubget.txt || { echo "::error title=flutter pub get::$(sed 's/%/%25/g' ../pubget.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+      - name: analyze
+        working-directory: app
+        run: |
+          set -o pipefail
+          flutter analyze --no-fatal-infos 2>&1 | tee ../analyze.txt || { echo "::error title=flutter analyze::$(sed 's/%/%25/g' ../analyze.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+      - name: test
+        working-directory: app
+        run: |
+          set -o pipefail
+          flutter test 2>&1 | tee ../test.txt || { echo "::error title=flutter test::$(sed 's/%/%25/g' ../test.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
