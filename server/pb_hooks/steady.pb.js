@@ -1,0 +1,571 @@
+/// <reference path="../pb_data/types.d.ts" />
+// Steady - API routes and record hooks.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// PocketBase runs each handler in an isolated runtime: anything a handler needs must be
+// required inside it. Keep to ES2015 syntax (no ?. or ??) for the goja engine.
+
+/* =====================================================================
+ * Public
+ * ===================================================================== */
+
+// App configuration: practice name, crisis lines, consent text.
+routerAdd("GET", "/api/steady/config", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  let consent = "";
+  try { consent = toString($os.readFile(`${__hooks}/content/consent.md`)); } catch (_) { consent = ""; }
+  let crisis = [
+    { label: "SADAG Suicide Crisis Line", number: "0800 567 567", hours: "24 hours, free" },
+    { label: "Emergency services from a mobile", number: "112", hours: "24 hours" }
+  ];
+  const custom = s.env("STEADY_CRISIS_LINES_JSON", "");
+  if (custom) { try { crisis = JSON.parse(custom); } catch (_) { /* keep defaults */ } }
+  return e.json(200, {
+    practiceName: s.env("STEADY_PRACTICE_NAME", "Your practice"),
+    crisisLines: crisis,
+    crisisNotice: s.env("STEADY_CRISIS_NOTICE", "This app isn't monitored around the clock. If you need help now, call one of these numbers."),
+    consentVersion: s.env("STEADY_CONSENT_VERSION", "draft-1"),
+    consentText: consent,
+    // UnifiedPush (Android) apps register with this so the relay can sign with VAPID
+    vapidPublicKey: s.env("STEADY_VAPID_PUBLIC_KEY", "")
+  });
+});
+
+// A patient joins with the invite code their psychologist gave them.
+routerAdd("POST", "/api/steady/join", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const core = s.core;
+  const b = s.body(e);
+  const code = core.normaliseCode(b.code);
+  const email = core.str(b.email, 200).toLowerCase();
+  const name = core.str(b.name, 80);
+  const password = typeof b.password === "string" ? b.password : "";
+
+  if (code.length !== 8) throw s.badRequest("That invite code doesn't look right. It has 8 letters and numbers.");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw s.badRequest("Please enter a valid email address.");
+  if (!name) throw s.badRequest("Please enter your name.");
+  if (password.length < 10) throw s.badRequest("Choose a password of at least 10 characters.");
+  if (b.consent !== true) throw s.badRequest("Please read and accept the consent statement to continue.");
+
+  let invite = null;
+  try { invite = $app.findFirstRecordByFilter("invites", "code = {:c}", { c: code }); } catch (_) { invite = null; }
+  if (!invite || invite.getString("usedBy") || s.toMs(invite, "expiresAt") < s.nowMs()) {
+    throw s.badRequest("This invite code has expired or was already used. Ask your psychologist for a new one.");
+  }
+
+  let user = null;
+  $app.runInTransaction((tx) => {
+    const users = tx.findCollectionByNameOrId("users");
+    user = new Record(users);
+    user.setEmail(email);
+    user.setPassword(password);
+    user.setVerified(false);
+    user.set("name", name);
+    user.set("role", "patient");
+    user.set("clinician", invite.getString("clinician"));
+    user.set("active", true);
+    user.set("consentAt", new DateTime());
+    user.set("consentVersion", s.env("STEADY_CONSENT_VERSION", "draft-1"));
+    const tz = Number(b.tzOffset);
+    user.set("tzOffset", isFinite(tz) ? Math.max(-720, Math.min(840, Math.round(tz))) : 120);
+    tx.save(user);
+    invite.set("usedBy", user.id);
+    invite.set("usedAt", new DateTime());
+    tx.save(invite);
+  });
+
+  s.audit($app, e, "patient.join", "invite:" + invite.id, user.id);
+  s.notify($app, {
+    recipient: invite.getString("clinician"),
+    kind: "system",
+    patient: user.id,
+    title: name + " joined",
+    body: "They used invite code " + core.formatCode(code) + ".",
+    severity: "info"
+  });
+  return $apis.recordAuthResponse(e, user, "password");
+});
+
+/* =====================================================================
+ * Clinician
+ * ===================================================================== */
+
+routerAdd("POST", "/api/steady/invites", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const b = s.body(e);
+  const col = $app.findCollectionByNameOrId("invites");
+  let rec = null;
+  for (let i = 0; i < 5 && !rec; i++) {
+    const code = $security.randomStringWithAlphabet(8, s.core.CODE_ALPHABET);
+    try {
+      $app.findFirstRecordByFilter("invites", "code = {:c}", { c: code });
+    } catch (_) {
+      rec = new Record(col);
+      rec.set("code", code);
+    }
+  }
+  if (!rec) throw new ApiError(500, "Couldn't create a unique code. Please try again.");
+  rec.set("clinician", e.auth.id);
+  rec.set("label", s.core.str(b.label, 80));
+  rec.set("expiresAt", s.dateValue(s.nowMs() + 7 * s.core.DAY));
+  $app.save(rec);
+  s.audit($app, e, "invite.create", "invite:" + rec.id, "");
+  return e.json(200, {
+    id: rec.id,
+    code: s.core.formatCode(rec.getString("code")),
+    label: rec.getString("label"),
+    expiresAt: s.toMs(rec, "expiresAt")
+  });
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/steady/overview", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const tz = e.auth.getInt("tzOffset");
+  const patients = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c} && active = true", "name", 1000, 0, { c: e.auth.id });
+  const out = patients.map((p) => s.patientSummary($app, p, tz));
+  const rank = { alert: 3, warn: 2, info: 1, none: 0 };
+  const top = (p) => (p.flags.length ? rank[p.flags[0].severity] || 0 : 0);
+  out.sort((a, b) => top(b) - top(a) || a.name.localeCompare(b.name));
+  s.audit($app, e, "patients.overview", "count:" + out.length, "");
+  return e.json(200, { patients: out, generatedAt: s.nowMs() });
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/steady/patients/{id}/summary", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  s.audit($app, e, "patient.summary", "user:" + p.id, p.id);
+  return e.json(200, s.patientSummary($app, p, e.auth.getInt("tzOffset")));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/steady/patients/{id}/deactivate", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  p.set("active", false);
+  $app.save(p);
+  const pending = $app.findRecordsByFilter("assignments", "patient = {:p} && status = 'pending'", "", 1000, 0, { p: p.id });
+  pending.forEach((a) => { a.set("status", "cancelled"); $app.save(a); });
+  s.audit($app, e, "patient.deactivate", "user:" + p.id, p.id);
+  return e.json(200, { id: p.id, active: false });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/steady/assignments/{id}/cancel", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  let a = null;
+  try { a = $app.findRecordById("assignments", e.request.pathValue("id")); } catch (_) { a = null; }
+  if (!a || a.getString("clinician") !== e.auth.id) throw new NotFoundError("Not found.");
+  if (a.getString("status") !== "pending") throw s.badRequest("Only waiting activities can be cancelled.");
+  a.set("status", "cancelled");
+  $app.save(a);
+  s.audit($app, e, "assignment.cancel", "assignment:" + a.id, a.getString("patient"));
+  return e.json(200, { id: a.id, status: "cancelled" });
+}, $apis.requireAuth());
+
+/* ---------- instruments ---------- */
+
+routerAdd("POST", "/api/steady/instruments", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const b = s.body(e);
+  const v = s.core.validateInstrument(b.definition);
+  if (!v.ok) throw s.badRequest("The questionnaire has problems that need fixing.", v.errors);
+  try {
+    $app.findFirstRecordByFilter("instruments", "key = {:k}", { k: v.def.key });
+    throw s.badRequest("An instrument with the key '" + v.def.key + "' already exists. Choose another key.");
+  } catch (err) {
+    if (String(err).indexOf("already exists") >= 0) throw err;
+  }
+  v.def.licence.status = "custom";
+  v.def.licence.name = v.def.licence.name || "Created by the practice";
+  v.def.source = { name: "Created in Steady" };
+  const rec = new Record($app.findCollectionByNameOrId("instruments"));
+  rec.set("key", v.def.key);
+  rec.set("name", v.def.name);
+  rec.set("kind", v.def.kind);
+  rec.set("definition", v.def);
+  rec.set("licenceStatus", "custom");
+  rec.set("builtin", false);
+  rec.set("active", true);
+  rec.set("createdBy", e.auth.id);
+  $app.save(rec);
+  s.audit($app, e, "instrument.create", "instrument:" + rec.id, "");
+  return e.json(200, { id: rec.id, key: v.def.key });
+}, $apis.requireAuth());
+
+routerAdd("PUT", "/api/steady/instruments/{id}", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  let rec = null;
+  try { rec = $app.findRecordById("instruments", e.request.pathValue("id")); } catch (_) { rec = null; }
+  if (!rec || rec.getBool("builtin") || rec.getString("createdBy") !== e.auth.id) throw new NotFoundError("You can only edit questionnaires you created or imported.");
+  const v = s.core.validateInstrument(s.body(e).definition);
+  if (!v.ok) throw s.badRequest("The questionnaire has problems that need fixing.", v.errors);
+  const old = s.readJson(rec, "definition") || {};
+  v.def.key = rec.getString("key");
+  v.def.licence = old.licence || v.def.licence;
+  v.def.source = old.source || v.def.source;
+  rec.set("name", v.def.name);
+  rec.set("kind", v.def.kind);
+  rec.set("definition", v.def);
+  $app.save(rec);
+  s.audit($app, e, "instrument.update", "instrument:" + rec.id, "");
+  return e.json(200, { id: rec.id });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/steady/instruments/{id}/archive", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  let rec = null;
+  try { rec = $app.findRecordById("instruments", e.request.pathValue("id")); } catch (_) { rec = null; }
+  if (!rec || rec.getBool("builtin") || rec.getString("createdBy") !== e.auth.id) throw new NotFoundError("You can only archive questionnaires you created or imported.");
+  rec.set("active", false);
+  $app.save(rec);
+  s.audit($app, e, "instrument.archive", "instrument:" + rec.id, "");
+  return e.json(200, { id: rec.id, active: false });
+}, $apis.requireAuth());
+
+// The practice confirms it may use an instrument whose licence needed checking.
+routerAdd("POST", "/api/steady/instruments/{id}/licence", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const b = s.body(e);
+  let rec = null;
+  try { rec = $app.findRecordById("instruments", e.request.pathValue("id")); } catch (_) { rec = null; }
+  if (!rec) throw new NotFoundError("Not found.");
+  if (rec.getString("licenceStatus") === "blocked") throw s.badRequest("This instrument is marked as copyright protected and can't be cleared here.");
+  if (b.confirm !== true) throw s.badRequest("Tick the confirmation to clear this instrument for use.");
+  rec.set("licenceStatus", "cleared");
+  rec.set("licenceConfirmedBy", e.auth.id);
+  rec.set("licenceConfirmedAt", new DateTime());
+  $app.save(rec);
+  s.audit($app, e, "instrument.licence.confirm", "instrument:" + rec.id, "");
+  return e.json(200, { id: rec.id, licenceStatus: "cleared" });
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/steady/reproschema/catalog", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const { REPROSCHEMA_CATALOG } = require(`${__hooks}/lib/instruments.js`);
+  const out = REPROSCHEMA_CATALOG.map((c) => {
+    let imported = false;
+    try { $app.findFirstRecordByFilter("instruments", "key = {:k}", { k: "rs-" + c.activity.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") }); imported = true; } catch (_) { imported = false; }
+    return { activity: c.activity, label: c.label, status: c.status, imported: imported };
+  });
+  return e.json(200, { source: "https://github.com/ReproNim/reproschema-library", items: out });
+}, $apis.requireAuth());
+
+// Import from a Steady JSON file, a FHIR Questionnaire, or the ReproSchema library.
+routerAdd("POST", "/api/steady/instruments/import", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const core = s.core;
+  s.requireRole(e, "clinician");
+  const b = s.body(e);
+  let raw;
+  let status = "review";
+
+  if (b.format === "steady") {
+    raw = b.data;
+    if (b.ownWork === true) status = "custom";
+  } else if (b.format === "fhir") {
+    try { raw = core.fromFhirQuestionnaire(b.data); } catch (err) { throw s.badRequest(String(err.message || err)); }
+  } else if (b.format === "reproschema") {
+    const activity = core.str(b.activity, 80);
+    if (!/^[A-Za-z0-9_.-]+$/.test(activity)) throw s.badRequest("Unknown activity name.");
+    const { REPROSCHEMA_CATALOG } = require(`${__hooks}/lib/instruments.js`);
+    const known = REPROSCHEMA_CATALOG.filter((c) => c.activity === activity)[0];
+    if (known && known.status === "blocked") throw s.badRequest("This instrument is marked as copyright protected in the library and can't be imported.");
+
+    const repo = s.env("STEADY_REPROSCHEMA_REPO", "ReproNim/reproschema-library");
+    const branch = s.env("STEADY_REPROSCHEMA_BRANCH", "main");
+    const listing = $http.send({
+      url: "https://api.github.com/repos/" + repo + "/contents/activities/" + activity + "?ref=" + branch,
+      headers: { "Accept": "application/vnd.github+json", "User-Agent": "steady-server" },
+      timeout: 20
+    });
+    let files = null;
+    try { files = JSON.parse(toString(listing.body)); } catch (_) { files = null; }
+    if (listing.statusCode !== 200 || !Array.isArray(files)) throw s.badRequest("Couldn't find '" + activity + "' in the ReproSchema library.");
+    const schemaFile = files.filter((f) => f.type === "file" && /_schema$/i.test(f.name))[0];
+    if (!schemaFile) throw s.badRequest("'" + activity + "' has no activity schema file.");
+
+    const base = "https://raw.githubusercontent.com/" + repo + "/" + branch + "/activities/" + activity + "/";
+    let loads = 0;
+    const load = (rel) => {
+      if (++loads > 300) throw new Error("Too many files in this activity.");
+      if (rel.indexOf("..") === 0 || /^[a-z]+:/i.test(rel)) throw new Error("Unexpected path " + rel);
+      const res = $http.send({ url: base + rel.split("/").map(encodeURIComponent).join("/"), headers: { "User-Agent": "steady-server" }, timeout: 20 });
+      if (res.statusCode !== 200) throw new Error("Couldn't load " + rel + " (" + res.statusCode + ")");
+      return JSON.parse(toString(res.body));
+    };
+    try {
+      raw = core.fromReproSchema(activity, load(schemaFile.name), load, core.str(b.language, 10) || "en");
+    } catch (err) {
+      throw s.badRequest("Import failed: " + String(err.message || err));
+    }
+    if (known && known.status === "public") raw.licence.name = "Listed as free to use. Confirm before sending.";
+  } else {
+    throw s.badRequest("format must be 'steady', 'fhir' or 'reproschema'.");
+  }
+
+  const v = core.validateInstrument(raw);
+  if (!v.ok) throw s.badRequest("The imported questionnaire has problems.", v.errors);
+  if (b.key) v.def.key = core.str(b.key, 60).toLowerCase();
+  try {
+    $app.findFirstRecordByFilter("instruments", "key = {:k}", { k: v.def.key });
+    throw s.badRequest("'" + v.def.name + "' is already in your library (key " + v.def.key + ").");
+  } catch (err) {
+    if (String(err).indexOf("already in your library") >= 0) throw err;
+  }
+  v.def.licence.status = status;
+  const rec = new Record($app.findCollectionByNameOrId("instruments"));
+  rec.set("key", v.def.key);
+  rec.set("name", v.def.name);
+  rec.set("kind", v.def.kind);
+  rec.set("definition", v.def);
+  rec.set("licenceStatus", status);
+  rec.set("builtin", false);
+  rec.set("active", true);
+  rec.set("createdBy", e.auth.id);
+  $app.save(rec);
+  s.audit($app, e, "instrument.import", b.format + ":" + v.def.key, "");
+  return e.json(200, { id: rec.id, key: v.def.key, name: v.def.name, items: v.def.items.length, licenceStatus: status });
+}, $apis.requireAuth());
+
+/* =====================================================================
+ * Patient
+ * ===================================================================== */
+
+routerAdd("POST", "/api/steady/assignments/{id}/complete", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const core = s.core;
+  s.requireRole(e, "patient");
+  let a = null;
+  try { a = $app.findRecordById("assignments", e.request.pathValue("id")); } catch (_) { a = null; }
+  if (!a || a.getString("patient") !== e.auth.id) throw new NotFoundError("Not found.");
+  if (a.getString("status") !== "pending") throw s.badRequest("This one is already done.");
+  const now = s.nowMs();
+  const avail = s.toMs(a, "availableFrom");
+  if (avail && avail > now) throw s.badRequest("This isn't available yet.");
+
+  const inst = s.instrumentDef($app, a.getString("instrument"));
+  const def = inst.def;
+  const b = s.body(e);
+  let result;
+  let score = null;
+  if (def.kind === "questionnaire") {
+    const v = core.validateAnswers(def, b.answers);
+    if (!v.ok) throw s.badRequest("Some answers are missing or invalid.", v.errors);
+    result = { answers: v.answers, version: def.version };
+    score = core.scoreAnswers(def, v.answers);
+  } else {
+    result = core.validateExerciseResult(def, b.result);
+  }
+
+  a.set("status", "done");
+  a.set("completedAt", new DateTime());
+  a.set("result", result);
+  if (score) a.set("score", score);
+  $app.save(a);
+
+  const next = core.nextAvailable(a.getString("repeat"), now, e.auth.getInt("tzOffset"));
+  if (next) {
+    const n = new Record($app.findCollectionByNameOrId("assignments"));
+    n.set("patient", a.getString("patient"));
+    n.set("clinician", a.getString("clinician"));
+    n.set("instrument", a.getString("instrument"));
+    n.set("status", "pending");
+    n.set("note", a.getString("note"));
+    n.set("repeat", a.getString("repeat"));
+    n.set("availableFrom", s.dateValue(next));
+    $app.save(n);
+  }
+
+  let detail = "Exercise finished";
+  if (score) {
+    detail = "Score " + score.total + "/" + score.max + (score.band ? " · " + score.band : "");
+    if (score.flags.length) detail += " · " + score.flags.map((f) => f.label).join(", ");
+  } else if (result && result.seconds) {
+    detail = "Exercise finished in " + Math.round(result.seconds / 60) + " min";
+  }
+  s.notify($app, {
+    recipient: a.getString("clinician"),
+    kind: "completed",
+    patient: e.auth.id,
+    assignment: a.id,
+    title: e.auth.getString("name") + " completed " + def.name,
+    body: detail,
+    severity: score ? score.severity : "none"
+  });
+  return e.json(200, { id: a.id, status: "done" });
+}, $apis.requireAuth());
+
+// A patient starts an exercise on their own (questionnaires are only sent by clinicians).
+routerAdd("POST", "/api/steady/self-start", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "patient");
+  const b = s.body(e);
+  const inst = s.instrumentDef($app, s.core.str(b.instrument, 30));
+  if (inst.def.kind !== "exercise" || !s.sendable(inst.rec)) throw s.badRequest("Only exercises can be started from the app.");
+  const clinician = e.auth.getString("clinician");
+  const rec = new Record($app.findCollectionByNameOrId("assignments"));
+  rec.set("patient", e.auth.id);
+  rec.set("clinician", clinician);
+  rec.set("instrument", inst.rec.id);
+  rec.set("status", "done");
+  rec.set("selfStarted", true);
+  rec.set("repeat", "once");
+  rec.set("completedAt", new DateTime());
+  rec.set("result", s.core.validateExerciseResult(inst.def, b.result));
+  $app.save(rec);
+  if (clinician) {
+    s.notify($app, {
+      recipient: clinician,
+      kind: "completed",
+      patient: e.auth.id,
+      assignment: rec.id,
+      title: e.auth.getString("name") + " did " + inst.def.name,
+      body: "Started by the patient",
+      severity: "none",
+      push: false
+    });
+  }
+  return e.json(200, { id: rec.id });
+}, $apis.requireAuth());
+
+/* =====================================================================
+ * Record hooks
+ * ===================================================================== */
+
+onRecordCreateRequest((e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const r = e.record;
+  s.ownPatient(e.app, e.auth.id, r.getString("patient"));
+  let inst = null;
+  try { inst = e.app.findRecordById("instruments", r.getString("instrument")); } catch (_) { inst = null; }
+  if (!inst) throw s.badRequest("Choose something to send.");
+  if (!s.sendable(inst)) throw s.badRequest("This instrument isn't cleared for use yet. Confirm its licence in the library first.");
+  r.set("clinician", e.auth.id);
+  r.set("status", "pending");
+  r.set("result", null);
+  r.set("score", null);
+  r.set("completedAt", "");
+  r.set("selfStarted", false);
+  if (!r.getString("repeat")) r.set("repeat", "once");
+  r.set("note", s.core.str(r.getString("note"), 280));
+  e.next();
+  s.audit(e.app, e, "assignment.create", "assignment:" + r.id, r.getString("patient"));
+}, "assignments");
+
+onRecordAfterCreateSuccess((e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const r = e.record;
+  if (r.getString("status") === "pending") {
+    const avail = s.toMs(r, "availableFrom");
+    if (!avail || avail <= s.nowMs()) {
+      let name = "something new";
+      try { name = e.app.findRecordById("instruments", r.getString("instrument")).getString("name"); } catch (_) { /* keep generic */ }
+      s.notify(e.app, {
+        recipient: r.getString("patient"),
+        kind: "assigned",
+        assignment: r.id,
+        title: "From your psychologist",
+        body: name + (r.getString("note") ? ": " + r.getString("note") : ""),
+        severity: "none"
+      });
+    }
+  }
+  e.next();
+}, "assignments");
+
+onRecordCreateRequest((e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "patient");
+  const r = e.record;
+  const v = s.core.validateCheckin({
+    mood: r.getInt("mood"), anxiety: r.getInt("anxiety"), sleep: r.getInt("sleep"), energy: r.getInt("energy"), note: r.getString("note")
+  });
+  if (!v.ok) throw s.badRequest("Please answer all four questions.", v.errors);
+  if (!e.auth.getString("clinician")) throw s.badRequest("Your account isn't linked to a psychologist yet.");
+  r.set("patient", e.auth.id);
+  r.set("note", v.value.note);
+  e.next();
+}, "checkins");
+
+onRecordAfterCreateSuccess((e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const r = e.record;
+  let patient = null;
+  try { patient = e.app.findRecordById("users", r.getString("patient")); } catch (_) { patient = null; }
+  if (patient && patient.getString("clinician")) {
+    const recent = e.app.findRecordsByFilter("checkins", "patient = {:p}", "-created", 3, 0, { p: patient.id });
+    const lowRun = recent.length === 3 && recent.every((c) => c.getInt("mood") <= 2);
+    s.notify(e.app, {
+      recipient: patient.getString("clinician"),
+      kind: "checkin",
+      patient: patient.id,
+      title: patient.getString("name") + " checked in",
+      body: "Mood " + r.getInt("mood") + "/5 · Anxiety " + r.getInt("anxiety") + "/5" + (lowRun ? " · low mood in the last 3 check-ins" : ""),
+      severity: lowRun ? "warn" : (r.getInt("mood") <= 1 ? "info" : "none")
+    });
+  }
+  e.next();
+}, "checkins");
+
+// Access logging: record each time a clinician reads patient data.
+onRecordsListRequest((e) => {
+  e.next();
+  if (e.auth && e.auth.getString("role") === "clinician") {
+    const s = require(`${__hooks}/lib/server.js`);
+    const info = e.requestInfo();
+    const filter = (info.query && info.query.filter) || "";
+    const m = /patient\s*=\s*["']([a-z0-9]{15})["']/.exec(String(filter));
+    s.audit(e.app, e, "list." + e.collection.name, String(filter).slice(0, 180), m ? m[1] : "");
+  }
+}, "checkins", "assignments");
+
+onRecordViewRequest((e) => {
+  e.next();
+  if (e.auth && e.auth.getString("role") === "clinician") {
+    const s = require(`${__hooks}/lib/server.js`);
+    s.audit(e.app, e, "view." + e.collection.name, e.collection.name + ":" + e.record.id, e.record.getString("patient"));
+  }
+}, "checkins", "assignments");
+
+/* =====================================================================
+ * Scheduled jobs (cron runs in UTC)
+ * ===================================================================== */
+
+// 05:00 UTC (07:00 SAST): nudge patients whose repeating activities became available.
+cronAdd("steady_due_today", "0 5 * * *", () => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const now = s.nowMs();
+  const due = $app.findRecordsByFilter(
+    "assignments",
+    "status = 'pending' && availableFrom != '' && availableFrom <= {:now} && availableFrom > {:since}",
+    "", 5000, 0,
+    { now: s.dateValue(now).string(), since: s.dateValue(now - s.core.DAY).string() }
+  );
+  const seen = {};
+  due.forEach((a) => {
+    const p = a.getString("patient");
+    if (seen[p]) return;
+    seen[p] = true;
+    s.notify($app, { recipient: p, kind: "assigned", assignment: a.id, title: "Ready for today", body: "You have something to do today.", severity: "none" });
+  });
+});
+
+// 02:30 UTC daily: tidy up old notifications and stale devices. Audit log is kept.
+cronAdd("steady_cleanup", "30 2 * * *", () => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const now = s.nowMs();
+  const days = Number(s.env("STEADY_NOTIFICATION_RETENTION_DAYS", "90"));
+  const old = $app.findRecordsByFilter("notifications", "created < {:t}", "", 5000, 0, { t: s.dateValue(now - days * s.core.DAY).string() });
+  old.forEach((n) => { try { $app.delete(n); } catch (_) { /* ignore */ } });
+  const stale = $app.findRecordsByFilter("devices", "updated < {:t}", "", 5000, 0, { t: s.dateValue(now - 120 * s.core.DAY).string() });
+  stale.forEach((d) => { try { $app.delete(d); } catch (_) { /* ignore */ } });
+});

@@ -1,0 +1,33 @@
+{
+  "resourceType": "Questionnaire",
+  "status": "draft",
+  "name": "MiniWellbeing",
+  "title": "Mini wellbeing check (example)",
+  "description": "An example FHIR Questionnaire for testing imports. Not a validated instrument.",
+  "copyright": "Example content, public domain",
+  "item": [
+    {
+      "linkId": "sleep",
+      "text": "How well have you slept this week?",
+      "type": "choice",
+      "required": true,
+      "answerOption": [
+        { "valueCoding": { "code": "0", "display": "Badly" } },
+        { "valueCoding": { "code": "1", "display": "Okay" } },
+        { "valueCoding": { "code": "2", "display": "Well" } }
+      ]
+    },
+    {
+      "linkId": "people",
+      "text": "How connected have you felt to people around you?",
+      "type": "choice",
+      "required": true,
+      "answerOption": [
+        { "valueCoding": { "code": "0", "display": "Not at all" } },
+        { "valueCoding": { "code": "1", "display": "Somewhat" } },
+        { "valueCoding": { "code": "2", "display": "Very" } }
+      ]
+    },
+    { "linkId": "notes", "text": "Anything you'd like to add?", "type": "text" }
+  ]
+}

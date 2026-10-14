@@ -1,0 +1,35 @@
+{
+  "key": "session-feedback",
+  "name": "Session feedback",
+  "fullName": "Post-session feedback",
+  "kind": "questionnaire",
+  "summary": "4 questions, about a minute",
+  "instructions": "Thinking about today's session:",
+  "responseSets": {
+    "agree": [
+      { "label": "Disagree", "value": 0 },
+      { "label": "Neutral", "value": 1 },
+      { "label": "Agree", "value": 2 }
+    ]
+  },
+  "items": [
+    { "id": "heard", "text": "I felt heard", "responseSet": "agree" },
+    { "id": "goals", "text": "We worked on what I wanted to work on", "responseSet": "agree" },
+    { "id": "worse", "text": "Did anything make you feel worse?", "type": "choice",
+      "options": [ { "label": "No", "value": 0 }, { "label": "Yes", "value": 1 } ] },
+    { "id": "what", "text": "What made you feel worse?", "type": "text", "required": true,
+      "showIf": { "anyOf": [ { "item": "worse", "op": "=", "value": 1 } ] } }
+  ],
+  "scoring": {
+    "method": "sum",
+    "items": ["heard", "goals"],
+    "bands": [
+      { "min": 0, "max": 1, "label": "Low alliance", "severity": "warn" },
+      { "min": 2, "max": 4, "label": "OK", "severity": "none" }
+    ],
+    "itemFlags": [
+      { "item": "worse", "op": "=", "value": 1, "label": "Felt worse after session", "severity": "alert" }
+    ]
+  },
+  "licence": { "name": "Written by the practice", "status": "custom" }
+}

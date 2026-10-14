@@ -1,0 +1,24 @@
+{
+    "@context": "https://raw.githubusercontent.com/ReproNim/reproschema/main/releases/1.0.0/reproschema",
+    "id": "gad7_total_score",
+    "category": "Item",
+    "description": {
+        "en": "schema for total score of the GAD7 Assessment"
+    },
+    "ui": {
+        "readonlyValue": true,
+        "inputType": "xsd:int"
+    },
+    "schemaVersion": "1.0.0",
+    "version": "0.0.1",
+    "responseOptions": {
+        "maxValue": 21,
+        "minValue": 0,
+        "valueType": [
+            "xsd:integer"
+        ]
+    },
+    "prefLabel": {
+        "en": "GAD7 Score"
+    }
+}

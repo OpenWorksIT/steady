@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+{
+	email {$ACME_EMAIL}
+}
+
+{$STEADY_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# The PocketBase dashboard is for OpenWorks/practice IT only.
+	# Restrict it to your office or VPN addresses (edit the ranges), or remove this block
+	# and reach the dashboard over an SSH tunnel instead.
+	@dashboard path /_/*
+	handle @dashboard {
+		@allowed remote_ip 127.0.0.1/32 10.0.0.0/8 192.168.0.0/16
+		handle @allowed {
+			reverse_proxy pocketbase:8090
+		}
+		respond 404
+	}
+
+	handle {
+		reverse_proxy pocketbase:8090 {
+			# keep realtime (server-sent events) connections open
+			flush_interval -1
+		}
+	}
+
+	log {
+		output stdout
+		format json
+		# no request bodies or query strings in logs
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+			}
+		}
+	}
+}

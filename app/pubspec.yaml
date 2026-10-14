@@ -1,0 +1,33 @@
+name: steady
+description: "Steady: between-session check-ins, questionnaires and exercises for a psychology practice."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.10.0 <4.0.0"
+  flutter: ">=3.38.1"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # PocketBase client (MIT)
+  pocketbase: ^0.25.0
+  # Keychain / Keystore storage for the session token (BSD-3)
+  flutter_secure_storage: ^11.2.0
+  # Android push without Google services (Apache-2.0). iOS uses APNs via a small platform channel.
+  unifiedpush: ^6.0.2
+  # Shows UnifiedPush messages as notifications on Android (BSD-3)
+  flutter_local_notifications: ^22.0.0
+  # Clinicians upload questionnaire files (MIT)
+  file_picker: ^13.1.0
+  # iOS push bridge (in this repo)
+  steady_apns:
+    path: packages/steady_apns
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

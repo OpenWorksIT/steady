@@ -1,0 +1,46 @@
+{
+    "@context": "https://raw.githubusercontent.com/ReproNim/reproschema/main/releases/1.0.0/reproschema",
+    "id": "phq9_category",
+    "category": "Item",
+    "description": {
+        "en": "schema for score category of the PHQ-9 Assessment"
+    },
+    "ui": {
+        "readonlyValue": true,
+        "inputType": "text"
+    },
+    "schemaVersion": "1.0.0",
+    "version": "0.0.1",
+    "responseOptions": {
+        "choices": [
+            {
+                "name": {
+                    "en": "minimal"
+                }
+            },
+            {
+                "name": {
+                    "en": "mild"
+                }
+            },
+            {
+                "name": {
+                    "en": "moderate"
+                }
+            },
+            {
+                "name": {
+                    "en": "moderately severe"
+                }
+            },
+            {
+                "name": {
+                    "en": "severe"
+                }
+            }
+        ]
+    },
+    "prefLabel": {
+        "en": "score category of PHQ-9 Questionnaire"
+    }
+}
