@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end check of a running Steady server: the whole clinician/patient flow.
 
-  python3 deploy/test/smoke.py                      # uses deploy/test/.env and localhost:8090
+  python3 deploy/test/smoke.py                      # uses deploy/test/.env and its LOCAL_PORT
   python3 deploy/test/smoke.py https://steady-test.example.co.za
 
 Creates a throwaway patient each run. Standard library only.
@@ -16,9 +16,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8090").rstrip("/")
-
-
 def load_env():
     env = dict(os.environ)
     p = pathlib.Path(__file__).with_name(".env")
@@ -31,6 +28,7 @@ def load_env():
 
 
 ENV = load_env()
+BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:" + ENV.get("LOCAL_PORT", "8090")).rstrip("/")
 passed = 0
 
 

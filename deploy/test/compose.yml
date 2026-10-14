@@ -6,7 +6,7 @@
 #   phone ──https──> Cloudflare ──tunnel──> caddy:80 ──> pocketbase:8090 (+ web app)
 #                                                         pusher ──> ntfy / Apple
 #
-# The PocketBase dashboard is only reachable from this PC at http://localhost:8090/_/
+# The PocketBase dashboard is only reachable from this PC at http://localhost:<LOCAL_PORT>/_/
 
 name: steady-test
 
@@ -27,7 +27,7 @@ services:
       # the web version of the app, served on the same address
       - ./web:/pb/pb_public:ro
     ports:
-      - "127.0.0.1:8090:8090"
+      - "127.0.0.1:${LOCAL_PORT:-8090}:8090"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/health"]
       interval: 5s

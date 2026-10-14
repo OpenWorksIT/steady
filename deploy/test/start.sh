@@ -62,6 +62,21 @@ fi
 umask 022
 set -a; . ./.env; set +a
 
+# Port for the dashboard on this PC. Pick a free one the first time if 8090 is taken.
+port_free() { python3 -c 'import socket,sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", int(sys.argv[1]))); s.close()' "$1" 2>/dev/null; }
+if [ -z "${LOCAL_PORT:-}" ]; then
+  # our own stack may be holding 8090 from an earlier run; stop it before testing
+  compose --profile named --profile quick down >/dev/null 2>&1 || true
+  for p in 8090 8091 8092 8093 8094 8095 8096 8097 8098 8099; do
+    if port_free "$p"; then LOCAL_PORT=$p; break; fi
+  done
+  [ -n "${LOCAL_PORT:-}" ] || { echo "Ports 8090-8099 are all in use. Set LOCAL_PORT in deploy/test/.env." >&2; exit 1; }
+  printf '\n# Dashboard port on this PC\nLOCAL_PORT=%s\n' "$LOCAL_PORT" >> .env
+  [ "$LOCAL_PORT" = 8090 ] || echo "Port 8090 is in use on this PC; using $LOCAL_PORT instead."
+fi
+export LOCAL_PORT
+LOCAL="http://localhost:$LOCAL_PORT"
+
 # ---------- web app ----------
 if [ "${1:-}" = "--update" ] || [ ! -f web/index.html ]; then
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
@@ -86,24 +101,24 @@ compose --profile "$PROFILE" up -d --build
 
 echo -n "Waiting for the server"
 for _ in $(seq 1 60); do
-  curl -fsS http://localhost:8090/api/health >/dev/null 2>&1 && break
+  curl -fsS $LOCAL/api/health >/dev/null 2>&1 && break
   echo -n "."; sleep 2
 done
 echo
-curl -fsS http://localhost:8090/api/health >/dev/null || { echo "The server didn't start. See: docker compose -f deploy/test/compose.yml logs pocketbase" >&2; exit 1; }
+curl -fsS $LOCAL/api/health >/dev/null || { echo "The server didn't start. See: docker compose -f deploy/test/compose.yml logs pocketbase" >&2; exit 1; }
 
 # ---------- accounts (idempotent) ----------
 compose exec -T pocketbase /pb/pocketbase superuser upsert "$SUPERUSER_EMAIL" "$SUPERUSER_PASSWORD" --dir=/pb/pb_data >/dev/null
 
 json() { python3 -c 'import json,sys; print(json.dumps(dict(zip(sys.argv[1::2], sys.argv[2::2]))))' "$@"; }
-TOKEN=$(curl -fsS http://localhost:8090/api/collections/_superusers/auth-with-password \
+TOKEN=$(curl -fsS $LOCAL/api/collections/_superusers/auth-with-password \
   -H 'Content-Type: application/json' \
   -d "$(json identity "$SUPERUSER_EMAIL" password "$SUPERUSER_PASSWORD")" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 
-EXISTS=$(curl -fsS -G http://localhost:8090/api/collections/users/records \
+EXISTS=$(curl -fsS -G $LOCAL/api/collections/users/records \
   -H "Authorization: $TOKEN" --data-urlencode "filter=email='$CLINICIAN_EMAIL'" | python3 -c 'import json,sys; print(json.load(sys.stdin)["totalItems"])')
 if [ "$EXISTS" = "0" ]; then
-  curl -fsS http://localhost:8090/api/collections/users/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+  curl -fsS $LOCAL/api/collections/users/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"password":sys.argv[2],"passwordConfirm":sys.argv[2],"name":sys.argv[3],"role":"clinician","active":True,"verified":True,"tzOffset":120}))' "$CLINICIAN_EMAIL" "$CLINICIAN_PASSWORD" "$CLINICIAN_NAME")" >/dev/null
   echo "Created clinician account"
 fi
@@ -126,7 +141,7 @@ Steady test server is running.
 
   Address for phones   ${URL:-(set PUBLIC_URL in deploy/test/.env to the hostname you gave the tunnel)}
   Web app              ${URL:-<address>}/      (iPhone: open in Safari, Share > Add to Home Screen)
-  Dashboard (this PC)  http://localhost:8090/_/
+  Dashboard (this PC)  $LOCAL/_/
       superuser        $SUPERUSER_EMAIL  /  $SUPERUSER_PASSWORD
 
   Clinician sign-in    $CLINICIAN_EMAIL  /  $CLINICIAN_PASSWORD

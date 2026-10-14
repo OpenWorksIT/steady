@@ -34,7 +34,7 @@ It prints the address, the clinician sign-in, and the dashboard login. Other com
 Check the server end to end at any time:
 
 ```bash
-python3 smoke.py                    # against localhost
+python3 smoke.py                    # against this PC
 python3 smoke.py https://steady-test.<your domain>   # through the tunnel
 ```
 
