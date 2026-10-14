@@ -25,8 +25,8 @@
 
 ## Not yet tested
 
-- **PocketBase itself.** The hooks were written against the v0.40.5 JavaScript API definitions and exercised with an imitation, not a running PocketBase. First job: start the server, run through the flow below, and check the dashboard shows the expected collections and rules.
-- **The Flutter app has not been compiled.** It was written against the exact versions of each package, but needs `flutter analyze` and a run on real devices.
+- **The full API flow on a running PocketBase.** CI proves the real server starts with the migrations and hooks and serves `/api/steady/config` without errors; the invite-to-result flow has only been run against the imitation. Run the manual script below.
+- **The app on devices.** It resolves its packages, passes `flutter analyze` with no issues and passes its unit tests in CI, but hasn't been built for or run on an iPhone or Android phone.
 - Real delivery through Apple and a UnifiedPush distributor.
 - Load, backups and restores on the production server.
 

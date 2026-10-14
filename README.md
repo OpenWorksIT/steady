@@ -7,7 +7,7 @@ Between-session check-ins for a psychology practice. One app, two kinds of login
 
 Built by [OpenWorks IT](https://openworks.co.za). Free software under the GNU AGPL v3 or later.
 
-> **Status: first build, not yet in clinical use.** The server logic is covered by automated tests; the mobile app has not yet been compiled and run on devices. See [docs/TESTING.md](docs/TESTING.md) for exactly what has and hasn't been verified.
+> **Status: first build, not yet in clinical use.** Server logic is covered by automated tests, the real server boots cleanly in CI, and the app passes analysis and unit tests; nothing has run on phones yet. See [docs/TESTING.md](docs/TESTING.md) for exactly what has and hasn't been verified.
 
 ## What's in the box
 
