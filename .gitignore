@@ -19,3 +19,4 @@ pusher/pusher
 
 # Node test runs
 node_modules/
+__pycache__/
