@@ -26,7 +26,7 @@ def load_env():
         for line in p.read_text().splitlines():
             if "=" in line and not line.lstrip().startswith("#"):
                 k, v = line.split("=", 1)
-                env.setdefault(k.strip(), v.strip())
+                env.setdefault(k.strip(), v.strip().strip('"').strip("'"))
     return env
 
 
