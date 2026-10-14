@@ -37,7 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: start test stack
-        run: NO_TUNNEL=1 deploy/test/start.sh
+        run: |
+          set -o pipefail
+          NO_TUNNEL=1 deploy/test/start.sh 2>&1 | tee start.txt || { echo "::error title=start.sh::$(sed 's/%/%25/g' start.txt | tail -c 30000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
       - name: smoke test
         run: |
           set -o pipefail
@@ -45,8 +47,9 @@ jobs:
       - name: server log on failure
         if: failure()
         run: |
-          docker compose -f deploy/test/compose.yml --env-file deploy/test/.env logs pocketbase pusher > pb.log 2>&1 || true
-          echo "::error title=server log::$(sed 's/%/%25/g' pb.log | tail -c 50000 | awk '{printf "%s%%0A", $0}')"
+          docker compose -f deploy/test/compose.yml --env-file deploy/test/.env logs --no-color pocketbase pusher caddy > pb.log 2>&1 || true
+          docker compose -f deploy/test/compose.yml --env-file deploy/test/.env ps -a >> pb.log 2>&1 || true
+          echo "::warning title=server log::$(sed 's/%/%25/g; s/\r//g' pb.log | tail -c 20000 | awk '{printf "%s%%0A", $0}')"
 
   pusher:
     runs-on: ubuntu-latest
