@@ -29,8 +29,9 @@ esac
 rand() { openssl rand -base64 "$1" | tr '+/' '-_' | tr -d '=\n'; }
 
 # ---------- first run: keys and accounts ----------
+mkdir -p web && chmod 755 web   # the server container reads it as another user
 umask 077
-mkdir -p secrets web
+mkdir -p secrets
 chmod 755 secrets   # readable by the relay container
 if [ ! -f secrets/vapid.pem ]; then
   openssl ecparam -name prime256v1 -genkey -noout -out secrets/vapid.pem
@@ -85,6 +86,7 @@ if [ "${1:-}" = "--update" ] || [ ! -f web/index.html ]; then
     gh release download test-build -R "$REPO" -p steady-web.zip -D "$tmp" --clobber
     rm -rf web && mkdir web
     (cd web && unzip -q "$tmp/steady-web.zip")
+    chmod -R a+rX web
     rm -rf "$tmp"
   else
     echo "Note: no web app yet. Install the GitHub CLI and run 'gh auth login', then './start.sh --update',"
