@@ -58,6 +58,9 @@ jobs:
         run: |
           set -o pipefail
           flutter analyze --no-fatal-infos 2>&1 | tee ../analyze.txt || { echo "::error title=flutter analyze::$(sed 's/%/%25/g' ../analyze.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          if ! grep -q "No issues found" ../analyze.txt; then
+            echo "::notice title=flutter analyze (infos)::$(sed 's/%/%25/g' ../analyze.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"
+          fi
       - name: test
         working-directory: app
         run: |
