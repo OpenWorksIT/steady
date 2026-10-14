@@ -18,7 +18,7 @@ class HistoryScreen extends StatelessWidget {
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
                   itemCount: list.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, i) => CheckinCard(list[i]),
                 ),
         ),

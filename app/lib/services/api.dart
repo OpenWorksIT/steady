@@ -262,8 +262,8 @@ class Api {
   }) =>
       pb.send<Map<String, dynamic>>('/api/steady/instruments/import', method: 'POST', body: {
         'format': format,
-        if (data != null) 'data': data,
-        if (activity != null) 'activity': activity,
+        'data': ?data,
+        'activity': ?activity,
         'ownWork': ownWork,
       });
 
