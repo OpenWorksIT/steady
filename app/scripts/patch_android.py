@@ -3,6 +3,7 @@
 
 - core library desugaring (required by flutter_local_notifications 10+)
 - compileSdk 36 minimum
+- one copy of Google Tink (two plugins bring 'tink' and 'tink-android'; keep the Android one)
 - POST_NOTIFICATIONS permission (Android 13+)
 - no cloud backup of app data
 - plain HTTP allowed in debug builds only, for a local development server
@@ -41,6 +42,8 @@ def patch_kts(text):
         else:
             text += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:%s")\n}\n' % DESUGAR_VERSION
     text = re.sub(r"compileSdk\s*=\s*flutter\.compileSdkVersion", "compileSdk = maxOf(flutter.compileSdkVersion, 36)", text)
+    if 'module = "tink"' not in text:
+        text += '\nconfigurations.all {\n    exclude(group = "com.google.crypto.tink", module = "tink")\n}\n'
     return text
 
 
@@ -56,6 +59,8 @@ def patch_groovy(text):
         else:
             text += "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:%s'\n}\n" % DESUGAR_VERSION
     text = re.sub(r"compileSdk\s*=?\s*flutter\.compileSdkVersion", "compileSdk Math.max(flutter.compileSdkVersion, 36)", text)
+    if "module: 'tink'" not in text:
+        text += "\nconfigurations.all {\n    exclude group: 'com.google.crypto.tink', module: 'tink'\n}\n"
     return text
 
 
