@@ -1,0 +1,16 @@
+# Test stack: plain HTTP inside Docker; Cloudflare handles HTTPS.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	# dashboard and superuser endpoints stay local (use http://localhost:8090/_/ on this PC)
+	@admin path /_/* /api/collections/_superusers/*
+	respond @admin 404
+
+	reverse_proxy pocketbase:8090 {
+		flush_interval -1
+	}
+}

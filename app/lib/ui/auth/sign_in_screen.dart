@@ -6,6 +6,7 @@ import '../../services/api.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'join_screen.dart';
+import 'server_screen.dart';
 
 class SignInScreen extends StatefulWidget {
   final String? message;
@@ -113,6 +114,19 @@ class _SignInScreenState extends State<SignInScreen> {
                 ]),
               ),
             ),
+            if (!AppScope.api(context).serverLocked) ...[
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(
+                  child: Text('Server: ${AppScope.api(context).serverUrl}',
+                      style: context.tt.bodySmall?.copyWith(color: context.sc.ink3), overflow: TextOverflow.ellipsis),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ServerScreen(firstRun: false))),
+                  child: const Text('Change'),
+                ),
+              ]),
+            ],
           ],
         ),
       ),

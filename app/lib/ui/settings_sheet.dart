@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -36,7 +34,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final android = !kIsWeb && Platform.isAndroid;
+    final android = !kIsWeb && _isAndroid;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -49,7 +47,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           Text(
             state.pushEnabled
                 ? 'On. Notifications never show names or answers, only that there is something new.'
-                : android
+                : kIsWeb
+                    ? 'The web version can\'t send notifications. New items appear here while the page is open; install the app for alerts.'
+                    : android
                     ? 'Off. On Android, Steady delivers notifications through a free app such as ntfy, so no data goes to Google. Install one, then choose it below.'
                     : 'Off. Allow notifications for Steady in your phone\'s settings.',
             style: TextStyle(color: context.sc.ink2),
@@ -69,7 +69,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                 },
               ),
           ],
-          if (!state.pushEnabled) ...[
+          if (!state.pushEnabled && !kIsWeb) ...[
             const SizedBox(height: 8),
             OutlinedButton(onPressed: () => state.enablePush(), child: const Text('Try again')),
           ],
@@ -83,9 +83,12 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             label: const Text('Sign out'),
           ),
           const SizedBox(height: 8),
+          Text('Server: ${state.api.serverUrl}', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
           Text('Steady is free software (AGPL-3.0) by OpenWorks IT.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
         ]),
       ),
     );
   }
 }
+
+bool get _isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;

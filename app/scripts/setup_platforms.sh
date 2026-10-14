@@ -11,8 +11,12 @@ if ! command -v flutter >/dev/null 2>&1; then
 fi
 
 # Does not overwrite lib/ or pubspec.yaml; only adds missing platform folders.
-flutter create --org za.co.openworks --project-name steady --platforms ios,android .
+had_widget_test=$([ -f test/widget_test.dart ] && echo yes || echo no)
+flutter create --org za.co.openworks --project-name steady --platforms ios,android,web .
+# flutter create adds a sample test for its counter demo; it doesn't apply to Steady
+if [ "$had_widget_test" = no ]; then rm -f test/widget_test.dart; fi
 python3 scripts/patch_android.py
+python3 scripts/patch_web.py
 flutter pub get
 
 cat <<'EOF'

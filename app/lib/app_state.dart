@@ -19,6 +19,10 @@ class AppState extends ChangeNotifier {
   bool get isPatient => api.role == 'patient';
 
   Future<void> start() async {
+    if (!api.hasServer) {
+      notifyListeners();
+      return;
+    }
     try {
       config = await api.config();
     } catch (_) {/* keep fallback; crisis numbers are built in */}
@@ -39,6 +43,18 @@ class AppState extends ChangeNotifier {
       pushEnabled = await PushService.instance.enable(vapidPublicKey: config.vapidPublicKey);
     } catch (_) {
       pushEnabled = false;
+    }
+    notifyListeners();
+  }
+
+  /// Switches to another server (test builds). Signs out.
+  Future<void> setServer(String url) async {
+    await PushService.instance.disable();
+    await api.setServer(url);
+    try {
+      config = await api.config();
+    } catch (_) {
+      config = AppConfig.fallback();
     }
     notifyListeners();
   }

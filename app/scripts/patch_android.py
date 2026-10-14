@@ -65,6 +65,7 @@ def patch_manifest(text):
         text, n = re.subn(r"(<manifest[^>]*>)", r"\1\n    " + perm, text, count=1)
         if n != 1:
             fail("couldn't find <manifest> in AndroidManifest.xml")
+    text = text.replace('android:label="steady"', 'android:label="Steady"')
     if "android:allowBackup" not in text:
         # keep health data out of cloud backups
         text = re.sub(r"<application", '<application\n        android:allowBackup="false"', text, count=1)

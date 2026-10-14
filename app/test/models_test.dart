@@ -2,6 +2,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:steady/models.dart';
+import 'package:steady/services/api.dart';
 
 void main() {
   RecordModel instrument(Map<String, dynamic> definition, {String kind = 'questionnaire'}) => RecordModel.fromJson({
@@ -108,5 +109,13 @@ void main() {
     expect(p.mood, [null, 3.0, 2.0]);
     expect(p.flags.single.severity, Severity.warn);
     expect(p.lastMood, 2);
+  });
+
+  test('server addresses are normalised', () {
+    expect(normaliseServerUrl('steady.example.co.za'), 'https://steady.example.co.za');
+    expect(normaliseServerUrl(' https://steady.example.co.za/ '), 'https://steady.example.co.za');
+    expect(normaliseServerUrl('http://192.168.1.5:8090'), 'http://192.168.1.5:8090');
+    expect(normaliseServerUrl(''), isNull);
+    expect(normaliseServerUrl('ftp://x'), isNull);
   });
 }

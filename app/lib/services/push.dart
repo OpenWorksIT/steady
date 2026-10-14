@@ -8,7 +8,6 @@
 // Payloads never contain patient details; tapping opens the app, which loads the detail.
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -38,7 +37,7 @@ class PushService {
     if (_initialised) return;
     _initialised = true;
     if (kIsWeb) return;
-    if (Platform.isAndroid) {
+    if (_isAndroid) {
       await _local.initialize(
         settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
         onDidReceiveNotificationResponse: (r) => _taps.add(r.payload ?? ''),
@@ -49,7 +48,7 @@ class PushService {
         onRegistrationFailed: (reason, instance) {},
         onMessage: (message, instance) => _onMessage(message),
       );
-    } else if (Platform.isIOS) {
+    } else if (_isIOS) {
       _channel.setMethodCallHandler((call) async {
         switch (call.method) {
           case 'onToken':
@@ -72,11 +71,11 @@ class PushService {
   Future<bool> enable({String vapidPublicKey = ''}) async {
     _vapid = vapidPublicKey;
     if (kIsWeb) return false;
-    if (Platform.isIOS) {
+    if (_isIOS) {
       final ok = await _channel.invokeMethod<bool>('register');
       return ok ?? false;
     }
-    if (Platform.isAndroid) {
+    if (_isAndroid) {
       await _local
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
@@ -90,7 +89,7 @@ class PushService {
 
   /// Installed UnifiedPush distributors, for the settings screen.
   Future<List<String>> distributors() async =>
-      (!kIsWeb && Platform.isAndroid) ? await UnifiedPush.getDistributors() : <String>[];
+      (!kIsWeb && _isAndroid) ? await UnifiedPush.getDistributors() : <String>[];
 
   Future<void> useDistributor(String id) async {
     await UnifiedPush.saveDistributor(id);
@@ -98,7 +97,7 @@ class PushService {
   }
 
   Future<void> disable() async {
-    if (!kIsWeb && Platform.isAndroid) await UnifiedPush.unregister();
+    if (!kIsWeb && _isAndroid) await UnifiedPush.unregister();
   }
 
   Future<void> _onNewEndpoint(PushEndpoint endpoint) async {
@@ -140,3 +139,6 @@ class PushService {
     );
   }
 }
+
+bool get _isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+bool get _isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;

@@ -1,0 +1,81 @@
+# Steady test stack for a PC: server, push relay, and a Cloudflare tunnel for phones.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Use ./start.sh rather than running this directly; it creates keys and accounts.
+#
+#   phone ──https──> Cloudflare ──tunnel──> caddy:80 ──> pocketbase:8090 (+ web app)
+#                                                         pusher ──> ntfy / Apple
+#
+# The PocketBase dashboard is only reachable from this PC at http://localhost:8090/_/
+
+name: steady-test
+
+services:
+  pocketbase:
+    build: ../../server
+    restart: unless-stopped
+    environment:
+      STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-Steady test}
+      STEADY_CONSENT_VERSION: test-1
+      STEADY_PUSHER_URL: http://pusher:8090
+      STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
+      STEADY_VAPID_PUBLIC_KEY: ${STEADY_VAPID_PUBLIC_KEY}
+      TZ: Africa/Johannesburg
+    volumes:
+      - pb_data:/pb/pb_data
+      - ../../server/pb_hooks/content:/pb/pb_hooks/content:ro
+      # the web version of the app, served on the same address
+      - ./web:/pb/pb_public:ro
+    ports:
+      - "127.0.0.1:8090:8090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pusher:
+    build: ../../pusher
+    restart: unless-stopped
+    environment:
+      PUSHER_SECRET: ${PUSHER_SECRET}
+      VAPID_PRIVATE_KEY_FILE: /secrets/vapid.pem
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:test@example.com}
+      APNS_KEY_FILE: ${APNS_KEY_FILE:-}
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+      APNS_TOPIC: ${APNS_TOPIC:-za.co.openworks.steady}
+    volumes:
+      - ./secrets:/secrets:ro
+
+  # Keeps the PocketBase dashboard off the internet; everything else passes through.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+
+  # Named tunnel: a fixed address on your own domain. Needs TUNNEL_TOKEN.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on: [caddy]
+    profiles: [named]
+
+  # Quick tunnel: random trycloudflare.com address, no account. No live updates in the app
+  # (Cloudflare doesn't pass Server-Sent Events through quick tunnels) and a new address each start.
+  quicktunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://caddy:80
+    depends_on: [caddy]
+    profiles: [quick]
+
+volumes:
+  pb_data:

@@ -1,19 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import '../models.dart';
 
-/// Server address, set at build time:
-///   flutter run --dart-define=STEADY_SERVER=https://steady.yourpractice.co.za
-const kServerUrl = String.fromEnvironment('STEADY_SERVER', defaultValue: 'http://10.0.2.2:8090');
+/// Server address. Practice builds set it at build time:
+///   flutter build appbundle --dart-define=STEADY_SERVER=https://steady.yourpractice.co.za
+/// Without it, the web app uses the address it was loaded from, and the phone app
+/// asks for an address on first launch (handy for testing through a tunnel).
+const kServerUrl = String.fromEnvironment('STEADY_SERVER');
 
 const _authKey = 'steady.auth';
+const _serverKey = 'steady.server';
+
+/// Returns a clean https://host[:port] address, or null if it isn't usable.
+String? normaliseServerUrl(String input) {
+  var s = input.trim();
+  if (s.isEmpty) return null;
+  if (!s.contains('://')) s = 'https://$s';
+  final u = Uri.tryParse(s);
+  if (u == null || u.host.isEmpty || !(u.scheme == 'https' || u.scheme == 'http')) return null;
+  final path = u.path.replaceAll(RegExp(r'/+$'), '');
+  return '${u.scheme}://${u.host}${u.hasPort ? ':${u.port}' : ''}$path';
+}
 
 /// Turns any error into a sentence a person can act on.
 String errorText(Object error) {
+  if (error is FormatException) return error.message;
   if (error is ClientException) {
     if (error.statusCode == 0) return "Can't reach the server. Check your connection and try again.";
     final r = error.response;
@@ -32,12 +48,15 @@ String errorText(Object error) {
 
 class Api {
   final PocketBase pb;
-  Api._(this.pb);
+  final FlutterSecureStorage _storage;
+  Api._(this.pb, this._storage);
 
   static Future<Api> create({FlutterSecureStorage storage = const FlutterSecureStorage()}) async {
     String? initial;
+    String? saved;
     try {
       initial = await storage.read(key: _authKey);
+      saved = await storage.read(key: _serverKey);
     } catch (_) {
       initial = null; // e.g. keychain unavailable after restore; user signs in again
     }
@@ -46,7 +65,39 @@ class Api {
       initial: initial,
       clear: () => storage.delete(key: _authKey),
     );
-    return Api._(PocketBase(kServerUrl, authStore: store));
+    final url = kServerUrl.isNotEmpty
+        ? kServerUrl
+        : (saved != null && saved.isNotEmpty)
+            ? saved
+            : kIsWeb
+                ? Uri.base.origin
+                : '';
+    return Api._(PocketBase(url, authStore: store), storage);
+  }
+
+  /// Fixed at build time, so the server can't be changed in the app.
+  bool get serverLocked => kServerUrl.isNotEmpty;
+  bool get hasServer => pb.baseURL.isNotEmpty;
+  String get serverUrl => pb.baseURL;
+
+  /// Checks the address answers as a Steady server, then switches to it and signs out.
+  Future<void> setServer(String input) async {
+    final url = normaliseServerUrl(input);
+    if (url == null) throw const FormatException('That doesn\'t look like a web address.');
+    final probe = PocketBase(url);
+    try {
+      final res = await probe.send<Map<String, dynamic>>('/api/steady/config');
+      if (res['crisisLines'] == null) throw const FormatException('That server isn\'t running Steady.');
+    } on ClientException catch (e) {
+      throw FormatException(e.statusCode == 0
+          ? 'Couldn\'t reach $url. Check the address and that the server is running.'
+          : 'That server isn\'t running Steady (${e.statusCode}).');
+    } finally {
+      probe.close();
+    }
+    pb.authStore.clear();
+    pb.baseURL = url;
+    await _storage.write(key: _serverKey, value: url);
   }
 
   RecordModel? get me => pb.authStore.record;

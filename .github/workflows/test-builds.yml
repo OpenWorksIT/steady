@@ -1,0 +1,66 @@
+# Builds an installable Android APK and the web app, and publishes them to the
+# "test-build" pre-release. The APK asks for the server address on first launch.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Test builds
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/test-builds.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: test-builds
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: generate platform folders
+        working-directory: app
+        run: |
+          flutter create --org za.co.openworks --project-name steady --platforms android,web . > ../create.txt 2>&1
+          rm -f test/widget_test.dart
+          python3 scripts/patch_android.py
+          python3 scripts/patch_web.py
+
+      - name: build apk
+        working-directory: app
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+
+      - name: build web
+        working-directory: app
+        run: |
+          set -o pipefail
+          flutter build web --release --no-web-resources-cdn 2>&1 | tee ../web.txt || { echo "::error title=flutter build web::$(sed 's/%/%25/g' ../web.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+
+      - name: package
+        run: |
+          mkdir -p out
+          cp app/build/app/outputs/flutter-apk/app-release.apk out/steady-test.apk
+          (cd app/build/web && zip -qr ../../../out/steady-web.zip .)
+          ls -la out
+
+      - name: publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete test-build --yes --cleanup-tag 2>/dev/null || true
+          gh release create test-build out/steady-test.apk out/steady-web.zip \
+            --prerelease --target "$GITHUB_SHA" --title "Test build ($(date -u +%Y-%m-%d) ${GITHUB_SHA::7})" \
+            --notes "For testing only. Install steady-test.apk on Android and enter your test server address on first launch. steady-web.zip is the web app served by deploy/test/start.sh."

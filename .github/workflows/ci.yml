@@ -30,6 +30,24 @@ jobs:
           docker logs pb 2>&1 | tee pb.log
           ! grep -iE "error|panic|failed" pb.log
 
+  e2e:
+    # Starts the test stack (server, relay, caddy; no tunnel) and runs the full
+    # clinician/patient flow against the real PocketBase.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: start test stack
+        run: NO_TUNNEL=1 deploy/test/start.sh
+      - name: smoke test
+        run: |
+          set -o pipefail
+          python3 deploy/test/smoke.py 2>&1 | tee smoke.txt || { echo "::error title=smoke test::$(sed 's/%/%25/g' smoke.txt | awk '{printf "%s%%0A", $0}')"; exit 1; }
+      - name: server log on failure
+        if: failure()
+        run: |
+          docker compose -f deploy/test/compose.yml --env-file deploy/test/.env logs pocketbase pusher > pb.log 2>&1 || true
+          echo "::error title=server log::$(sed 's/%/%25/g' pb.log | tail -c 50000 | awk '{printf "%s%%0A", $0}')"
+
   pusher:
     runs-on: ubuntu-latest
     steps:

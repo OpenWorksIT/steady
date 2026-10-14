@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'app_state.dart';
 import 'services/api.dart';
 import 'services/push.dart';
+import 'ui/auth/server_screen.dart';
 import 'ui/auth/sign_in_screen.dart';
 import 'ui/clinician/clinician_shell.dart';
 import 'ui/patient/patient_home.dart';
@@ -43,6 +44,7 @@ class RootGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    if (!state.api.hasServer) return const ServerScreen();
     if (!state.signedIn) return const SignInScreen();
     if (state.isClinician) return const ClinicianShell();
     if (state.isPatient) return const PatientHome();
