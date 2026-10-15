@@ -1,0 +1,17 @@
+# Weekly checks for security fixes and updates in Steady's dependencies.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: pub
+    directory: /app
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: gomod
+    directory: /pusher
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directories: [/server, /pusher]
+    schedule: { interval: weekly }

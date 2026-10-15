@@ -108,6 +108,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await api.forgetThisDevice();
     await PushService.instance.disable();
     api.signOut();
     notifyListeners();

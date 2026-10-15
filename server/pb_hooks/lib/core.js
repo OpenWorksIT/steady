@@ -389,6 +389,33 @@ function nextAvailable(repeat, fromMs, tzOffsetMinutes) {
   return null;
 }
 
+/* ---------- push registrations ---------- */
+
+/**
+ * Checks a device registration. Returns "" if fine, otherwise a reason.
+ * UnifiedPush tokens are {"endpoint","p256dh","auth"}; the relay POSTs to the endpoint,
+ * so it must be a public https address (the relay re-checks the resolved address).
+ */
+function validateDeviceToken(provider, token) {
+  token = typeof token === "string" ? token : "";
+  if (provider === "apns") return /^[0-9a-fA-F]{64,200}$/.test(token) ? "" : "Invalid APNs token.";
+  if (provider === "fcm") return /^[A-Za-z0-9_:\-]{20,4096}$/.test(token) ? "" : "Invalid FCM token.";
+  if (provider !== "unifiedpush") return "Unknown push provider.";
+  if (token.length > 2000) return "Push registration is too long.";
+  var sub;
+  try { sub = JSON.parse(token); } catch (e) { return "Invalid push registration."; }
+  if (!sub || typeof sub !== "object") return "Invalid push registration.";
+  var m = /^https:\/\/([^\/:?#@]+)(:\d{1,5})?(\/[^\s]*)?$/.exec(typeof sub.endpoint === "string" ? sub.endpoint : "");
+  if (!m) return "Push endpoint must be an https address.";
+  var host = m[1].toLowerCase();
+  if (host.indexOf(".") < 0 || host === "localhost" || /\.(localhost|local|internal)$/.test(host) || /^[\d.]+$/.test(host) || host.indexOf("[") >= 0) {
+    return "Push endpoint must be a public address.";
+  }
+  if (!/^[A-Za-z0-9_\-]{80,100}=*$/.test(sub.p256dh || "")) return "Invalid push key.";
+  if (!/^[A-Za-z0-9_\-]{16,32}=*$/.test(sub.auth || "")) return "Invalid push secret.";
+  return "";
+}
+
 var CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function normaliseCode(code) {
   return str(code, 40).toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -596,6 +623,7 @@ module.exports = {
   DAY: DAY,
   SEVERITIES: SEVERITIES,
   CODE_ALPHABET: CODE_ALPHABET,
+  validateDeviceToken: validateDeviceToken,
   validateInstrument: validateInstrument,
   optionsFor: optionsFor,
   validateAnswers: validateAnswers,

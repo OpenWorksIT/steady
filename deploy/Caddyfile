@@ -10,13 +10,16 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Cross-Origin-Opener-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
 		-Server
 	}
 
-	# The PocketBase dashboard is for OpenWorks/practice IT only.
-	# Restrict it to your office or VPN addresses (edit the ranges), or remove this block
-	# and reach the dashboard over an SSH tunnel instead.
-	@dashboard path /_/*
+	# The PocketBase dashboard and superuser sign-in are for OpenWorks/practice IT only.
+	# Restrict them to your office or VPN addresses (edit the ranges), or remove the
+	# allowed block and reach the dashboard over an SSH tunnel instead.
+	@dashboard path /_/* /api/collections/_superusers/*
 	handle @dashboard {
 		@allowed remote_ip 127.0.0.1/32 10.0.0.0/8 192.168.0.0/16
 		handle @allowed {
@@ -26,6 +29,8 @@
 	}
 
 	handle {
+		# the web app: only this site's own code, fonts and API (tested with the Flutter build)
+		header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		reverse_proxy pocketbase:8090 {
 			# keep realtime (server-sent events) connections open
 			flush_interval -1

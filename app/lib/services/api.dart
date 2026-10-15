@@ -149,6 +149,22 @@ class Api {
 
   void signOut() => pb.authStore.clear();
 
+  String? _deviceToken;
+
+  /// Removes this phone's push registration, so a signed-out account gets no more
+  /// notifications here. Call before [signOut].
+  Future<void> forgetThisDevice() async {
+    final t = _deviceToken;
+    if (!signedIn || t == null) return;
+    try {
+      final list = await pb.collection('devices').getList(perPage: 5, filter: pb.filter('token = {:t}', {'t': t}));
+      for (final d in list.items) {
+        await pb.collection('devices').delete(d.id);
+      }
+    } catch (_) {/* best effort; the server drops dead registrations */}
+    _deviceToken = null;
+  }
+
   Future<void> requestPasswordReset(String email) =>
       pb.collection('users').requestPasswordReset(email.trim());
 
@@ -171,6 +187,7 @@ class Api {
     bool sandbox = false,
   }) async {
     if (!signedIn) return;
+    _deviceToken = token;
     final body = {'user': myId, 'platform': platform, 'provider': provider, 'token': token, 'sandbox': sandbox};
     try {
       final existing = await pb.collection('devices').getList(

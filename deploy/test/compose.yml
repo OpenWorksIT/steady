@@ -20,6 +20,8 @@ services:
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
       STEADY_VAPID_PUBLIC_KEY: ${STEADY_VAPID_PUBLIC_KEY}
+      # the Cloudflare tunnel passes the visitor's address in this header
+      STEADY_TRUSTED_PROXY_HEADER: Cf-Connecting-Ip
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data

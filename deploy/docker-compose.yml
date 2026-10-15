@@ -24,10 +24,16 @@ services:
     depends_on:
       - pocketbase
     networks: [edge, internal]
+    security_opt: ["no-new-privileges:true"]
 
   pocketbase:
     build: ../server
     restart: unless-stopped
+    # only the practice's own site may call the API from a browser
+    command: ["/pb/pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb/pb_data", "--hooksDir=/pb/pb_hooks",
+              "--migrationsDir=/pb/pb_migrations", "--automigrate=false", "--origins=https://${STEADY_DOMAIN}"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     environment:
       STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME}
       STEADY_CONSENT_VERSION: ${STEADY_CONSENT_VERSION}
@@ -36,6 +42,8 @@ services:
       STEADY_VAPID_PUBLIC_KEY: ${STEADY_VAPID_PUBLIC_KEY}
       STEADY_CRISIS_LINES_JSON: ${STEADY_CRISIS_LINES_JSON:-}
       STEADY_NOTIFICATION_RETENTION_DAYS: ${STEADY_NOTIFICATION_RETENTION_DAYS:-90}
+      # Caddy puts the visitor's address here; used for rate limits and the audit log
+      STEADY_TRUSTED_PROXY_HEADER: X-Forwarded-For
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data
@@ -46,6 +54,9 @@ services:
   pusher:
     build: ../pusher
     restart: unless-stopped
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     environment:
       PUSHER_SECRET: ${PUSHER_SECRET}
       # Apple (iOS). Leave APNS_KEY_FILE empty to disable.

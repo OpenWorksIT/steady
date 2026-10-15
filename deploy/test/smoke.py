@@ -166,11 +166,51 @@ def main():
     s, r = call("POST", "/api/steady/consent", doc, {"kind": "privacy", "version": "privacy-1"})
     check(s == 200, "privacy notice acknowledgement is recorded", r)
 
+    # push registrations: the relay posts to UnifiedPush endpoints, so they must be public https
+    key, secret = "B" + "A" * 86, "A" * 22
+    bad = json.dumps({"endpoint": "http://pocketbase:8090/api/", "p256dh": key, "auth": secret})
+    s, r = call("POST", "/api/collections/devices/records", pat,
+                {"user": pat_id, "platform": "android", "provider": "unifiedpush", "token": bad})
+    check(s == 400, "a push endpoint pointing inside the server is refused", r)
+    good = json.dumps({"endpoint": "https://ntfy.sh/upSmokeTest123", "p256dh": key, "auth": secret})
+    s, r = call("POST", "/api/collections/devices/records", pat,
+                {"user": pat_id, "platform": "android", "provider": "unifiedpush", "token": good})
+    check(s == 200, "a normal UnifiedPush registration is accepted", r)
+    s, r = call("POST", "/api/collections/notifications/records", pat, {"recipient": pat_id, "kind": "system", "title": "x"})
+    check(s in (400, 403), "nobody can create notifications directly", r)
+    s, r = call("PATCH", f"/api/collections/users/records/{pat_id}", pat, {"consentVersion": "forged"})
+    check(s in (400, 403, 404), "a patient can't rewrite their consent record", r)
+
     s, r = call("POST", f"/api/steady/patients/{pat_id}/deactivate", doc)
     check(s == 200, "clinician stops the patient's access", r)
     s, r = call("POST", "/api/collections/checkins/records", pat,
                 {"patient": pat_id, "mood": 3, "anxiety": 3, "sleep": 3, "energy": 3})
-    check(s in (400, 403), "a stopped patient can't check in", r)
+    check(s in (400, 401, 403), "a stopped patient can't check in", r)
+    s, r = call("GET", "/api/collections/checkins/records", pat)
+    check(s in (401, 403) or (s == 200 and r.get("totalItems") == 0), "a stopped patient's old session no longer reads data", r)
+    s, r = call("POST", "/api/collections/users/auth-refresh", pat)
+    check(s in (401, 403), "a stopped patient's session can't be renewed", r)
+
+    # server settings, as the superuser
+    if ENV.get("SUPERUSER_EMAIL") and ENV.get("SUPERUSER_PASSWORD"):
+        s, su = call("POST", "/api/collections/_superusers/auth-with-password",
+                     body={"identity": ENV["SUPERUSER_EMAIL"], "password": ENV["SUPERUSER_PASSWORD"]})
+        check(s == 200, "superuser signs in", su)
+        s, st = call("GET", "/api/settings", su["token"])
+        rl = st.get("rateLimits", {})
+        check(s == 200 and rl.get("enabled") is True and any(x.get("label") == "*:auth" for x in rl.get("rules", [])),
+              "rate limits are switched on", rl)
+        check(bool(st.get("trustedProxy", {}).get("headers")), "the real client address is taken from the proxy", st.get("trustedProxy"))
+
+    # last, because it locks sign-in from this address for a minute
+    limited = False
+    for _ in range(14):
+        s, r = call("POST", "/api/collections/users/auth-with-password",
+                    body={"identity": "nobody@steady.test", "password": "wrong-password-123"})
+        if s == 429:
+            limited = True
+            break
+    check(limited, "repeated sign-in attempts are slowed down", r)
 
     print(f"\nAll {passed} checks passed against {BASE}")
 

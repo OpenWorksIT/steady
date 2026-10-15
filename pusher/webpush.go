@@ -17,10 +17,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -42,8 +45,70 @@ type webPushSub struct {
 	Auth     string `json:"auth"`
 }
 
+// publicOnlyClient refuses to connect to loopback, private, link-local and other
+// non-public addresses. Endpoints come from app registrations, so without this a
+// registration could make the relay send requests into the server's own network.
+// The check runs on the address actually dialled, after DNS, so it also covers names
+// that resolve to private addresses. Redirects are not followed.
+func publicOnlyClient(allowPrivate bool) *http.Client {
+	dialer := &net.Dialer{
+		Timeout: 10 * time.Second,
+		Control: func(network, address string, _ syscall.RawConn) error {
+			if allowPrivate {
+				return nil
+			}
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			ip, err := netip.ParseAddr(host)
+			if err != nil {
+				return fmt.Errorf("refusing to dial %q", host)
+			}
+			if !isPublicAddr(ip) {
+				return fmt.Errorf("refusing to dial non-public address %s", ip)
+			}
+			return nil
+		},
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = dialer.DialContext
+	transport.Proxy = nil
+	return &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func isPublicAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if !ip.IsValid() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+	for _, p := range nonPublic {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+var nonPublic = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"), // carrier-grade NAT
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
+
 func newWebPushFromEnv() (*WebPush, error) {
-	w := &WebPush{client: &http.Client{Timeout: 15 * time.Second}, vapidSubject: os.Getenv("VAPID_SUBJECT")}
+	allowPrivate := os.Getenv("PUSHER_ALLOW_PRIVATE_ENDPOINTS") == "1"
+	w := &WebPush{client: publicOnlyClient(allowPrivate), vapidSubject: os.Getenv("VAPID_SUBJECT")}
 	if path := os.Getenv("VAPID_PRIVATE_KEY_FILE"); path != "" {
 		raw, err := os.ReadFile(path)
 		if err != nil {

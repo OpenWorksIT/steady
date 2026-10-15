@@ -65,6 +65,8 @@ function makeRuntime(opts = {}) {
     setEmail(v) { this.data.email = v; }
     setPassword(v) { this.data.passwordHash = "hashed:" + v.length; }
     setVerified(v) { this.data.verified = v; }
+    original() { return this._original || null; }
+    refreshTokenKey() { this.data.tokenKey = "key-" + (++idSeq); }
   }
 
   function matchClause(rec, clause, params) {
@@ -102,7 +104,8 @@ function makeRuntime(opts = {}) {
     });
   }
 
-  const hooks = { createRequest: {}, afterCreate: {}, list: {}, view: {} };
+  const hooks = { createRequest: {}, updateRequest: {}, update: {}, afterCreate: {}, list: {}, view: {} };
+  const settings = { trustedProxy: { headers: [], useLeftmostIP: false }, rateLimits: { enabled: false, rules: [] }, __settings: true };
   const routes = {};
   const crons = {};
   const audit = [];
@@ -115,8 +118,14 @@ function makeRuntime(opts = {}) {
     findRecordsByFilter: (n, f, sort, limit, offset, p) => sortRecords(filterRecords(n, f, p), sort).slice(offset || 0, (offset || 0) + (limit || 1e9)),
     save: (model) => {
       if (model instanceof Collection) { defineCollection(model); return; }
+      if (model && model.__settings) return;
       const name = model.collectionName;
       const isNew = !model.id;
+      if (!isNew && hooks.update[name]) {
+        let called = false;
+        hooks.update[name]({ record: model, app, next() { called = true; } });
+        if (!called) throw new Error("update hook didn't call next()");
+      }
       if (isNew) {
         model.id = newId();
         if (!model.data.created) model.data.created = iso(clock + idSeq); // keep creation order stable
@@ -124,6 +133,7 @@ function makeRuntime(opts = {}) {
       model.data.updated = iso(clock + idSeq);
       if (name === "users" && isNew && model.data.email && store.users.some((u) => u.data.email === model.data.email)) throw new BadRequestError("email exists");
       if (isNew) store[name].push(model);
+      model._original = new Record(collections[name], model.data);
       if (isNew && hooks.afterCreate[name]) hooks.afterCreate[name]({ record: model, app, next() {} });
     },
     delete: (model) => {
@@ -131,6 +141,7 @@ function makeRuntime(opts = {}) {
       store[model.collectionName] = store[model.collectionName].filter((r) => r !== model);
     },
     runInTransaction: (fn) => fn(app),
+    settings: () => settings,
     logger: () => ({ warn: (...a) => { if (opts.verbose) console.warn(...a); } })
   };
 
@@ -166,6 +177,8 @@ function makeRuntime(opts = {}) {
     routerAdd: (method, p, handler) => { routes[method + " " + p] = handler; },
     cronAdd: (id, expr, fn) => { crons[id] = fn; },
     onRecordCreateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.createRequest[t] = fn)),
+    onRecordUpdateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.updateRequest[t] = fn)),
+    onRecordUpdate: (fn, ...tags) => tags.forEach((t) => (hooks.update[t] = fn)),
     onRecordAfterCreateSuccess: (fn, ...tags) => tags.forEach((t) => (hooks.afterCreate[t] = fn)),
     onRecordsListRequest: (fn, ...tags) => tags.forEach((t) => (hooks.list[t] = fn)),
     onRecordViewRequest: (fn, ...tags) => tags.forEach((t) => (hooks.view[t] = fn)),
@@ -235,7 +248,7 @@ function makeRuntime(opts = {}) {
   }
   const makeUser = (fields) => makeRecord("users", fields);
 
-  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, tick: (ms) => { clock += ms; }, now: () => clock };
+  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, tick: (ms) => { clock += ms; }, now: () => clock };
 }
 
 /* ------------------------------------------------------------------ tests */
@@ -500,4 +513,57 @@ test("wearable: consent gates uploads, values merge, clinician sees baselines", 
   assert.equal(up({ days: [{ day: "2026-10-15", values: { steps: 1 } }] }).status, 403);
   assert.equal(rt.store.biometrics.length, 21);
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "consent.wearable.withdrawn"));
+});
+
+test("security: stopping an account ends its sessions; consent and settings are locked down", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: doc.id, email: "p@example.org", tokenKey: "k0" });
+  assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/deactivate`, { auth: doc }).status, 200);
+  assert.notEqual(pat.getString("tokenKey"), "k0", "a new token key signs the patient out everywhere");
+
+  const users = rt.app.findCollectionByNameOrId("users");
+  assert.match(users.updateRule, /consentVersion:isset = false/);
+  assert.match(users.listRule, /^@request\.auth\.active = true && \(/);
+  for (const name of ["checkins", "assignments", "biometrics", "notifications", "devices"]) {
+    assert.match(rt.app.findCollectionByNameOrId(name).listRule, /@request\.auth\.active = true/, name);
+  }
+  assert.match(rt.app.findCollectionByNameOrId("notifications").updateRule, /severity:isset = false/);
+  assert.equal(users.fields.getByName("password"), undefined); // the fake users collection has no password field
+
+  assert.equal(rt.settings.rateLimits.enabled, true);
+  assert.ok(rt.settings.rateLimits.rules.some((r) => r.label === "*:auth" && r.maxRequests <= 10));
+  assert.ok(rt.settings.rateLimits.rules.some((r) => r.label === "POST /api/steady/join"));
+  assert.equal(JSON.stringify(rt.settings.trustedProxy.headers), JSON.stringify(["X-Forwarded-For"]));
+});
+
+test("security: push registrations are validated and follow the phone", () => {
+  const rt = makeRuntime({ env: ENV });
+  const a = rt.makeUser({ name: "A", role: "patient", active: true, email: "a@example.org" });
+  const b = rt.makeUser({ name: "B", role: "patient", active: true, email: "b@example.org" });
+  const sub = (endpoint) => JSON.stringify({ endpoint, p256dh: "B" + "A".repeat(86), auth: "A".repeat(22) });
+  for (const bad of ["http://ntfy.sh/x", "https://pocketbase:8090/api/", "https://10.0.0.5/x", "https://localhost/x"]) {
+    const r = rt.create("devices", a, { user: a.id, platform: "android", provider: "unifiedpush", token: sub(bad) });
+    assert.equal(r.status, 400, bad);
+  }
+  assert.equal(rt.create("devices", a, { user: a.id, platform: "ios", provider: "apns", token: "not-hex" }).status, 400);
+  const ok = rt.create("devices", a, { user: a.id, platform: "android", provider: "unifiedpush", token: sub("https://ntfy.sh/upAbc") });
+  assert.equal(ok.status, 200);
+  // B signs in on the same phone: the registration moves to B
+  const moved = rt.create("devices", b, { user: a.id, platform: "android", provider: "unifiedpush", token: sub("https://ntfy.sh/upAbc") });
+  assert.equal(moved.status, 200);
+  assert.equal(rt.store.devices.length, 1);
+  assert.equal(rt.store.devices[0].getString("user"), b.id);
+});
+
+test("security: clinician reads of watch data are audited", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const before = rt.store.auditlog.length;
+  const info = { query: { filter: "patient = 'abcdefghijklmno'" } };
+  rt.hooks.list.biometrics({ auth: doc, app: rt.app, collection: { name: "biometrics" }, realIP: () => "127.0.0.1", requestInfo: () => info, next() {} });
+  assert.equal(rt.store.auditlog.length, before + 1);
+  const row = rt.store.auditlog[rt.store.auditlog.length - 1];
+  assert.equal(row.getString("action"), "list.biometrics");
+  assert.equal(row.getString("patient"), "abcdefghijklmno");
 });

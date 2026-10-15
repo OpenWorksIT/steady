@@ -22,6 +22,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -242,4 +243,26 @@ func TestNewWebPushFromEnvLoadsVapid(t *testing.T) {
 	if err != nil || len(wp.VapidPublicKey()) < 80 {
 		t.Fatalf("vapid: %v %q", err, wp.VapidPublicKey())
 	}
+}
+
+func TestPublicOnlyClientRefusesPrivateAddresses(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"127.0.0.1": false, "10.1.2.3": false, "172.18.0.4": false, "192.168.1.10": false,
+		"169.254.169.254": false, "100.64.1.1": false, "::1": false, "fd00::1": false, "0.0.0.0": false,
+		"::ffff:127.0.0.1": false, "1.1.1.1": true, "8.8.8.8": true, "2606:4700::1111": true,
+	} {
+		if got := isPublicAddr(netip.MustParseAddr(addr)); got != want {
+			t.Errorf("isPublicAddr(%s) = %v, want %v", addr, got, want)
+		}
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(201) }))
+	defer ts.Close()
+	if _, err := publicOnlyClient(false).Post(ts.URL, "text/plain", nil); err == nil || !strings.Contains(err.Error(), "non-public") {
+		t.Fatalf("expected the loopback test server to be refused, got %v", err)
+	}
+	res, err := publicOnlyClient(true).Post(ts.URL, "text/plain", nil)
+	if err != nil {
+		t.Fatalf("allowPrivate should connect: %v", err)
+	}
+	res.Body.Close()
 }

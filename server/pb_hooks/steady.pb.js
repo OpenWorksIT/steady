@@ -636,7 +636,7 @@ onRecordsListRequest((e) => {
     const m = /patient\s*=\s*["']([a-z0-9]{15})["']/.exec(String(filter));
     s.audit(e.app, e, "list." + e.collection.name, String(filter).slice(0, 180), m ? m[1] : "");
   }
-}, "checkins", "assignments");
+}, "checkins", "assignments", "biometrics");
 
 onRecordViewRequest((e) => {
   e.next();
@@ -644,7 +644,40 @@ onRecordViewRequest((e) => {
     const s = require(`${__hooks}/lib/server.js`);
     s.audit(e.app, e, "view." + e.collection.name, e.collection.name + ":" + e.record.id, e.record.getString("patient"));
   }
-}, "checkins", "assignments");
+}, "checkins", "assignments", "biometrics");
+
+/* ---------- accounts and devices ---------- */
+
+// Stopping an account (by a psychologist or in the dashboard) signs it out everywhere:
+// a new token key makes every token issued before it invalid.
+onRecordUpdate((e) => {
+  const r = e.record;
+  const before = r.original();
+  if (before && before.getBool("active") && !r.getBool("active")) r.refreshTokenKey();
+  e.next();
+}, "users");
+
+// Push registrations: check the shape (the relay POSTs to UnifiedPush endpoints, so they
+// must be https URLs) and hand over a phone's token to whoever signed in on it last.
+onRecordCreateRequest((e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  if (!e.auth || !e.auth.getBool("active")) throw new ForbiddenError("Please sign in.");
+  const r = e.record;
+  const err = s.core.validateDeviceToken(r.getString("provider"), r.getString("token"));
+  if (err) throw s.badRequest(err);
+  r.set("user", e.auth.id);
+  const others = e.app.findRecordsByFilter("devices", "token = {:t}", "", 10, 0, { t: r.getString("token") });
+  others.forEach((d) => { try { e.app.delete(d); } catch (_) { /* gone */ } });
+  e.next();
+}, "devices");
+
+onRecordUpdateRequest((e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const r = e.record;
+  const err = s.core.validateDeviceToken(r.getString("provider"), r.getString("token"));
+  if (err) throw s.badRequest(err);
+  e.next();
+}, "devices");
 
 /* =====================================================================
  * Scheduled jobs (cron runs in UTC)
