@@ -142,6 +142,30 @@ def main():
         s, r = call("POST", "/api/steady/instruments/import", doc, {"format": "fhir", "data": fhir})
         check(s == 200 and r["licenceStatus"] == "review", "FHIR import lands under licence review", r)
 
+    import datetime
+    today = datetime.date.today()
+    days = [{"day": (today - datetime.timedelta(days=i)).isoformat(),
+             "values": {"rhr": 58 + i % 4, "steps": 5000 + 250 * i, "sleep_min": 400 + i, "rhr_method": "sleep"}}
+            for i in range(12)]
+    s, r = call("POST", "/api/steady/biometrics", pat, {"platform": "android", "days": days})
+    check(s == 403, "watch data is refused before the patient opts in", r)
+    s, r = call("POST", "/api/steady/consent", pat, {"kind": "wearable", "version": "wearable-1", "accepted": True})
+    check(s == 200, "patient opts in to sharing watch data", r)
+    s, r = call("POST", "/api/steady/biometrics", pat, {"platform": "android", "source": "smoke", "days": days})
+    check(s == 200 and r.get("saved") == 12, "patient uploads 12 days of watch summaries", r)
+    s, r = call("POST", "/api/steady/biometrics", pat, {"days": [{"day": today.isoformat(), "values": {"spo2_avg": 97}}]})
+    check(s == 200, "a later upload for the same day is merged", r)
+    s, bio = call("GET", f"/api/steady/patients/{pat_id}/biometrics", doc)
+    todays = [d for d in bio.get("days", []) if d["day"] == today.isoformat()]
+    check(s == 200 and len(bio["days"]) == 12 and todays and todays[0]["values"].get("spo2_avg") == 97
+          and todays[0]["values"].get("rhr") is not None, "clinician sees the daily values, merged", bio.get("days", [])[-2:])
+    check(bio["baseline"]["rhr"][-1]["n"] >= 7 and bio["baseline"]["rhr"][-1]["lo"] is not None,
+          "a personal baseline range is calculated", bio["baseline"]["rhr"][-1])
+    s, r = call("GET", "/api/collections/biometrics/records", pat)
+    check(s == 200 and r.get("totalItems") == 12, "patient can read only their own watch data", r.get("totalItems"))
+    s, r = call("POST", "/api/steady/consent", doc, {"kind": "privacy", "version": "privacy-1"})
+    check(s == 200, "privacy notice acknowledgement is recorded", r)
+
     s, r = call("POST", f"/api/steady/patients/{pat_id}/deactivate", doc)
     check(s == 200, "clinician stops the patient's access", r)
     s, r = call("POST", "/api/collections/checkins/records", pat,

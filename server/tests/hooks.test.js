@@ -29,6 +29,7 @@ function makeRuntime(opts = {}) {
   class BadRequestError extends ApiError { constructor(m, d) { super(400, m, d); } }
   class ForbiddenError extends ApiError { constructor(m, d) { super(403, m, d); } }
   class NotFoundError extends ApiError { constructor(m, d) { super(404, m, d); } }
+  class UnauthorizedError extends ApiError { constructor(m, d) { super(401, m, d); } }
 
   const collections = {};
   const store = {};
@@ -142,7 +143,7 @@ function makeRuntime(opts = {}) {
     console, JSON, Date: FakeDate, Math, Number, String, Array, Object, RegExp, Error, isFinite, parseInt, parseFloat, encodeURIComponent,
     __hooks: HOOKS,
     $app: app,
-    DateTime, Record, Collection, ApiError, BadRequestError, ForbiddenError, NotFoundError,
+    DateTime, Record, Collection, ApiError, BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError,
     SelectField: fieldClass("select"), RelationField: fieldClass("relation"), BoolField: fieldClass("bool"),
     DateField: fieldClass("date"), TextField: fieldClass("text"), NumberField: fieldClass("number"),
     toString: (v) => (Buffer.isBuffer(v) ? v.toString("utf8") : Array.isArray(v) ? Buffer.from(v).toString("utf8") : String(v)),
@@ -186,7 +187,7 @@ function makeRuntime(opts = {}) {
   for (const f of fs.readdirSync(path.join(ROOT, "pb_migrations")).sort()) run(path.join(ROOT, "pb_migrations", f));
   run(path.join(HOOKS, "steady.pb.js"));
 
-  function call(method, p, { auth = null, body = {}, params = {} } = {}) {
+  function call(method, p, { auth = null, body = {}, params = {}, query = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
       const [m, pat] = k.split(" ");
       if (m !== method) return false;
@@ -201,7 +202,7 @@ function makeRuntime(opts = {}) {
       auth,
       app,
       request: { pathValue: (n) => params[n] },
-      requestInfo: () => ({ body, query: {} }),
+      requestInfo: () => ({ body, query }),
       realIP: () => "127.0.0.1",
       json: (status, data) => { out = { status, data: JSON.parse(JSON.stringify(data)) }; }
     };
@@ -433,4 +434,70 @@ test("clinicians create, edit, import and archive questionnaires", () => {
 
   const cat = rt.call("GET", "/api/steady/reproschema/catalog", { auth: doc });
   assert.ok(cat.data.items.length > 10);
+});
+
+test("wearable: consent gates uploads, values merge, clinician sees baselines", () => {
+  const rt = makeRuntime({ env: ENV, now: Date.UTC(2026, 9, 15, 6, 0) });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true });
+  const other = rt.makeUser({ name: "Dr Other", role: "clinician", active: true });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: doc.id, tzOffset: 120 });
+
+  // privacy acknowledgement works for anyone
+  assert.equal(rt.call("POST", "/api/steady/consent", { auth: doc, body: { kind: "privacy", version: "privacy-1" } }).status, 200);
+  assert.equal(rt.app.findRecordById("users", doc.id).getString("privacyNoticeVersion"), "privacy-1");
+  assert.equal(rt.call("POST", "/api/steady/consent", { auth: doc, body: { kind: "wearable", version: "w1", accepted: true } }).status, 400);
+
+  const days = [];
+  for (let i = 20; i >= 0; i--) {
+    const d = new Date(Date.UTC(2026, 9, 15 - i)).toISOString().slice(0, 10);
+    days.push({ day: d, values: { rhr: 55 + (i % 5), steps: 6000 + i * 100, sleep_min: 420, rhr_method: "sleep" } });
+  }
+  const up = (body) => rt.call("POST", "/api/steady/biometrics", { auth: pat, body });
+  assert.equal(up({ days }).status, 403, "no upload before consent");
+
+  assert.equal(rt.call("POST", "/api/steady/consent", { auth: pat, body: { kind: "wearable", version: "wearable-1", accepted: true } }).status, 200);
+  rt.app.findRecordById("users", pat.id); // record object is shared with `pat`
+  const r = up({ platform: "android", source: "health_connect", algorithm: "rhr-v1", days });
+  assert.equal(r.status, 200, JSON.stringify(r));
+  assert.equal(r.data.saved, 21);
+  assert.equal(rt.store.biometrics.length, 21);
+
+  // a later upload merges into the same day instead of duplicating
+  const r2 = up({ days: [{ day: "2026-10-15", values: { spo2_avg: 96, steps: 9999, bogus: 1 } }, { day: "2026-10-20", values: { steps: 1 } }] });
+  assert.equal(r2.data.saved, 1);
+  assert.equal(r2.data.errors.length, 1, "future day refused");
+  assert.deepEqual(r2.data.dropped, { bogus: 1 });
+  assert.equal(rt.store.biometrics.length, 21);
+  const today = JSON.parse(rt.store.biometrics.find((b) => b.getString("day") === "2026-10-15").getString("values"));
+  assert.deepEqual(today, { rhr: 55, steps: 9999, sleep_min: 420, rhr_method: "sleep", spo2_avg: 96 });
+
+  // clinician read with baselines
+  const g = rt.call("GET", `/api/steady/patients/${pat.id}/biometrics`, { auth: doc, query: { from: "2026-10-09", to: "2026-10-15" } });
+  assert.equal(g.status, 200, JSON.stringify(g));
+  assert.equal(g.data.days.length, 7);
+  assert.equal(g.data.connected, true);
+  const rhrBase = g.data.baseline.rhr;
+  assert.equal(rhrBase.length, 7);
+  assert.equal(rhrBase[0].n, 14, "Oct 9 sees the 14 earlier uploaded days");
+  assert.ok(rhrBase[6].lo >= 55 && rhrBase[6].hi <= 59);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "patient.biometrics"));
+
+  // default range is the last 4 weeks
+  const g2 = rt.call("GET", `/api/steady/patients/${pat.id}/biometrics`, { auth: doc });
+  assert.equal(g2.data.to, "2026-10-15");
+  assert.equal(g2.data.from, "2026-09-18");
+
+  // other clinicians and patients can't read it here
+  assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/biometrics`, { auth: other }).status, 404);
+  assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/biometrics`, { auth: pat }).status, 403);
+
+  // overview shows a small wearable summary
+  const ov = rt.call("GET", "/api/steady/overview", { auth: doc });
+  assert.deepEqual(ov.data.patients[0].wearable, { connected: true, days14: 14, lastDay: "2026-10-15" });
+
+  // withdrawing consent stops uploads; stored data stays for the record
+  assert.equal(rt.call("POST", "/api/steady/consent", { auth: pat, body: { kind: "wearable", version: "wearable-1", accepted: false } }).status, 200);
+  assert.equal(up({ days: [{ day: "2026-10-15", values: { steps: 1 } }] }).status, 403);
+  assert.equal(rt.store.biometrics.length, 21);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "consent.wearable.withdrawn"));
 });

@@ -437,6 +437,116 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
 }, $apis.requireAuth());
 
 /* =====================================================================
+ * Consent and acknowledgements
+ * ===================================================================== */
+
+// kind "privacy": anyone acknowledges the privacy notice shown on first launch.
+// kind "wearable": a patient agrees (or stops agreeing) to share watch data.
+routerAdd("POST", "/api/steady/consent", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  if (!e.auth) throw new UnauthorizedError("Please sign in.");
+  if (!e.auth.getBool("active")) throw new ForbiddenError("This account has been stopped. Please contact the practice.");
+  const b = s.body(e);
+  const version = s.core.str(b.version, 40);
+  if (!version) throw s.badRequest("version is required.");
+  const user = $app.findRecordById("users", e.auth.id);
+  if (b.kind === "privacy") {
+    user.set("privacyNoticeAt", new DateTime());
+    user.set("privacyNoticeVersion", version);
+  } else if (b.kind === "wearable") {
+    if (user.getString("role") !== "patient") throw s.badRequest("Only patients connect a watch.");
+    if (b.accepted === true) {
+      user.set("wearableConsentAt", new DateTime());
+      user.set("wearableConsentVersion", version);
+    } else {
+      user.set("wearableConsentAt", "");
+      user.set("wearableConsentVersion", "");
+    }
+  } else {
+    throw s.badRequest("kind must be 'privacy' or 'wearable'.");
+  }
+  $app.save(user);
+  s.audit($app, e, "consent." + b.kind + (b.kind === "wearable" && b.accepted !== true ? ".withdrawn" : ""), "version:" + version,
+    user.getString("role") === "patient" ? user.id : "");
+  return e.json(200, { kind: b.kind, version: version, accepted: b.kind === "privacy" || b.accepted === true });
+}, $apis.requireAuth());
+
+/* =====================================================================
+ * Wearable data
+ * ===================================================================== */
+
+// The patient's phone uploads one summary per day. Values are merged into that day's record.
+routerAdd("POST", "/api/steady/biometrics", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const w = require(`${__hooks}/lib/wearable.js`);
+  s.requireRole(e, "patient");
+  if (s.toMs(e.auth, "wearableConsentAt") === 0) throw new ForbiddenError("Watch data sharing isn't switched on for this account.");
+  const b = s.body(e);
+  const days = Array.isArray(b.days) ? b.days : [];
+  if (!days.length) throw s.badRequest("No days to save.");
+  if (days.length > 120) throw s.badRequest("Send at most 120 days at a time.");
+  const platform = b.platform === "ios" ? "ios" : "android";
+  const today = w.localDay(s.nowMs(), e.auth.getInt("tzOffset"));
+  const col = $app.findCollectionByNameOrId("biometrics");
+  let saved = 0;
+  const errors = [];
+  const dropped = {};
+  days.forEach((d) => {
+    const c = w.cleanDay(d, today, 400);
+    if (!c.ok) { errors.push(c.error); return; }
+    c.dropped.forEach((k) => { dropped[k] = (dropped[k] || 0) + 1; });
+    if (!Object.keys(c.values).length) return;
+    let rec = null;
+    try { rec = $app.findFirstRecordByFilter("biometrics", "patient = {:p} && day = {:d}", { p: e.auth.id, d: c.day }); } catch (_) { rec = null; }
+    let merged = c.values;
+    if (rec) {
+      const old = s.readJson(rec, "values") || {};
+      merged = Object.assign({}, old, c.values);
+    } else {
+      rec = new Record(col);
+      rec.set("patient", e.auth.id);
+      rec.set("day", c.day);
+    }
+    rec.set("values", merged);
+    rec.set("platform", platform);
+    rec.set("source", s.core.str(b.source, 80));
+    rec.set("algorithm", s.core.str(b.algorithm, 20));
+    $app.save(rec);
+    saved++;
+  });
+  return e.json(200, { saved: saved, errors: errors.slice(0, 10), dropped: dropped });
+}, $apis.requireAuth());
+
+// Clinician view: daily values plus the patient's own normal range for each day.
+routerAdd("GET", "/api/steady/patients/{id}/biometrics", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const w = require(`${__hooks}/lib/wearable.js`);
+  s.requireRole(e, "clinician");
+  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  const q = e.requestInfo().query || {};
+  const today = w.localDay(s.nowMs(), p.getInt("tzOffset") || 120);
+  const to = w.validDay(String(q.to || "")) ? String(q.to) : today;
+  let from = w.validDay(String(q.from || "")) ? String(q.from) : w.addDays(to, -27);
+  if (from > to) throw s.badRequest("from must be before to.");
+  if (from < w.addDays(to, -400)) from = w.addDays(to, -400);
+  const recs = $app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:a} && day <= {:b}", "day", 1000, 0,
+    { p: p.id, a: w.addDays(from, -w.BASELINE_WINDOW), b: to });
+  const byDay = {};
+  recs.forEach((r) => { byDay[r.getString("day")] = s.readJson(r, "values") || {}; });
+  const days = Object.keys(byDay).filter((d) => d >= from && d <= to).sort().map((d) => ({ day: d, values: byDay[d] }));
+  s.audit($app, e, "patient.biometrics", "user:" + p.id + " " + from + ".." + to, p.id);
+  return e.json(200, {
+    from: from,
+    to: to,
+    connected: s.toMs(p, "wearableConsentAt") > 0,
+    days: days,
+    baseline: w.baselines(byDay, from, to),
+    baselineWindow: w.BASELINE_WINDOW,
+    baselineMin: w.BASELINE_MIN
+  });
+}, $apis.requireAuth());
+
+/* =====================================================================
  * Record hooks
  * ===================================================================== */
 

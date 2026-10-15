@@ -216,7 +216,20 @@ function patientSummary(app, patient, tzOffset) {
     mood: core.dailySeries(rows, "mood", now, 14, tzOffset),
     anxiety: core.dailySeries(rows, "anxiety", now, 14, tzOffset),
     flags: core.reviewFlags(allRows, arows, now),
-    pending: arows.filter(function (a) { return a.status === "pending"; }).length
+    pending: arows.filter(function (a) { return a.status === "pending"; }).length,
+    wearable: wearableSummary(app, patient, now)
+  };
+}
+
+function wearableSummary(app, patient, now) {
+  var w = require(__hooks + "/lib/wearable.js");
+  var today = w.localDay(now, patient.getInt("tzOffset") || 120);
+  var recent = app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:d}", "-day", 14, 0,
+    { p: patient.id, d: w.addDays(today, -13) });
+  return {
+    connected: toMs(patient, "wearableConsentAt") > 0,
+    days14: recent.length,
+    lastDay: recent.length ? recent[0].getString("day") : ""
   };
 }
 
