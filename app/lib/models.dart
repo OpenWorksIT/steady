@@ -322,6 +322,75 @@ class Checkin {
       );
 }
 
+class WearableSummary {
+  final bool connected;
+  final int days14;
+  final String lastDay;
+  const WearableSummary(this.connected, this.days14, this.lastDay);
+  factory WearableSummary.fromJson(Map<String, dynamic> j) =>
+      WearableSummary(j['connected'] == true, (j['days14'] as num?)?.toInt() ?? 0, '${j['lastDay'] ?? ''}');
+}
+
+class BiometricDay {
+  final String day;
+  final Map<String, dynamic> values;
+  const BiometricDay(this.day, this.values);
+  double? number(String k) => values[k] is num ? (values[k] as num).toDouble() : null;
+  String text(String k) => values[k] is String ? values[k] as String : '';
+}
+
+class BaselinePoint {
+  final String day;
+  final double? lo, mid, hi;
+  final int n;
+  const BaselinePoint(this.day, this.lo, this.mid, this.hi, this.n);
+}
+
+class Biometrics {
+  final String from, to;
+  final bool connected;
+  final List<BiometricDay> days;
+  final Map<String, List<BaselinePoint>> baseline;
+  final int baselineMin;
+  const Biometrics(this.from, this.to, this.connected, this.days, this.baseline, this.baselineMin);
+
+  factory Biometrics.fromJson(Map<String, dynamic> j) {
+    double? d(Object? v) => v is num ? v.toDouble() : null;
+    final base = <String, List<BaselinePoint>>{};
+    asMap(j['baseline']).forEach((k, v) {
+      base[k] = asList(v).map((p) {
+        final m = asMap(p);
+        return BaselinePoint('${m['day']}', d(m['lo']), d(m['mid']), d(m['hi']), (m['n'] as num?)?.toInt() ?? 0);
+      }).toList();
+    });
+    return Biometrics(
+      '${j['from'] ?? ''}',
+      '${j['to'] ?? ''}',
+      j['connected'] == true,
+      asList(j['days']).map((x) {
+        final m = asMap(x);
+        return BiometricDay('${m['day']}', asMap(m['values']));
+      }).toList(),
+      base,
+      (j['baselineMin'] as num?)?.toInt() ?? 7,
+    );
+  }
+
+  BiometricDay? dayOf(String day) {
+    for (final d in days) {
+      if (d.day == day) return d;
+    }
+    return null;
+  }
+
+  BaselinePoint? baselineOf(String metric, String day) {
+    for (final b in baseline[metric] ?? const <BaselinePoint>[]) {
+      if (b.day == day) return b;
+    }
+    return null;
+  }
+}
+
 class PatientSummary {
   final String id, name;
   final bool active;
@@ -330,6 +399,7 @@ class PatientSummary {
   final List<double?> mood, anxiety;
   final List<Flag> flags;
   final int pending;
+  final WearableSummary wearable;
   PatientSummary({
     required this.id,
     required this.name,
@@ -340,6 +410,7 @@ class PatientSummary {
     required this.anxiety,
     required this.flags,
     required this.pending,
+    required this.wearable,
   });
 
   factory PatientSummary.fromJson(Map<String, dynamic> j) {
@@ -355,6 +426,7 @@ class PatientSummary {
       anxiety: series(j['anxiety']),
       flags: asList(j['flags']).map((f) => Flag.fromJson(asMap(f))).toList(),
       pending: (j['pending'] as num?)?.toInt() ?? 0,
+      wearable: WearableSummary.fromJson(asMap(j['wearable'])),
     );
   }
 

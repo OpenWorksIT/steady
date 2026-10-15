@@ -18,6 +18,8 @@ dependencies:
   unifiedpush: ^6.0.2
   # Shows UnifiedPush messages as notifications on Android (BSD-3)
   flutter_local_notifications: ^22.0.0
+  # Reads watch data from Health Connect / Apple Health (MIT)
+  health: ^13.3.2
   # Clinicians upload questionnaire files (MIT)
   file_picker: ^13.1.0
   # iOS push bridge (in this repo)

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
 import '../../models.dart';
+import '../../wearable/metrics.dart';
 import '../patient/history_screen.dart';
 import '../theme.dart';
+import '../wearable/wearable_views.dart';
 import '../widgets.dart';
 import 'assign_screen.dart';
 import 'clinician_shell.dart';
@@ -24,8 +26,21 @@ class PatientDetailScreen extends StatefulWidget {
   State<PatientDetailScreen> createState() => _PatientDetailScreenState();
 }
 
-class _PatientDetailScreenState extends State<PatientDetailScreen> {
+class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTickerProviderStateMixin {
   Key _key = UniqueKey();
+  late final TabController _tabs = TabController(length: 2, vsync: this);
+  WearableMetric? _openMetric;
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  void _openWearable(WearableMetric m) {
+    setState(() => _openMetric = m);
+    _tabs.animateTo(1);
+  }
 
   Future<_Detail> _load() async {
     final api = AppScope.api(context);
@@ -81,12 +96,23 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
             itemBuilder: (_) => const [PopupMenuItem(value: 'deactivate', child: Text('Stop access'))],
           ),
         ],
+        bottom: TabBar(controller: _tabs, tabs: const [Tab(text: 'Overview'), Tab(text: 'Wearable')]),
       ),
-      body: Loader<_Detail>(
+      body: TabBarView(
+        controller: _tabs,
+        children: [
+          _overview(),
+          WearableTab(patientId: widget.patientId, initialMetric: _openMetric),
+        ],
+      ),
+    );
+  }
+
+  Widget _overview() => Loader<_Detail>(
         key: _key,
         load: _load,
         builder: (context, d, reload) => ListView(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           children: [
             if (d.summary.flags.isNotEmpty) ...[
               Wrap(spacing: 6, runSpacing: 6, children: [for (final f in d.summary.flags) FlagChip(f.label, f.severity)]),
@@ -96,11 +122,13 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const SectionHeader('Last 14 days', trailing: 'daily average, 1–5'),
+                  const SectionHeader('Last 14 days', trailing: 'daily average, 1\u20135'),
                   TrendChart(mood: d.summary.mood, anxiety: d.summary.anxiety),
                 ]),
               ),
             ),
+            const SizedBox(height: 12),
+            WearableWeekCard(patientId: widget.patientId, onOpen: _openWearable),
             const SizedBox(height: 12),
             FilledButton.icon(onPressed: _send, icon: const Icon(Icons.send), label: const Text('Send a questionnaire or exercise')),
             const SizedBox(height: 8),
@@ -119,9 +147,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
             for (final c in d.checkins) Padding(padding: const EdgeInsets.only(bottom: 8), child: CheckinCard(c)),
           ],
         ),
-      ),
-    );
-  }
+      );
 }
 
 class _AssignmentRow extends StatelessWidget {

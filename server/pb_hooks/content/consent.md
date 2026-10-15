@@ -9,6 +9,7 @@ What we collect
 - Your check-ins: four ratings from 1 to 5 and anything you choose to write.
 - Your answers to questionnaires and exercises your psychologist sends you.
 - Technical information needed to send you notifications, such as a device token.
+- Only if you choose to connect a watch: a daily summary of your heart rate, sleep, steps and blood oxygen. You are asked separately before this starts, and you can stop it at any time in Settings.
 
 Who can see it
 Only your psychologist at the practice and the practice's appointed IT operator, who looks after the system under a confidentiality agreement. Your information is stored on servers in South Africa. It is not sold or used for advertising.

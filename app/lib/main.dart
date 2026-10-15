@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'app_state.dart';
 import 'services/api.dart';
 import 'services/push.dart';
+import 'ui/auth/privacy_notice_screen.dart';
 import 'ui/auth/server_screen.dart';
 import 'ui/auth/sign_in_screen.dart';
 import 'ui/clinician/clinician_shell.dart';
@@ -22,6 +23,7 @@ Future<void> main() async {
   // Must run before runApp: UnifiedPush delivers background messages by starting main().
   await PushService.instance.init(api);
   final state = AppState(api);
+  await state.loadLocal();
   runApp(AppScope(state: state, child: const SteadyApp()));
   await state.start();
 }
@@ -44,6 +46,7 @@ class RootGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    if (!state.privacyAcknowledged) return const PrivacyNoticeScreen();
     if (!state.api.hasServer) return const ServerScreen();
     if (!state.signedIn) return const SignInScreen();
     if (state.isClinician) return const ClinicianShell();

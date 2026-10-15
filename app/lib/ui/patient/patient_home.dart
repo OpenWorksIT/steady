@@ -7,12 +7,14 @@ import 'package:pocketbase/pocketbase.dart';
 import '../../app_state.dart';
 import '../../models.dart';
 import '../../services/push.dart';
+import '../../wearable/wearable_sync.dart';
 import '../settings_sheet.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'activity_screens.dart';
 import 'checkin_screen.dart';
 import 'history_screen.dart';
+import 'watch_screens.dart';
 
 class _HomeData {
   final List<Assignment> pending;
@@ -39,6 +41,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final api = AppScope.api(context);
       _taps = PushService.instance.taps.listen((_) => _refresh());
+      _syncWatch();
       try {
         _unsub = await api.watchNotifications((n) {
           if (!mounted) return;
@@ -59,7 +62,19 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
-    if (s == AppLifecycleState.resumed) _refresh();
+    if (s == AppLifecycleState.resumed) {
+      _refresh();
+      _syncWatch();
+    }
+  }
+
+  /// Quietly shares new watch data; failures are retried next time the app opens.
+  Future<void> _syncWatch() async {
+    final api = AppScope.api(context);
+    if (!api.wearableConnected) return;
+    try {
+      await WearableSync.instance.sync(api);
+    } catch (_) {}
   }
 
   void _refresh() {
@@ -151,6 +166,8 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
                     ]),
                   ),
                 ),
+              const SizedBox(height: 10),
+              WatchCard(onChanged: _refresh),
               const SizedBox(height: 12),
               SectionHeader('From your psychologist', trailing: d.pending.isEmpty ? null : '${d.pending.length} to do'),
               if (d.pending.isEmpty)

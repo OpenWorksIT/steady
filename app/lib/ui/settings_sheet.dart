@@ -3,7 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../services/api.dart';
 import '../services/push.dart';
+import '../wearable/wearable_sync.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -72,6 +74,26 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           if (!state.pushEnabled && !kIsWeb) ...[
             const SizedBox(height: 8),
             OutlinedButton(onPressed: () => state.enablePush(), child: const Text('Try again')),
+          ],
+          if (state.isPatient && state.api.wearableConnected) ...[
+            const SizedBox(height: 18),
+            Text('Watch data', style: context.tt.titleMedium),
+            const SizedBox(height: 4),
+            Text('Your daily watch summaries are shared with your psychologist.', style: TextStyle(color: context.sc.ink2)),
+            TextButton(
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                Navigator.of(context).pop();
+                try {
+                  await WearableSync.instance.disconnect(state.api);
+                  state.changed();
+                  messenger.showSnackBar(const SnackBar(content: Text('Watch data is no longer shared. What was already shared stays in your record.')));
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text(errorText(e))));
+                }
+              },
+              child: const Text('Stop sharing watch data'),
+            ),
           ],
           const SizedBox(height: 20),
           OutlinedButton.icon(

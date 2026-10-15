@@ -2,7 +2,9 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'content/privacy_notice.dart';
 import 'models.dart';
 import 'services/api.dart';
 import 'services/push.dart';
@@ -12,7 +14,41 @@ class AppState extends ChangeNotifier {
   final Api api;
   AppConfig config = AppConfig.fallback();
   bool pushEnabled = false;
+  bool privacyAcknowledged = false;
+  String _privacyAckAt = '';
+  final _storage = const FlutterSecureStorage();
   AppState(this.api);
+
+  static const _privacyKey = 'steady.privacy';
+
+  /// Reads what this phone has already acknowledged. Call before the first frame.
+  Future<void> loadLocal() async {
+    try {
+      final v = await _storage.read(key: _privacyKey);
+      if (v != null && v.startsWith('$privacyNoticeVersion|')) {
+        privacyAcknowledged = true;
+        _privacyAckAt = v.substring(privacyNoticeVersion.length + 1);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> acknowledgePrivacy() async {
+    _privacyAckAt = DateTime.now().toIso8601String();
+    privacyAcknowledged = true;
+    try {
+      await _storage.write(key: _privacyKey, value: '$privacyNoticeVersion|$_privacyAckAt');
+    } catch (_) {}
+    notifyListeners();
+    unawaited(_recordPrivacyOnServer());
+  }
+
+  /// Copies this phone's acknowledgement to the account, once per notice version.
+  Future<void> _recordPrivacyOnServer() async {
+    if (!privacyAcknowledged || !api.signedIn || api.privacyNoticeVersion == privacyNoticeVersion) return;
+    try {
+      await api.setConsent('privacy', privacyNoticeVersion);
+    } catch (_) {/* tried again next start */}
+  }
 
   bool get signedIn => api.signedIn;
   bool get isClinician => api.role == 'clinician';
@@ -35,7 +71,10 @@ class AppState extends ChangeNotifier {
       }
     }
     notifyListeners();
-    if (api.signedIn) unawaited(enablePush());
+    if (api.signedIn) {
+      unawaited(enablePush());
+      unawaited(_recordPrivacyOnServer());
+    }
   }
 
   Future<void> enablePush() async {
@@ -59,9 +98,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Something about the signed-in account changed (e.g. consent); redraw.
+  void changed() => notifyListeners();
+
   Future<void> signedInNow() async {
     notifyListeners();
     unawaited(enablePush());
+    unawaited(_recordPrivacyOnServer());
   }
 
   Future<void> signOut() async {

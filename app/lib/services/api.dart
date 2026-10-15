@@ -106,6 +106,8 @@ class Api {
   String get role => me?.getStringValue('role') ?? '';
   String get myName => me?.getStringValue('name') ?? '';
   int get tzOffset => DateTime.now().timeZoneOffset.inMinutes;
+  bool get wearableConnected => (me?.getStringValue('wearableConsentAt') ?? '').isNotEmpty;
+  String get privacyNoticeVersion => me?.getStringValue('privacyNoticeVersion') ?? '';
 
   /* ---------------- session ---------------- */
 
@@ -206,6 +208,12 @@ class Api {
     });
   }
 
+  /// kind: privacy | wearable. Refreshes the account afterwards so its consent fields are current.
+  Future<void> setConsent(String kind, String version, {bool accepted = true}) async {
+    await pb.send('/api/steady/consent', method: 'POST', body: {'kind': kind, 'version': version, 'accepted': accepted});
+    await pb.collection('users').authRefresh();
+  }
+
   /* ---------------- patient ---------------- */
 
   Future<void> addCheckin({required int mood, required int anxiety, required int sleep, required int energy, String note = ''}) async {
@@ -239,6 +247,16 @@ class Api {
   Future<void> selfStart(String instrumentId, Map<String, Object?> result) =>
       pb.send('/api/steady/self-start', method: 'POST', body: {'instrument': instrumentId, 'result': result});
 
+  Future<void> uploadBiometrics(List<Map<String, Object>> days,
+      {required String platform, required String source, required String algorithm}) async {
+    await pb.send('/api/steady/biometrics', method: 'POST', body: {
+      'days': days,
+      'platform': platform,
+      'source': source,
+      'algorithm': algorithm,
+    });
+  }
+
   /* ---------------- clinician ---------------- */
 
   Future<List<PatientSummary>> overview() async {
@@ -271,6 +289,15 @@ class Api {
 
   Future<Assignment> assignment(String id) async =>
       Assignment.fromRecord(await pb.collection('assignments').getOne(id, expand: 'instrument'));
+
+  /// Daily watch values and the patient's own usual range. Dates are YYYY-MM-DD.
+  Future<Biometrics> patientBiometrics(String patientId, {String? from, String? to}) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/biometrics', query: {
+      'from': ?from,
+      'to': ?to,
+    });
+    return Biometrics.fromJson(res);
+  }
 
   Future<void> assign({required String patientId, required String instrumentId, String note = '', String repeat = 'once'}) async {
     await pb.collection('assignments').create(body: {

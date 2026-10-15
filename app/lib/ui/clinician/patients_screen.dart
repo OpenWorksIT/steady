@@ -157,6 +157,12 @@ class _PatientRow extends StatelessWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(p.name, style: context.tt.titleMedium),
                   Text(last, style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
+                  if (p.wearable.connected)
+                    Row(children: [
+                      Icon(Icons.watch_outlined, size: 13, color: context.sc.ink3),
+                      const SizedBox(width: 3),
+                      Text('${p.wearable.days14} of 14 days', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+                    ]),
                 ]),
               ),
               Sparkline(p.mood),
