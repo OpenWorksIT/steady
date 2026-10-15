@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'join_screen.dart';
 import 'server_screen.dart';
+import '../brand.dart';
 
 class SignInScreen extends StatefulWidget {
   final String? message;
@@ -55,20 +56,16 @@ class _SignInScreenState extends State<SignInScreen> {
   Widget build(BuildContext context) {
     final cfg = AppScope.of(context).config;
     return Scaffold(
-      body: SafeArea(
+      body: BrandBackdrop(
+        child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(22, 48, 22, 24),
+          padding: const EdgeInsets.fromLTRB(22, 40, 22, 24),
           children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(color: context.cs.primary, borderRadius: BorderRadius.circular(18)),
-              child: Icon(Icons.waves, color: context.cs.onPrimary, size: 30),
-            ),
-            const SizedBox(height: 14),
-            Text('Steady', style: context.tt.displaySmall?.copyWith(fontWeight: FontWeight.w600)),
-            Text('Between-session check-ins for ${cfg.practiceName}', style: context.tt.bodyLarge?.copyWith(color: context.sc.ink2)),
-            const SizedBox(height: 28),
+            PracticeHeader(name: cfg.practiceName),
+            const SizedBox(height: 30),
+            Text('Steady', style: context.tt.headlineSmall),
+            Text('Your between-session check-ins', style: context.tt.bodyLarge?.copyWith(color: context.sc.ink2)),
+            const SizedBox(height: 20),
             if (widget.message != null) ...[
               Text(widget.message!, style: TextStyle(color: context.sc.warn)),
               const SizedBox(height: 12),
@@ -129,6 +126,7 @@ class _SignInScreenState extends State<SignInScreen> {
             ],
           ],
         ),
+      ),
       ),
     );
   }

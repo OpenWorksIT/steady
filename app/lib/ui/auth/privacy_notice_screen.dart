@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../app_state.dart';
 import '../../content/privacy_notice.dart';
 import '../theme.dart';
+import '../brand.dart';
 
 class PrivacyNoticeScreen extends StatelessWidget {
   const PrivacyNoticeScreen({super.key});
@@ -17,8 +18,8 @@ class PrivacyNoticeScreen extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(22, 32, 22, 16),
               children: [
-                Icon(Icons.lock_outline, size: 34, color: context.cs.primary),
-                const SizedBox(height: 10),
+                const PracticeMark(size: 64),
+                const SizedBox(height: 14),
                 Text(privacyNoticeTitle, style: context.tt.headlineSmall),
                 const SizedBox(height: 4),
                 Text('Please read this before you start.', style: TextStyle(color: context.sc.ink2)),

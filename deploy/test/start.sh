@@ -41,7 +41,7 @@ if [ ! -f .env ]; then
   VAPID_PUB=$(openssl ec -in secrets/vapid.pem -pubout -outform DER 2>/dev/null | tail -c 65 | base64 | tr '+/' '-_' | tr -d '=\n')
   cat > .env <<EOF
 # Steady test stack settings (created by start.sh). Keep this file private.
-STEADY_PRACTICE_NAME="Steady test"
+STEADY_PRACTICE_NAME="VR Clinical Psychology"
 PUSHER_SECRET=$(rand 36)
 STEADY_VAPID_PUBLIC_KEY=$VAPID_PUB
 VAPID_SUBJECT=mailto:test@example.com

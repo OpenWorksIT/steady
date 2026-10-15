@@ -13,6 +13,7 @@ Safe to run more than once.
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import pathlib
+import shutil
 import re
 import sys
 
@@ -148,5 +149,19 @@ def main():
             print("patched", debug_manifest.relative_to(ROOT))
 
 
+def copy_icons():
+    """Practice launcher icons from branding/android, if present."""
+    src = ROOT / "branding" / "android"
+    res = ROOT / "android" / "app" / "src" / "main" / "res"
+    if not src.exists() or not res.exists():
+        return
+    for f in src.rglob("*.png"):
+        dest = res / f.relative_to(src)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(f, dest)
+    print("copied launcher icons")
+
+
 if __name__ == "__main__":
     main()
+    copy_icons()

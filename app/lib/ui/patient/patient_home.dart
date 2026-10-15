@@ -15,6 +15,7 @@ import 'activity_screens.dart';
 import 'checkin_screen.dart';
 import 'history_screen.dart';
 import 'watch_screens.dart';
+import '../brand.dart';
 
 class _HomeData {
   final List<Assignment> pending;
@@ -105,7 +106,8 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
     final hello = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
     return Scaffold(
       appBar: AppBar(
-        title: Text(state.config.practiceName, style: context.tt.labelLarge?.copyWith(color: context.sc.ink3, letterSpacing: 0.6)),
+        title: BrandedTitle(Text(state.config.practiceName,
+            overflow: TextOverflow.ellipsis, style: context.tt.labelLarge?.copyWith(color: context.sc.ink2, letterSpacing: 0.6))),
         actions: [
           IconButton(
             tooltip: 'Settings',
@@ -114,7 +116,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: Loader<_HomeData>(
+      body: BrandBackdrop(child: Loader<_HomeData>(
         key: _reloadKey,
         load: _load,
         builder: (context, d, reload) {
@@ -211,7 +213,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
             ],
           );
         },
-      ),
+      )),
     );
   }
 }

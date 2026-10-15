@@ -5,6 +5,7 @@ import '../../app_state.dart';
 import '../../services/api.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../brand.dart';
 
 /// Asks for the practice's server address. Shown on first launch of test builds,
 /// and from the sign-in screen when the address isn't fixed at build time.
@@ -46,6 +47,8 @@ class _ServerScreenState extends State<ServerScreen> {
           padding: EdgeInsets.fromLTRB(22, widget.firstRun ? 48 : 8, 22, 24),
           children: [
             if (widget.firstRun) ...[
+              const PracticeMark(size: 64),
+              const SizedBox(height: 14),
               Text('Steady', style: context.tt.displaySmall?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
             ],

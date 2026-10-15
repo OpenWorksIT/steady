@@ -15,7 +15,7 @@ services:
     build: ../../server
     restart: unless-stopped
     environment:
-      STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-Steady test}
+      STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-VR Clinical Psychology}
       STEADY_CONSENT_VERSION: test-1
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}

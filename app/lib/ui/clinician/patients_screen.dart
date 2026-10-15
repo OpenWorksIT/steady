@@ -10,6 +10,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'clinician_shell.dart';
 import 'patient_detail_screen.dart';
+import '../brand.dart';
 
 class PatientsScreen extends StatefulWidget {
   final ClinicianBus bus;
@@ -91,7 +92,7 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
     final api = AppScope.api(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Patients'),
+        title: const BrandedTitle(Text('Patients')),
         actions: [IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: () => showSettingsSheet(context))],
       ),
       floatingActionButton: FloatingActionButton.extended(
