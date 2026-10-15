@@ -75,6 +75,22 @@ lib/
 packages/steady_apns/     iOS push bridge (Swift)
 ```
 
+## Watch data
+
+Patients can optionally share a daily summary from their watch. Steady reads it from **Health Connect** on Android (Android 8 or later) and **Apple Health** on iPhone; it never talks to the watch directly.
+
+- **What is read**: heart rate, sleep sessions and stages, steps and blood oxygen. Each day is reduced on the phone to a summary (lowest, average and highest heart rate; resting heart rate; sleep duration, timing and stages; steps; average and lowest oxygen) and only that is uploaded.
+- **Resting heart rate** is calculated by Steady, the same way for every brand (`rhr-v1` in `lib/wearable/summary.dart`): the lowest 30-minute average during that night's sleep, or during the day if no sleep was recorded.
+- **HRV is not collected.** It needs beat-to-beat timings, which Samsung doesn't share through Health Connect. It's left for Amon Dîn.
+- **When it syncs**: up to 30 days back when the patient connects, then each time the app is opened or the patient taps Sync now. Readings stay on the watch and phone until then, so nothing is lost if the app isn't opened for a while.
+- **Samsung**: Samsung Health shares heart rate, sleep, steps and blood oxygen with Health Connect. In Samsung Health, open Settings > Health Connect and allow those. For a useful resting heart rate, set the watch's heart rate measurement to continuous (or every 10 minutes) and wear it to bed.
+- **iPhone**: needs the native app (Apple Developer account). Add the HealthKit capability in Xcode and these to `ios/Runner/Info.plist`:
+  ```xml
+  <key>NSHealthShareUsageDescription</key>
+  <string>Steady shares a daily summary of your watch data with your psychologist, only if you choose to connect it.</string>
+  ```
+  The `health` plugin needs iOS 15 or later.
+
 ## Fonts
 
 The app uses the platform's system font. For a closer match to the demo, bundle Atkinson Hyperlegible (SIL Open Font License) under `assets/fonts/` and set `fontFamily` in `ui/theme.dart`. Don't use the `google_fonts` package: it downloads fonts from Google at runtime.

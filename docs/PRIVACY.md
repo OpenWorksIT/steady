@@ -12,6 +12,8 @@ These are engineering notes to help the practice and its advisers. They are not 
 
 | Requirement | How Steady handles it |
 |---|---|
+| First-launch notice | Everyone sees a plain-language privacy and POPIA notice (`app/lib/content/privacy_notice.dart`) before signing in. The version and time they acknowledged it are stored on their account. |
+| Watch data | Optional and off by default. The patient sees exactly what is shared and agrees separately; that consent is stored with version and time, and they can withdraw it in Settings (uploads stop; what was shared stays in the record). Only daily summaries leave the phone. No alerts are raised from watch data. |
 | Consent and openness | Patients read the practice's consent statement and tick to agree when they join. The version they accepted and when are stored on their account. |
 | Minimality | Name, email, four ratings, optional free text, questionnaire answers. No location, contacts, or device data beyond a push token. |
 | Access control | Patients see only their own data. Psychologists see only patients linked to them. Enforced by database rules on the server, not by the app. |
@@ -32,6 +34,10 @@ These are engineering notes to help the practice and its advisers. They are not 
 4. Decide retention periods.
 5. Decide whether PHQ-9 (with item 9) or PHQ-8 is used between sessions, and how out-of-hours results are handled.
 6. Keep a breach response plan (section 22 requires notifying the Regulator and patients).
+
+## Watch data and research
+
+If watch data is being collected to inform research (for example the design of Amon Dîn), the practice should confirm whether ethics approval and a research-specific consent are needed in addition to the in-app consent.
 
 ## Things to keep in mind
 

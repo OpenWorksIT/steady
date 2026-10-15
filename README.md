@@ -3,6 +3,7 @@
 Between-session check-ins for a psychology practice. One app, two kinds of login:
 
 - **Patients** do a quick daily check-in (mood, anxiety, sleep and energy on a 1 to 5 scale, plus a few words), and complete the questionnaires and exercises their psychologist sends them.
+- **Watch data (optional)**: patients can share a daily summary of heart rate, sleep, steps and blood oxygen from Health Connect or Apple Health. Psychologists see it against each patient's own usual range. Display only, no alerts.
 - **Psychologists** see their patients at a glance, send questionnaires or exercises (once, daily or weekly), and get a notification when a patient checks in or finishes something.
 
 Built by [OpenWorks IT](https://openworks.co.za). Free software under the GNU AGPL v3 or later.
