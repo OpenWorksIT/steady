@@ -33,7 +33,15 @@ class _WatchCardState extends State<WatchCard> {
     setState(() => _syncing = true);
     try {
       final r = await WearableSync.instance.sync(AppScope.api(context));
-      if (mounted && r != null) showSnack(context, r.days == 0 ? 'No new watch data yet.' : 'Watch data shared (${r.days} days).');
+      if (mounted && r != null) {
+        showSnack(
+            context,
+            r.days > 0
+                ? 'Watch data shared (${r.days} days).'
+                : r.everHadData
+                    ? 'No new watch data yet.'
+                    : '${WearableSync.instance.store?.name ?? 'Your phone'} has no watch data for Steady yet. Check that your watch\'s app shares with it, then tap Sync now.');
+      }
     } catch (e) {
       if (mounted) showSnack(context, 'Couldn\'t sync watch data. Check your connection and try again.');
     } finally {

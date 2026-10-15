@@ -13,7 +13,10 @@ const wearableConsentVersion = 'wearable-1';
 class SyncResult {
   final int days;
   final DateTime at;
-  const SyncResult(this.days, this.at);
+
+  /// False while the health store has never given Steady anything for this person.
+  final bool everHadData;
+  const SyncResult(this.days, this.at, {this.everHadData = true});
 }
 
 class WearableSync {
@@ -75,16 +78,17 @@ class WearableSync {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     var from = today.subtract(const Duration(days: 29));
-    if (!full) {
-      String? last;
-      try {
-        last = await _storage.read(key: _key(api, 'last'));
-      } catch (_) {}
-      final lastDay = last == null ? null : DateTime.tryParse(last);
-      if (lastDay != null) {
-        final resume = lastDay.subtract(const Duration(days: 2));
-        if (resume.isAfter(from)) from = resume;
-      }
+    // 'last' is the newest day that had data. Until something arrives, every sync reads the
+    // full 30 days, so data that reaches the health store late (e.g. Samsung Health's sync
+    // was switched on after connecting) is still picked up.
+    String? last;
+    try {
+      last = await _storage.read(key: _key(api, 'last'));
+    } catch (_) {}
+    final lastDay = last == null ? null : DateTime.tryParse(last);
+    if (!full && lastDay != null) {
+      final resume = lastDay.subtract(const Duration(days: 2));
+      if (resume.isAfter(from)) from = resume;
     }
 
     // sleep and blood oxygen are small: read the whole span once
@@ -107,6 +111,7 @@ class WearableSync {
       ));
       if (values.isNotEmpty) summaries.add({'day': dayKey(d), 'values': values});
     }
+    final newest = summaries.isEmpty ? null : summaries.last['day'] as String;
 
     for (var i = 0; i < summaries.length; i += 31) {
       await api.uploadBiometrics(
@@ -117,9 +122,11 @@ class WearableSync {
       );
     }
     try {
-      await _storage.write(key: _key(api, 'last'), value: dayKey(today));
+      if (newest != null && (last == null || newest.compareTo(last) > 0)) {
+        await _storage.write(key: _key(api, 'last'), value: newest);
+      }
       await _storage.write(key: _key(api, 'at'), value: now.toIso8601String());
     } catch (_) {}
-    return SyncResult(summaries.length, now);
+    return SyncResult(summaries.length, now, everHadData: newest != null || lastDay != null);
   }
 }
