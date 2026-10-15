@@ -46,11 +46,15 @@ jobs:
           python3 deploy/test/smoke.py 2>&1 | tee smoke.txt || { echo "::error title=smoke test::$(sed 's/%/%25/g' smoke.txt | awk '{printf "%s%%0A", $0}')"; exit 1; }
       - name: deployment config is valid
         run: |
-          set -o pipefail
-          docker run --rm -v "$PWD/deploy/test/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -n 3
+          fail=0
+          note() { echo "::error title=$1::$(sed 's/%/%25/g' "$2" | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; fail=1; }
+          docker run --rm -v "$PWD/deploy/test/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > v1.txt 2>&1 || note "test Caddyfile" v1.txt
           docker run --rm -e STEADY_DOMAIN=steady.example.co.za -e ACME_EMAIL=it@example.co.za \
-            -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -n 3
-          docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config -q
+            -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > v2.txt 2>&1 || note "production Caddyfile" v2.txt
+          docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config -q > v3.txt 2>&1 || note "production compose" v3.txt
+          exit $fail
       - name: server log on failure
         if: failure()
         run: |
