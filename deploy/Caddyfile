@@ -39,8 +39,7 @@
 
 	log {
 		output stdout
-		format json
-		# no request bodies or query strings in logs
+		# JSON, without query strings or credentials (request bodies are never logged)
 		format filter {
 			wrap json
 			fields {
