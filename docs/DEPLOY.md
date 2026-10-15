@@ -51,13 +51,30 @@ The dashboard is at `https://<domain>/_/`. The Caddyfile only allows it from pri
 
 1. Create the superuser account (PocketBase prints a one-time setup link in the logs on first start).
 2. **Settings > Mail settings**: configure SMTP so password resets work.
-3. **Settings > Rate limits**: enable them. Suggested: `/api/steady/join` 5 per minute per IP, `*:auth` 10 per minute.
-4. **Collections > users**: create each psychologist with `role = clinician`, `active` ticked, a name and email. Ask them to reset their password from the app.
-5. Optional, recommended: **users > Options > Multi-factor authentication** for clinicians.
+3. **Collections > _superusers > Options**: turn on **Multi-factor authentication** (needs SMTP from step 2), so the dashboard needs a password and an emailed code.
+4. **Collections > users**: create each psychologist with `role = clinician`, `active` ticked, a name and email. Ask them to reset their password from the app. Passwords need at least 10 characters.
+5. Don't turn on multi-factor authentication for **users** yet: the app doesn't ask for the emailed code, so psychologists couldn't sign in.
+
+Rate limits and the trusted proxy header are set by a migration (`1760600000_steady_hardening.js`); adjust them under **Settings > Rate limits** if needed.
 
 Patients never get accounts from the dashboard; psychologists create invite codes in the app.
 
-## 6. Backups
+## 6. Server hardening
+
+Do these on the VPS before real patient data arrives:
+
+- [ ] SSH with keys only (`PasswordAuthentication no`, `PermitRootLogin no`).
+- [ ] Firewall: only 22 (ideally limited to your address or a VPN), 80 and 443 open.
+- [ ] Automatic security updates (`unattended-upgrades` on Debian/Ubuntu).
+- [ ] Docker's data on an encrypted volume (LUKS), or full-disk encryption if the provider supports it.
+- [ ] `chmod 600 deploy/.env` and keep `deploy/secrets/` readable only by root and the relay (uid 65532).
+- [ ] Edit the allowed ranges in the Caddyfile so the dashboard and superuser sign-in are reachable only from your office or VPN.
+- [ ] Superuser multi-factor authentication on (step 5).
+- [ ] Backups running and copied off the server (step 7), restore tested.
+- [ ] Uptime monitoring on `https://<domain>/api/health`.
+- [ ] Review and merge Dependabot pull requests (they run the full test suite first).
+
+## 7. Backups
 
 ```bash
 age-keygen -o backup-key.txt           # do this on a different machine; keep it safe
@@ -72,7 +89,7 @@ Backups are encrypted before they're written. Copy them off the server (another 
 age -d -i backup-key.txt steady-<stamp>.tar.age | tar -x -C /tmp/restore
 ```
 
-## 7. Updating
+## 8. Updating
 
 ```bash
 cd /opt/steady && git pull

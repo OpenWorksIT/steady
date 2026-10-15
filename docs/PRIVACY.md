@@ -16,7 +16,8 @@ These are engineering notes to help the practice and its advisers. They are not 
 | Watch data | Optional and off by default. The patient sees exactly what is shared and agrees separately; that consent is stored with version and time, and they can withdraw it in Settings (uploads stop; what was shared stays in the record). Only daily summaries leave the phone. No alerts are raised from watch data. |
 | Consent and openness | Patients read the practice's consent statement and tick to agree when they join. The version they accepted and when are stored on their account. |
 | Minimality | Name, email, four ratings, optional free text, questionnaire answers. No location, contacts, or device data beyond a push token. |
-| Access control | Patients see only their own data. Psychologists see only patients linked to them. Enforced by database rules on the server, not by the app. |
+| Access control | Patients see only their own data. Psychologists see only patients linked to them. Enforced by database rules on the server, not by the app. Stopping an account signs it out on every device at once. |
+| Brute-force protection | Passwords of at least 10 characters. Sign-in, password reset and invite codes are rate limited per address. |
 | Access logging | Every time a psychologist lists or opens check-ins or results, or loads the patient overview, it's written to `auditlog` with who, what and when. Only the superuser can read it. |
 | Security in transit | HTTPS only (Caddy, automatic certificates, HSTS). |
 | Security at rest | Encrypt the server's disk. Backups are encrypted with `age` before they're written. |
@@ -40,6 +41,8 @@ These are engineering notes to help the practice and its advisers. They are not 
 If watch data is being collected to inform research (for example the design of Amon Dîn), the practice should confirm whether ethics approval and a research-specific consent are needed in addition to the in-app consent.
 
 ## Things to keep in mind
+
+- **The test setup is not for real patient data.** Through a Cloudflare tunnel, Cloudflare decrypts the traffic at its edge (outside South Africa) and the server is a test PC. Move to the South African VPS before real patients are invited; see the security review.
 
 - The free-text box can contain anything, including disclosures of risk. The app says it isn't monitored around the clock; psychologists should agree how often they look.
 - Patients' phones are outside the practice's control. Encourage a screen lock.
