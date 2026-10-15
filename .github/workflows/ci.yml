@@ -11,7 +11,7 @@ jobs:
   server:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -21,7 +21,7 @@ jobs:
     # Boots the real PocketBase with Steady's migrations and hooks and checks it starts cleanly.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: docker build -t steady-server server
       - run: |
           docker run -d --name pb -p 8090:8090 steady-server
@@ -35,7 +35,7 @@ jobs:
     # clinician/patient flow against the real PocketBase.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: start test stack
         run: |
           set -o pipefail
@@ -61,7 +61,7 @@ jobs:
   pusher:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.24"
@@ -70,7 +70,7 @@ jobs:
   app:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
