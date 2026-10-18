@@ -39,15 +39,21 @@ jobs:
 
       - name: build apk
         working-directory: app
+        timeout-minutes: 30
         run: |
           set -o pipefail
-          flutter build apk --release 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          # 64-bit ARM only: every current phone, and a third of the native (QR scanner) build time
+          flutter build apk --release --target-platform android-arm64 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: build web
         working-directory: app
+        timeout-minutes: 20
         run: |
           set -o pipefail
-          flutter build web --release --no-web-resources-cdn 2>&1 | tee ../web.txt || { echo "::error title=flutter build web::$(sed 's/%/%25/g' ../web.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          # free the memory the Android build's Gradle and Kotlin daemons keep holding
+          (cd android && ./gradlew --stop) > /dev/null 2>&1 || true
+          pkill -f KotlinCompileDaemon || true
+          flutter build web --verbose --release --no-web-resources-cdn 2>&1 | tee ../web.txt || { echo "::error title=flutter build web::$(sed 's/%/%25/g' ../web.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: package
         run: |
