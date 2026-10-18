@@ -42,7 +42,7 @@ python3 smoke.py https://steady-test.<your domain>   # through the tunnel
 
 1. Download `steady-test.apk` from the repo's **Releases > Test build** (or `gh release download test-build -R OpenWorksIT/steady -p steady-test.apk`) and copy it to the phone. Allow installing from that source when asked.
 2. Install **ntfy** from F-Droid or the Play Store and open it once. That's what delivers notifications, without Google.
-3. Open Steady, read the privacy notice, enter the address, sign in. Allow notifications. Under Settings in the app, Notifications should say On.
+3. Open Steady and read the privacy notice. A new patient taps **Scan invite QR code** and scans the code from the psychologist's Invite screen: Steady connects to the server and fills in the code. Otherwise enter the address and sign in. Allow notifications. Under Settings in the app, Notifications should say On.
 4. Watch data (as a patient): make sure Samsung Health shares with Health Connect (Samsung Health > Settings > Health Connect), then tap **Connect your watch** on the Steady home screen and allow all the data types. The clinician sees it on the patient's Overview and in the Wearable tab.
 
 ## 4. iPhone (Friday)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -15,6 +16,9 @@ class AppState extends ChangeNotifier {
   AppConfig config = AppConfig.fallback();
   bool pushEnabled = false;
   bool privacyAcknowledged = false;
+
+  /// An invite code the app was opened with, waiting for the join screen.
+  String? pendingInvite;
   String _privacyAckAt = '';
   final _storage = const FlutterSecureStorage();
   AppState(this.api);
@@ -23,6 +27,11 @@ class AppState extends ChangeNotifier {
 
   /// Reads what this phone has already acknowledged. Call before the first frame.
   Future<void> loadLocal() async {
+    // the web app opened from an invite QR code: https://<server>/?invite=<code>
+    if (kIsWeb) {
+      final code = Uri.base.queryParameters['invite'];
+      if (code != null && code.trim().isNotEmpty) pendingInvite = code.trim();
+    }
     try {
       final v = await _storage.read(key: _privacyKey);
       if (v != null && v.startsWith('$privacyNoticeVersion|')) {

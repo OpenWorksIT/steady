@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
 import '../../models.dart';
+import '../../services/api.dart';
 import '../../wearable/metrics.dart';
 import '../patient/history_screen.dart';
 import '../theme.dart';
@@ -30,6 +31,41 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
   Key _key = UniqueKey();
   late final TabController _tabs = TabController(length: 2, vsync: this);
   WearableMetric? _openMetric;
+  late String _name = widget.name;
+
+  Future<void> _rename() async {
+    final api = AppScope.api(context);
+    final ctl = TextEditingController(text: _name);
+    final label = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Rename patient'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Name on your screens',
+            helperText: "Only you see this. Leave empty to use the patient's own name.",
+            helperMaxLines: 2,
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (label == null || !mounted) return;
+    try {
+      final shown = await api.setPatientLabel(widget.patientId, label);
+      if (mounted) setState(() => _name = shown);
+      _reload();
+    } catch (e) {
+      if (mounted) showSnack(context, errorText(e));
+    }
+  }
 
   @override
   void dispose() {
@@ -56,7 +92,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
 
   Future<void> _send() async {
     final sent = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => AssignScreen(patientId: widget.patientId, patientName: widget.name)),
+      MaterialPageRoute(builder: (_) => AssignScreen(patientId: widget.patientId, patientName: _name)),
     );
     if (sent == true) _reload();
   }
@@ -65,7 +101,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text('Stop ${widget.name}\'s access?'),
+        title: Text('Stop $_name\'s access?'),
         content: const Text('They will be signed out and can\'t sign in again. Waiting activities are cancelled. '
             'Their records stay for the practice\'s files.'),
         actions: [
@@ -86,14 +122,18 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.name),
+        title: Text(_name),
         actions: [
           IconButton(tooltip: 'Send something', onPressed: _send, icon: const Icon(Icons.send_outlined)),
           PopupMenuButton<String>(
             onSelected: (v) {
+              if (v == 'rename') _rename();
               if (v == 'deactivate') _deactivate();
             },
-            itemBuilder: (_) => const [PopupMenuItem(value: 'deactivate', child: Text('Stop access'))],
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'rename', child: Text('Rename')),
+              PopupMenuItem(value: 'deactivate', child: Text('Stop access')),
+            ],
           ),
         ],
         bottom: TabBar(controller: _tabs, tabs: const [Tab(text: 'Overview'), Tab(text: 'Wearable')]),
@@ -114,6 +154,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
         builder: (context, d, reload) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           children: [
+            if (d.summary.selfName.isNotEmpty && d.summary.selfName != d.summary.name) ...[
+              Text('Calls themselves ${d.summary.selfName} in the app', style: TextStyle(color: context.sc.ink2)),
+              const SizedBox(height: 10),
+            ],
             if (d.summary.flags.isNotEmpty) ...[
               Wrap(spacing: 6, runSpacing: 6, children: [for (final f in d.summary.flags) FlagChip(f.label, f.severity)]),
               const SizedBox(height: 12),

@@ -283,7 +283,7 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   // join: validation first
   assert.equal(rt.call("POST", "/api/steady/join", { body: { code: inv.data.code, email: "l@example.org", name: "Lerato", password: "short", consent: true } }).status, 400);
   assert.equal(rt.call("POST", "/api/steady/join", { body: { code: inv.data.code, email: "l@example.org", name: "Lerato", password: "long-enough-pw", consent: false } }).status, 400);
-  const joined = rt.call("POST", "/api/steady/join", { body: { code: inv.data.code.toLowerCase(), email: "L@Example.org", name: "Lerato", password: "long-enough-pw", consent: true, tzOffset: 120 } });
+  const joined = rt.call("POST", "/api/steady/join", { body: { code: inv.data.code.toLowerCase(), email: "L@Example.org", name: "Lee", password: "long-enough-pw", consent: true, tzOffset: 120 } });
   assert.equal(joined.status, 200, JSON.stringify(joined));
   const pat = rt.app.findRecordById("users", joined.data.record.id);
   assert.equal(pat.getString("role"), "patient");
@@ -292,7 +292,12 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   assert.ok(pat.getString("consentAt"));
   // the code is single-use
   assert.equal(rt.call("POST", "/api/steady/join", { body: { code: inv.data.code, email: "x@example.org", name: "X", password: "long-enough-pw", consent: true } }).status, 400);
-  assert.ok(rt.store.notifications.some((n) => n.getString("recipient") === doc.id && /joined/.test(n.getString("title"))));
+  assert.ok(rt.store.notifications.some((n) => n.getString("recipient") === doc.id && /^Lerato joined/.test(n.getString("title")) && /call themselves Lee/.test(n.getString("body"))));
+  // the patient's app uses their own name; the psychologist sees the invite name
+  assert.equal(pat.getString("name"), "Lee");
+  const ov0 = rt.call("GET", "/api/steady/overview", { auth: doc });
+  assert.equal(ov0.data.patients[0].name, "Lerato");
+  assert.equal(ov0.data.patients[0].selfName, "Lee");
 
   // patient checks in; clinician gets an in-app notification and a content-free push
   rt.pushes.length = 0;
@@ -566,4 +571,23 @@ test("security: clinician reads of watch data are audited", () => {
   const row = rt.store.auditlog[rt.store.auditlog.length - 1];
   assert.equal(row.getString("action"), "list.biometrics");
   assert.equal(row.getString("patient"), "abcdefghijklmno");
+});
+
+test("names: the psychologist can rename a patient on their own screens only", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const other = rt.makeUser({ name: "Dr Other", role: "clinician", active: true, email: "o@example.org" });
+  const pat = rt.makeUser({ name: "Thandi", role: "patient", active: true, clinician: doc.id, email: "t@example.org" });
+  assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc }).data.name, "Thandi");
+  const r = rt.call("POST", `/api/steady/patients/${pat.id}/label`, { auth: doc, body: { label: "Thandi M (Tues)" } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.name, "Thandi M (Tues)");
+  assert.equal(pat.getString("name"), "Thandi");
+  assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/label`, { auth: other, body: { label: "x" } }).status, 404);
+  assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/label`, { auth: pat, body: { label: "x" } }).status, 403);
+  rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3 });
+  assert.ok(rt.store.notifications.some((n) => /^Thandi M \(Tues\) checked in/.test(n.getString("title"))));
+  // clearing the label falls back to the patient's own name
+  assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/label`, { auth: doc, body: { label: "" } }).data.name, "Thandi");
+  assert.match(rt.app.findCollectionByNameOrId("users").updateRule, /clinicianLabel:isset = false/);
 });

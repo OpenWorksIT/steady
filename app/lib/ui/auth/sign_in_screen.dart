@@ -5,6 +5,7 @@ import '../../app_state.dart';
 import '../../services/api.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'invite_flow.dart';
 import 'join_screen.dart';
 import 'server_screen.dart';
 import '../brand.dart';
@@ -20,6 +21,20 @@ class _SignInScreenState extends State<SignInScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // opened from an invite link on the web: go straight to joining
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = AppScope.of(context);
+      final code = state.pendingInvite;
+      if (code == null) return;
+      state.pendingInvite = null;
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => JoinScreen(initialCode: code)));
+    });
+  }
 
   @override
   void dispose() {
@@ -102,8 +117,9 @@ class _SignInScreenState extends State<SignInScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('New here?', style: context.tt.titleMedium),
                   const SizedBox(height: 4),
-                  Text('Your psychologist will give you an invite code.', style: TextStyle(color: context.sc.ink2)),
+                  Text('Your psychologist will give you an invite QR code or code.', style: TextStyle(color: context.sc.ink2)),
                   const SizedBox(height: 12),
+                  if (canScanInvites) ...[const ScanInviteButton(), const SizedBox(height: 8)],
                   OutlinedButton(
                     onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const JoinScreen())),
                     child: const Text('I have an invite code'),

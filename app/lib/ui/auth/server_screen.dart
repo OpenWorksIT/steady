@@ -5,6 +5,7 @@ import '../../app_state.dart';
 import '../../services/api.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'invite_flow.dart';
 import '../brand.dart';
 
 /// Asks for the practice's server address. Shown on first launch of test builds,
@@ -51,6 +52,15 @@ class _ServerScreenState extends State<ServerScreen> {
               const SizedBox(height: 14),
               Text('Steady', style: context.tt.displaySmall?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
+            ],
+            if (widget.firstRun && canScanInvites) ...[
+              Text('New patient? Scan the invite QR code from your psychologist and Steady sets itself up.',
+                  style: context.tt.bodyLarge?.copyWith(color: context.sc.ink2)),
+              const SizedBox(height: 14),
+              const ScanInviteButton(),
+              const SizedBox(height: 28),
+              Text('Or enter the server address yourself', style: context.tt.titleMedium),
+              const SizedBox(height: 6),
             ],
             Text('Enter the server address your practice gave you.', style: context.tt.bodyLarge?.copyWith(color: context.sc.ink2)),
             const SizedBox(height: 18),

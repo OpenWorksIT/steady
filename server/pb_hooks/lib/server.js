@@ -70,6 +70,13 @@ function audit(app, e, action, target, patientId) {
   }
 }
 
+/* ---------- names ---------- */
+
+/** What the psychologist calls a patient: the invite name, else the patient's own name. */
+function displayName(patient) {
+  return patient.getString("clinicianLabel") || patient.getString("name");
+}
+
 /* ---------- ownership ---------- */
 
 /** Returns the patient record if it belongs to clinicianId, otherwise throws 404. */
@@ -209,7 +216,8 @@ function patientSummary(app, patient, tzOffset) {
   var last = allRows.length ? allRows[0] : null;
   return {
     id: patient.id,
-    name: patient.getString("name"),
+    name: displayName(patient),
+    selfName: patient.getString("name"),
     joinedAt: toMs(patient, "created"),
     active: patient.getBool("active"),
     lastCheckin: last,
@@ -246,6 +254,7 @@ module.exports = {
   env: env,
   audit: audit,
   ownPatient: ownPatient,
+  displayName: displayName,
   instrumentDef: instrumentDef,
   sendable: sendable,
   notify: notify,

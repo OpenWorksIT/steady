@@ -87,6 +87,16 @@ def patch_manifest(text):
     for p in HEALTH_PERMISSIONS:
         if p not in text:
             text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="%s"/>' % p, text, count=1)
+    # camera, only to scan invite QR codes; the camera plugin also declares the microphone,
+    # which Steady never uses, so that is removed
+    if "xmlns:tools" not in text:
+        text = re.sub(r"<manifest\b", '<manifest xmlns:tools="http://schemas.android.com/tools"', text, count=1)
+    if "android.permission.CAMERA" not in text:
+        text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="android.permission.CAMERA"/>', text, count=1)
+    if "android.hardware.camera" not in text:
+        text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-feature android:name="android.hardware.camera" android:required="false"/>', text, count=1)
+    if "RECORD_AUDIO" not in text:
+        text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>', text, count=1)
     # Health Connect must be able to find the app and show why it asks
     if "com.google.android.apps.healthdata" not in text:
         block = ('        <package android:name="com.google.android.apps.healthdata" />\n'

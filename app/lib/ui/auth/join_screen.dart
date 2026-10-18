@@ -7,17 +7,23 @@ import '../theme.dart';
 import '../widgets.dart';
 
 class JoinScreen extends StatefulWidget {
-  const JoinScreen({super.key});
+  final String? initialCode;
+  const JoinScreen({this.initialCode, super.key});
   @override
   State<JoinScreen> createState() => _JoinScreenState();
 }
 
 class _JoinScreenState extends State<JoinScreen> {
-  final _code = TextEditingController();
+  late final _code = TextEditingController(text: _formatCode(widget.initialCode));
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _consent = false;
+
+  static String _formatCode(String? c) {
+    final s = (c ?? '').toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    return s.length == 8 ? '${s.substring(0, 4)}-${s.substring(4)}' : s;
+  }
   String? _error;
 
   @override
@@ -79,7 +85,7 @@ class _JoinScreenState extends State<JoinScreen> {
               decoration: const InputDecoration(labelText: 'Invite code', hintText: 'ABCD-2345'),
             ),
             const SizedBox(height: 12),
-            TextField(controller: _name, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Your name')),
+            TextField(controller: _name, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Your name', helperText: 'What Steady will call you')),
             const SizedBox(height: 12),
             TextField(controller: _email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email')),
             const SizedBox(height: 12),

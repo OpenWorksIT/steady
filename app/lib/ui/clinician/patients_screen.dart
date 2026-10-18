@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../app_state.dart';
 import '../../models.dart';
@@ -45,7 +46,12 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
         content: TextField(
           controller: label,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Note for yourself (optional)', hintText: 'e.g. first name'),
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: "Patient's name",
+            helperText: 'How they will appear to you. They choose their own name in the app.',
+            helperMaxLines: 2,
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
@@ -61,12 +67,32 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Invite code'),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SelectableText(inv.code, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700, letterSpacing: 2)),
-            const SizedBox(height: 8),
-            Text('Give this to your patient. They install Steady, tap "I have an invite code" and enter it. '
-                'It works once and expires on ${inv.expires.day}/${inv.expires.month}/${inv.expires.year}.'),
-          ]),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                  child: QrImageView(
+                    data: inviteLink(api.serverUrl, inv.code),
+                    size: 220,
+                    backgroundColor: Colors.white,
+                    semanticsLabel: 'Invite QR code',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Center(child: SelectableText(inv.code, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: 2))),
+              const SizedBox(height: 12),
+              const Text('Android: your patient installs Steady, taps "Scan invite QR code" and points the camera here. '
+                  'Steady connects to the practice and fills in the code.'),
+              const SizedBox(height: 6),
+              const Text('iPhone: they scan it with the camera app; Steady opens in the browser, ready to join.'),
+              const SizedBox(height: 6),
+              Text('Or they type the code. It works once and expires on ${inv.expires.day}/${inv.expires.month}/${inv.expires.year}.',
+                  style: TextStyle(color: context.sc.ink2)),
+            ]),
+          ),
           actions: [
             TextButton(
               onPressed: () {

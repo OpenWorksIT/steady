@@ -392,7 +392,8 @@ class Biometrics {
 }
 
 class PatientSummary {
-  final String id, name;
+  /// [name] is what the psychologist calls the patient; [selfName] is the patient's own.
+  final String id, name, selfName;
   final bool active;
   final DateTime? lastCheckinAt;
   final int? lastMood;
@@ -403,6 +404,7 @@ class PatientSummary {
   PatientSummary({
     required this.id,
     required this.name,
+    this.selfName = '',
     required this.active,
     required this.lastCheckinAt,
     required this.lastMood,
@@ -419,6 +421,7 @@ class PatientSummary {
     return PatientSummary(
       id: '${j['id']}',
       name: '${j['name'] ?? ''}',
+      selfName: '${j['selfName'] ?? ''}',
       active: j['active'] == true,
       lastCheckinAt: fromMs(last['ts']),
       lastMood: (last['mood'] as num?)?.toInt(),

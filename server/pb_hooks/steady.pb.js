@@ -63,6 +63,7 @@ routerAdd("POST", "/api/steady/join", (e) => {
     user.set("name", name);
     user.set("role", "patient");
     user.set("clinician", invite.getString("clinician"));
+    user.set("clinicianLabel", invite.getString("label"));
     user.set("active", true);
     user.set("consentAt", new DateTime());
     user.set("consentVersion", s.env("STEADY_CONSENT_VERSION", "draft-1"));
@@ -79,8 +80,9 @@ routerAdd("POST", "/api/steady/join", (e) => {
     recipient: invite.getString("clinician"),
     kind: "system",
     patient: user.id,
-    title: name + " joined",
-    body: "They used invite code " + core.formatCode(code) + ".",
+    title: (invite.getString("label") || name) + " joined",
+    body: (invite.getString("label") && invite.getString("label") !== name ? "They call themselves " + name + ". " : "") +
+      "They used invite code " + core.formatCode(code) + ".",
     severity: "info"
   });
   return $apis.recordAuthResponse(e, user, "password");
@@ -138,6 +140,17 @@ routerAdd("GET", "/api/steady/patients/{id}/summary", (e) => {
   const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
   s.audit($app, e, "patient.summary", "user:" + p.id, p.id);
   return e.json(200, s.patientSummary($app, p, e.auth.getInt("tzOffset")));
+}, $apis.requireAuth());
+
+// The psychologist renames a patient on their own screens (the patient's own name is unchanged).
+routerAdd("POST", "/api/steady/patients/{id}/label", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  p.set("clinicianLabel", s.core.str(s.body(e).label, 80));
+  $app.save(p);
+  s.audit($app, e, "patient.label", "user:" + p.id, p.id);
+  return e.json(200, { id: p.id, name: s.displayName(p), selfName: p.getString("name") });
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/steady/patients/{id}/deactivate", (e) => {
@@ -396,7 +409,7 @@ routerAdd("POST", "/api/steady/assignments/{id}/complete", (e) => {
     kind: "completed",
     patient: e.auth.id,
     assignment: a.id,
-    title: e.auth.getString("name") + " completed " + def.name,
+    title: s.displayName(e.auth) + " completed " + def.name,
     body: detail,
     severity: score ? score.severity : "none"
   });
@@ -427,7 +440,7 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
       kind: "completed",
       patient: e.auth.id,
       assignment: rec.id,
-      title: e.auth.getString("name") + " did " + inst.def.name,
+      title: s.displayName(e.auth) + " did " + inst.def.name,
       body: "Started by the patient",
       severity: "none",
       push: false
@@ -618,7 +631,7 @@ onRecordAfterCreateSuccess((e) => {
       recipient: patient.getString("clinician"),
       kind: "checkin",
       patient: patient.id,
-      title: patient.getString("name") + " checked in",
+      title: s.displayName(patient) + " checked in",
       body: "Mood " + r.getInt("mood") + "/5 · Anxiety " + r.getInt("anxiety") + "/5" + (lowRun ? " · low mood in the last 3 check-ins" : ""),
       severity: lowRun ? "warn" : (r.getInt("mood") <= 1 ? "info" : "none")
     });
