@@ -69,7 +69,7 @@ def main():
     check(s == 200, "clinician signs in", a)
     doc, doc_id = a["token"], a["record"]["id"]
 
-    s, inv = call("POST", "/api/steady/invites", doc, {"label": "smoke test"})
+    s, inv = call("POST", "/api/steady/invites", doc, {"label": "Smoke Patient (clinic)"})
     check(s == 200 and len(inv["code"]) == 9, "clinician creates an invite code", inv)
 
     email = f"smoke-{secrets.token_hex(4)}@steady.test"
@@ -97,7 +97,13 @@ def main():
 
     s, n = call("GET", "/api/collections/notifications/records", doc, query={"sort": "-created", "perPage": 5})
     titles = [x["title"] for x in n.get("items", [])]
-    check(any("Smoke Patient checked in" in t for t in titles), "clinician is notified of the check-in", titles)
+    check(any("Smoke Patient (clinic) checked in" in t for t in titles), "clinician is notified of the check-in, under the invite name", titles)
+    s, ov = call("GET", "/api/steady/overview", doc)
+    mine = [p for p in ov.get("patients", []) if p["id"] == pat_id]
+    check(mine and mine[0]["name"] == "Smoke Patient (clinic)" and mine[0].get("selfName") == "Smoke Patient",
+          "psychologist sees the invite name; the patient keeps their own", mine)
+    s, me = call("GET", f"/api/collections/users/records/{pat_id}", pat)
+    check(s == 200 and "clinicianLabel" not in me, "the patient can't see the psychologist's name for them", me)
 
     s, insts = call("GET", "/api/collections/instruments/records", doc, query={"perPage": 50})
     by_key = {i["key"]: i for i in insts.get("items", [])}
