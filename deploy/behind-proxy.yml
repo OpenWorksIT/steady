@@ -1,0 +1,22 @@
+# Steady on a server that already has a web server on ports 80/443, such as vps1 where
+# Shap's Caddy is the front door. Steady's own Caddy stays off; the existing Caddy reaches
+# PocketBase over a shared Docker network called "edge" (see proxy/steady.caddy).
+#
+# Turn it on in deploy/.env:   COMPOSE_FILE=docker-compose.yml:behind-proxy.yml
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+services:
+  caddy:
+    profiles: [own-caddy]   # not started in this mode
+
+  pocketbase:
+    networks:
+      edge:
+        aliases: [steady-pocketbase]
+    # the dashboard, for an SSH tunnel only: ssh -L 8091:localhost:8091 <server>
+    ports:
+      - "127.0.0.1:8091:8090"
+
+networks:
+  edge:
+    external: true

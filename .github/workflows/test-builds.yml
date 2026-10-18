@@ -62,6 +62,16 @@ jobs:
           (cd app/build/web && zip -qr ../../../out/steady-web.zip .)
           ls -la out
 
+      - name: publish the web app to the web-dist branch
+        # servers fetch it with their read-only deploy key (deploy/update.sh)
+        run: |
+          cd app/build/web
+          git init -q -b web-dist
+          git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" add -A
+          git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" commit -qm "Web app built from ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" web-dist
+          rm -rf .git
+
       - name: publish pre-release
         env:
           GH_TOKEN: ${{ github.token }}

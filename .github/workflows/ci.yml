@@ -54,6 +54,10 @@ jobs:
             -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > v2.txt 2>&1 || note "production Caddyfile" v2.txt
           docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config -q > v3.txt 2>&1 || note "production compose" v3.txt
+          docker compose -f deploy/docker-compose.yml -f deploy/behind-proxy.yml --env-file deploy/.env.example config -q > v4.txt 2>&1 || note "behind-proxy compose" v4.txt
+          sed 's/STEADY_DOMAIN/steady.example.co.za/' deploy/proxy/steady.caddy > site.caddy
+          docker run --rm -v "$PWD/site.caddy:/etc/caddy/Caddyfile:ro" caddy:2 \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > v5.txt 2>&1 || note "proxy site Caddyfile" v5.txt
           exit $fail
       - name: server log on failure
         if: failure()

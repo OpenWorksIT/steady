@@ -98,6 +98,62 @@ cd deploy && docker compose up -d --build
 
 Migrations run automatically on start. Take a backup first.
 
+## Sharing a server (e.g. vps1 with Shap)
+
+When another app's Caddy already owns ports 80 and 443, Steady runs without its own Caddy and
+that Caddy forwards Steady's domain to it over a shared Docker network called `edge`.
+
+**1. Read-only deploy key** (the repository is private). On the server:
+
+```bash
+sudo ssh-keygen -t ed25519 -N "" -C "vps1 steady (read-only)" -f /root/.ssh/steady_deploy
+sudo cat /root/.ssh/steady_deploy.pub
+```
+
+On GitHub: the steady repository > **Settings > Deploy keys > Add deploy key**, paste it, leave
+**Allow write access** off. Then:
+
+```bash
+sudo tee -a /root/.ssh/config <<'CFG'
+Host github-steady
+  HostName github.com
+  User git
+  IdentityFile /root/.ssh/steady_deploy
+  IdentitiesOnly yes
+CFG
+sudo git clone git@github-steady:OpenWorksIT/steady.git /opt/steady
+```
+
+**2. DNS.** An A record for Steady's domain (e.g. `steady.openworks.co.za`) pointing at the server.
+
+**3. Shared network and the other Caddy.** Once per server: `sudo docker network create edge`, and
+put that Caddy on it (Shap: add `edge.yml` to `COMPOSE_FILE` in `/opt/shap/deploy/vps/.env`, then
+`sudo docker compose up -d caddy`). Give it Steady's site:
+
+```bash
+sed 's/STEADY_DOMAIN/steady.openworks.co.za/' /opt/steady/deploy/proxy/steady.caddy \
+  | sudo tee /opt/shap/deploy/vps/sites/steady.caddy
+cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
+**4. Configure and start Steady.**
+
+```bash
+cd /opt/steady/deploy
+sudo cp .env.example .env && sudo chmod 600 .env
+sudo ./gen-keys.sh            # paste PUSHER_SECRET and STEADY_VAPID_PUBLIC_KEY into .env
+sudo nano .env                # STEADY_DOMAIN, practice name, VAPID_SUBJECT, and uncomment
+                              # COMPOSE_FILE=docker-compose.yml:behind-proxy.yml
+sudo ./update.sh              # pulls, fetches the web app, builds and starts
+```
+
+**5. Accounts.** The dashboard is only reachable through an SSH tunnel:
+`ssh -L 8091:localhost:8091 <you>@<server>`, then open `http://localhost:8091/_/`. Create the
+superuser with `sudo docker compose exec pocketbase /pb/pocketbase superuser upsert <email> <password> --dir=/pb/pb_data`,
+then psychologists as in step 5 above.
+
+**Updating** is `sudo ./update.sh` in `/opt/steady/deploy`.
+
 ## Troubleshooting
 
 | Symptom | Check |

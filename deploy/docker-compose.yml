@@ -1,6 +1,9 @@
 # Steady: server, push relay and HTTPS front door.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+# A VPS that already has a web server on ports 80/443 (e.g. vps1, shared with Shap):
+# see behind-proxy.yml and docs/DEPLOY.md, "Sharing a server".
+#
 #   cp .env.example .env   # fill it in
 #   ./gen-keys.sh          # creates secrets/ and prints the values to paste into .env
 #   docker compose up -d --build
@@ -47,9 +50,12 @@ services:
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data
+      # the web app (iPhones, and invite QR codes opened in a browser); ./update.sh fills it
+      - ./web:/pb/pb_public:ro
       # edit the consent text without rebuilding
       - ../server/pb_hooks/content:/pb/pb_hooks/content:ro
-    networks: [internal]
+    networks:
+      internal: {}
 
   pusher:
     build: ../pusher

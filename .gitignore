@@ -20,3 +20,7 @@ pusher/pusher
 # Node test runs
 node_modules/
 __pycache__/
+
+# server web app copy (deploy/update.sh)
+deploy/web/
+deploy/web.new/

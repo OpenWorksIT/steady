@@ -1,0 +1,32 @@
+# Steady's site for an existing Caddy on the same server (see ../behind-proxy.yml).
+# Copy it into that Caddy's sites folder with your domain, e.g. on vps1:
+#   sed 's/STEADY_DOMAIN/steady.openworks.co.za/' deploy/proxy/steady.caddy | sudo tee /opt/shap/deploy/vps/sites/steady.caddy
+# That Caddy must be on the "edge" Docker network.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+STEADY_DOMAIN {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Cross-Origin-Opener-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		-Server
+	}
+
+	# The dashboard and superuser sign-in are not on the internet: use the SSH tunnel
+	# (ssh -L 8091:localhost:8091 <server>, then http://localhost:8091/_/).
+	@admin path /_/* /api/collections/_superusers/*
+	respond @admin 404
+
+	handle {
+		header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		reverse_proxy steady-pocketbase:8090 {
+			# keep realtime (server-sent events) connections open
+			flush_interval -1
+		}
+	}
+}
