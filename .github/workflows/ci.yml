@@ -44,6 +44,39 @@ jobs:
         run: |
           set -o pipefail
           python3 deploy/test/smoke.py 2>&1 | tee smoke.txt || { echo "::error title=smoke test::$(sed 's/%/%25/g' smoke.txt | awk '{printf "%s%%0A", $0}')"; exit 1; }
+      - name: move the data to a vps1-style server
+        # export from the test stack, restore into the production compose behind a proxy
+        # (as on vps1), then sign in with the same account
+        run: |
+          set -euo pipefail
+          deploy/test/export-data.sh /tmp/steady-data.tar.gz
+          docker network create edge
+          cd deploy
+          cp .env.example .env
+          sed -i 's/^PUSHER_SECRET=.*/PUSHER_SECRET=ci-relay-secret-ci-relay-secret-1234/' .env
+          echo 'COMPOSE_FILE=docker-compose.yml:behind-proxy.yml' >> .env
+          sudo ./gen-keys.sh > /dev/null
+          mkdir -p web
+          docker compose up -d --build > up.txt 2>&1 || { cat up.txt; exit 1; }
+          for i in $(seq 1 30); do curl -fsS 127.0.0.1:8091/api/health > /dev/null && break; sleep 2; done
+          echo yes | ./restore-data.sh /tmp/steady-data.tar.gz
+          python3 - <<'PY'
+          import json, re, urllib.request
+          env = dict(re.findall(r'^([A-Z_]+)="?([^"\n]*)"?$', open("test/.env").read(), re.M))
+          def post(path, body, token=None):
+              req = urllib.request.Request("http://127.0.0.1:8091" + path, data=json.dumps(body).encode(), method="POST",
+                                           headers={"Content-Type": "application/json", **({"Authorization": token} if token else {})})
+              return json.loads(urllib.request.urlopen(req, timeout=20).read())
+          doc = post("/api/collections/users/auth-with-password", {"identity": env["CLINICIAN_EMAIL"], "password": env["CLINICIAN_PASSWORD"]})
+          req = urllib.request.Request("http://127.0.0.1:8091/api/steady/overview", headers={"Authorization": doc["token"]})
+          patients = json.loads(urllib.request.urlopen(req, timeout=20).read())["patients"]
+          assert patients, "no patients after the move"
+          su = post("/api/collections/_superusers/auth-with-password", {"identity": env["SUPERUSER_EMAIL"], "password": env["SUPERUSER_PASSWORD"]})
+          req = urllib.request.Request("http://127.0.0.1:8091/api/settings", headers={"Authorization": su["token"]})
+          headers = json.loads(urllib.request.urlopen(req, timeout=20).read())["trustedProxy"]["headers"]
+          assert headers == ["X-Forwarded-For"], headers
+          print(f"moved: clinician signs in, {len(patients)} patient(s) carried over, proxy header {headers}")
+          PY
       - name: deployment config is valid
         run: |
           fail=0
@@ -64,6 +97,7 @@ jobs:
         run: |
           docker compose -f deploy/test/compose.yml --env-file deploy/test/.env logs --no-color pocketbase pusher caddy > pb.log 2>&1 || true
           docker compose -f deploy/test/compose.yml --env-file deploy/test/.env ps -a >> pb.log 2>&1 || true
+          (cd deploy && [ -f .env ] && docker compose logs --no-color pocketbase >> ../pb.log 2>&1) || true
           echo "::warning title=server log::$(sed 's/%/%25/g; s/\r//g' pb.log | tail -c 20000 | awk '{printf "%s%%0A", $0}')"
 
   pusher:

@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:pocketbase/pocketbase.dart' show ClientException;
 
 import 'content/privacy_notice.dart';
 import 'models.dart';
@@ -74,10 +75,11 @@ class AppState extends ChangeNotifier {
     if (api.signedIn) {
       try {
         await api.refresh();
-      } catch (_) {
-        // expired or deactivated
-        api.signOut();
-      }
+      } on ClientException catch (e) {
+        // Signed out only when the server says so (expired, stopped). If it can't be reached,
+        // stay signed in: the screens show the problem and work again once it's back.
+        if (e.statusCode != 0) api.signOut();
+      } catch (_) {/* keep the session */}
     }
     notifyListeners();
     if (api.signedIn) {

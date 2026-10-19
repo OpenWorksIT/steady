@@ -142,7 +142,7 @@ function makeRuntime(opts = {}) {
     },
     runInTransaction: (fn) => fn(app),
     settings: () => settings,
-    logger: () => ({ warn: (...a) => { if (opts.verbose) console.warn(...a); } })
+    logger: () => ({ warn: (...a) => { if (opts.verbose) console.warn(...a); }, info() {} })
   };
 
   // Date whose "now" follows the fake clock, so time-based logic in the hooks can be tested.
@@ -179,6 +179,7 @@ function makeRuntime(opts = {}) {
     onRecordCreateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.createRequest[t] = fn)),
     onRecordUpdateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.updateRequest[t] = fn)),
     onRecordUpdate: (fn, ...tags) => tags.forEach((t) => (hooks.update[t] = fn)),
+    onBootstrap: (fn) => { hooks.bootstrap = fn; },
     onRecordAfterCreateSuccess: (fn, ...tags) => tags.forEach((t) => (hooks.afterCreate[t] = fn)),
     onRecordsListRequest: (fn, ...tags) => tags.forEach((t) => (hooks.list[t] = fn)),
     onRecordViewRequest: (fn, ...tags) => tags.forEach((t) => (hooks.view[t] = fn)),
@@ -590,4 +591,11 @@ test("names: the psychologist can rename a patient on their own screens only", (
   // clearing the label falls back to the patient's own name
   assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/label`, { auth: doc, body: { label: "" } }).data.name, "Thandi");
   assert.match(rt.app.findCollectionByNameOrId("users").updateRule, /clinicianLabel:isset = false/);
+});
+
+test("start-up: the proxy header follows this deployment, e.g. after moving the data", () => {
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_TRUSTED_PROXY_HEADER: "X-Forwarded-For" }) });
+  rt.settings.trustedProxy.headers = ["Cf-Connecting-Ip"]; // as the Cloudflare test stack left it
+  rt.hooks.bootstrap({ app: rt.app, next() {} });
+  assert.equal(JSON.stringify(rt.settings.trustedProxy.headers), JSON.stringify(["X-Forwarded-For"]));
 });

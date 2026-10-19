@@ -6,6 +6,7 @@ import '../app_state.dart';
 import '../services/api.dart';
 import '../services/push.dart';
 import '../wearable/wearable_sync.dart';
+import 'auth/server_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -105,7 +106,21 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             label: const Text('Sign out'),
           ),
           const SizedBox(height: 8),
-          Text('Server: ${state.api.serverUrl}', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+          Row(children: [
+            Expanded(
+              child: Text('Server: ${state.api.serverUrl}',
+                  style: context.tt.bodySmall?.copyWith(color: context.sc.ink3), overflow: TextOverflow.ellipsis),
+            ),
+            if (!state.api.serverLocked && !kIsWeb)
+              TextButton(
+                onPressed: () {
+                  final nav = Navigator.of(context);
+                  nav.pop();
+                  nav.push(MaterialPageRoute(builder: (_) => const ServerScreen(firstRun: false)));
+                },
+                child: const Text('Change'),
+              ),
+          ]),
           Text('Steady is free software (AGPL-3.0) by OpenWorks IT.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
         ]),
       ),

@@ -693,6 +693,26 @@ onRecordUpdateRequest((e) => {
 }, "devices");
 
 /* =====================================================================
+ * Start-up
+ * ===================================================================== */
+
+// The header that carries the visitor's address depends on where this server runs (Caddy:
+// X-Forwarded-For; a Cloudflare tunnel: Cf-Connecting-Ip). Data moved from one setup to
+// another keeps the old setting, so line it up with this deployment on every start.
+onBootstrap((e) => {
+  e.next();
+  const header = $os.getenv("STEADY_TRUSTED_PROXY_HEADER");
+  if (!header) return;
+  const settings = e.app.settings();
+  const current = settings.trustedProxy.headers || [];
+  if (current.length === 1 && current[0] === header) return;
+  settings.trustedProxy.headers = [header];
+  settings.trustedProxy.useLeftmostIP = false;
+  e.app.save(settings);
+  e.app.logger().info("steady: trusted proxy header set to " + header);
+});
+
+/* =====================================================================
  * Scheduled jobs (cron runs in UTC)
  * ===================================================================== */
 

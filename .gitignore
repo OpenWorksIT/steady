@@ -24,3 +24,6 @@ __pycache__/
 # server web app copy (deploy/update.sh)
 deploy/web/
 deploy/web.new/
+
+# exported test data
+deploy/test/steady-data-*.tar.gz
