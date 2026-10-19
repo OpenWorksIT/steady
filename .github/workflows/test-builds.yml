@@ -76,7 +76,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete test-build --yes --cleanup-tag 2>/dev/null || true
-          gh release create test-build out/steady-test.apk out/steady-web.zip \
-            --prerelease --target "$GITHUB_SHA" --title "Test build ($(date -u +%Y-%m-%d) ${GITHUB_SHA::7})" \
-            --notes "For testing only. Install steady-test.apk on Android and enter your test server address on first launch. steady-web.zip is the web app served by deploy/test/start.sh."
+          set -o pipefail
+          title="Test build ($(date -u +%Y-%m-%d) ${GITHUB_SHA::7})"
+          notes="For testing only. Install steady-test.apk on Android; new patients scan the invite QR code, others enter the server address. steady-web.zip is the web app (servers also get it from the web-dist branch)."
+          {
+            # replace the files in place rather than deleting the release first, so a failed
+            # step never leaves no release at all
+            if gh release view test-build > /dev/null 2>&1; then
+              gh release upload test-build out/steady-test.apk out/steady-web.zip --clobber
+              gh release edit test-build --title "$title" --notes "$notes" --prerelease
+            else
+              gh release create test-build out/steady-test.apk out/steady-web.zip \
+                --prerelease --target "$GITHUB_SHA" --title "$title" --notes "$notes"
+            fi
+          } 2>&1 | tee ../publish.txt || { echo "::error title=publish::$(sed 's/%/%25/g' ../publish.txt | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
