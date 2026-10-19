@@ -9,7 +9,9 @@ cd "$(dirname "$0")"
 FILE="${1:?usage: restore-data.sh <steady-data file>}"
 [ -f "$FILE" ] || { echo "No such file: $FILE" >&2; exit 1; }
 FILE="$(realpath "$FILE")"
-tar -tzf "$FILE" | grep -q 'data.db$' || { echo "$FILE doesn't look like Steady data (no data.db)." >&2; exit 1; }
+# read the whole listing (grep -q would stop early and, with pipefail, fail the check on big files)
+LIST="$(tar -tzf "$FILE")" || { echo "$FILE can't be read as a .tar.gz (incomplete copy?)." >&2; exit 1; }
+grep -q 'data.db$' <<<"$LIST" || { echo "$FILE doesn't look like Steady data (no data.db)." >&2; exit 1; }
 
 read -r -p "This replaces ALL Steady data on this server with $(basename "$FILE"). Type yes to continue: " ok
 [ "$ok" = yes ] || { echo "Nothing changed."; exit 1; }
