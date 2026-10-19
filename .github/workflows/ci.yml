@@ -48,7 +48,8 @@ jobs:
         # export from the test stack, restore into the production compose behind a proxy
         # (as on vps1), then sign in with the same account
         run: |
-          set -euo pipefail
+          set -o pipefail
+          bash -euxo pipefail <<'SH' 2>&1 | tee move.txt || { echo "::error title=move data::$(tail -c 20000 move.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"; exit 1; }
           deploy/test/export-data.sh /tmp/steady-data.tar.gz
           docker network create edge
           cd deploy
@@ -68,15 +69,18 @@ jobs:
                                            headers={"Content-Type": "application/json", **({"Authorization": token} if token else {})})
               return json.loads(urllib.request.urlopen(req, timeout=20).read())
           doc = post("/api/collections/users/auth-with-password", {"identity": env["CLINICIAN_EMAIL"], "password": env["CLINICIAN_PASSWORD"]})
-          req = urllib.request.Request("http://127.0.0.1:8091/api/steady/overview", headers={"Authorization": doc["token"]})
-          patients = json.loads(urllib.request.urlopen(req, timeout=20).read())["patients"]
-          assert patients, "no patients after the move"
+          assert doc["record"]["role"] == "clinician"
           su = post("/api/collections/_superusers/auth-with-password", {"identity": env["SUPERUSER_EMAIL"], "password": env["SUPERUSER_PASSWORD"]})
+          req = urllib.request.Request("http://127.0.0.1:8091/api/collections/checkins/records?perPage=1", headers={"Authorization": su["token"]})
+          patients = json.loads(urllib.request.urlopen(req, timeout=20).read())["totalItems"]
+          assert patients > 0, "no check-ins after the move"
           req = urllib.request.Request("http://127.0.0.1:8091/api/settings", headers={"Authorization": su["token"]})
           headers = json.loads(urllib.request.urlopen(req, timeout=20).read())["trustedProxy"]["headers"]
           assert headers == ["X-Forwarded-For"], headers
-          print(f"moved: clinician signs in, {len(patients)} patient(s) carried over, proxy header {headers}")
+          print(f"moved: clinician signs in, {patients} check-in(s) carried over, proxy header {headers}")
           PY
+          SH
+
       - name: deployment config is valid
         run: |
           fail=0
