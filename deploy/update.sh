@@ -16,7 +16,12 @@ if git -C .. fetch -q origin web-dist 2>/dev/null; then
   rm -rf web.new && mkdir web.new
   git -C .. archive origin/web-dist | tar -x -C web.new
   chmod -R a+rX web.new
-  rm -rf web && mv web.new web
+  # refresh the contents in place: the running server has this folder mounted, and a
+  # replaced folder would stay invisible to it until it restarts
+  mkdir -p web
+  find web -mindepth 1 -delete
+  cp -a web.new/. web/
+  rm -rf web.new
 else
   echo "  No web-dist branch yet; keeping the current web app." >&2
   mkdir -p web
