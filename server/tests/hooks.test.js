@@ -160,7 +160,10 @@ function makeRuntime(opts = {}) {
     toString: (v) => (Buffer.isBuffer(v) ? v.toString("utf8") : Array.isArray(v) ? Buffer.from(v).toString("utf8") : String(v)),
     $os: {
       getenv: (k) => (opts.env || {})[k] || "",
-      readFile: (p) => fs.readFileSync(p)
+      readFile: (p) => fs.readFileSync(p),
+      stat: (p) => { const st = fs.statSync(p); return { size: () => st.size }; },
+      dirFS: (d) => d,
+      writeFile: (p, bytes) => fs.writeFileSync(p, Buffer.from(bytes))
     },
     $security: { randomStringWithAlphabet: (n, alpha) => Array.from({ length: n }, (_, i) => alpha[(idSeq * 7 + i * 13) % alpha.length]).join("") },
     $http: {
@@ -201,7 +204,7 @@ function makeRuntime(opts = {}) {
   for (const f of fs.readdirSync(path.join(ROOT, "pb_migrations")).sort()) run(path.join(ROOT, "pb_migrations", f));
   run(path.join(HOOKS, "steady.pb.js"));
 
-  function call(method, p, { auth = null, body = {}, params = {}, query = {} } = {}) {
+  function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
       const [m, pat] = k.split(" ");
       if (m !== method) return false;
@@ -215,11 +218,16 @@ function makeRuntime(opts = {}) {
     const e = {
       auth,
       app,
-      request: { pathValue: (n) => params[n] },
+      request: { pathValue: (n) => params[n], header: { get: (k) => headers[k] || "" } },
       requestInfo: () => ({ body, query }),
       realIP: () => "127.0.0.1",
-      json: (status, data) => { out = { status, data: JSON.parse(JSON.stringify(data)) }; }
+      response: { header: () => ({ set: (k, v) => { respHeaders[k] = v; } }) },
+      json: (status, data) => { out = { status, data: JSON.parse(JSON.stringify(data)) }; },
+      html: (status, html) => { out = { status, html, headers: respHeaders }; },
+      redirect: (status, location) => { out = { status, location }; },
+      fileFS: (dir, name) => { out = { status: 200, file: path.join(dir, name), headers: respHeaders }; }
     };
+    const respHeaders = {};
     try { routes[key](e); } catch (err) {
       if (err instanceof ApiError || (err && err.status)) return { status: err.status, error: err.message, data: err.data };
       throw err;
@@ -598,4 +606,80 @@ test("start-up: the proxy header follows this deployment, e.g. after moving the 
   rt.settings.trustedProxy.headers = ["Cf-Connecting-Ip"]; // as the Cloudflare test stack left it
   rt.hooks.bootstrap({ app: rt.app, next() {} });
   assert.equal(JSON.stringify(rt.settings.trustedProxy.headers), JSON.stringify(["X-Forwarded-For"]));
+});
+
+/* ------------------------------------------------ distribution and updates */
+
+const os = require("os");
+
+function distDirs() {
+  const pub = fs.mkdtempSync(path.join(os.tmpdir(), "steady-pub-"));
+  const ctl = fs.mkdtempSync(path.join(os.tmpdir(), "steady-ctl-"));
+  return { pub, ctl };
+}
+
+test("dist: the invite page offers the Android app, and iPhones go to the web app", () => {
+  const { pub, ctl } = distDirs();
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_PRACTICE_NAME: "VR <Clinical> & Co" }) });
+  const android = { "User-Agent": "Mozilla/5.0 (Linux; Android 15; SM-S921B) Chrome/130" };
+
+  // no build on the server yet
+  assert.equal(rt.call("GET", "/api/steady/config").data.app, null);
+  let page = rt.call("GET", "/join", { query: { invite: "abcd-2345" }, headers: android });
+  assert.equal(page.status, 200);
+  assert.match(page.html, /isn't available for download here yet/);
+  assert.match(page.html, /VR &lt;Clinical&gt; &amp; Co/);
+  assert.equal(rt.call("GET", "/download/steady.apk").status, 404);
+
+  // CI put a build there
+  fs.mkdirSync(path.join(pub, "download"));
+  fs.writeFileSync(path.join(pub, "download", "steady.apk"), Buffer.alloc(3 * 1048576));
+  fs.writeFileSync(path.join(pub, "download", "version.json"), JSON.stringify({ build: "abc1234", date: "2026-10-21T08:00:00Z" }));
+  const app = rt.call("GET", "/api/steady/config").data.app;
+  assert.equal(app.build, "abc1234");
+  assert.equal(app.apk, "/download/steady.apk");
+  assert.equal(app.sizeMB, 3);
+  assert.equal(app.updatable, false, "a build without the permanent key mustn't trigger update prompts");
+  fs.writeFileSync(path.join(pub, "download", "version.json"), JSON.stringify({ build: "abc1234", date: "x", signing: "release" }));
+  assert.equal(rt.call("GET", "/api/steady/config").data.app.updatable, true);
+  page = rt.call("GET", "/join", { query: { invite: "abcd-2345" }, headers: android });
+  assert.match(page.html, /href="\/download\/steady.apk"/);
+  assert.match(page.html, /ABCD-2345/);
+  assert.match(page.html, /href="\/\?invite=ABCD2345"/);
+  assert.ok(!/<script/i.test(page.html), "no scripts: the content security policy forbids them");
+
+  // iPhone or computer: the web app, code filled in; junk codes are dropped
+  const iphone = rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)" } });
+  assert.deepEqual([iphone.status, iphone.location], [302, "/?invite=ABCD2345"]);
+  const junk = rt.call("GET", "/join", { query: { invite: "<script>" }, headers: {} });
+  assert.equal(junk.location, "/");
+
+  const dl = rt.call("GET", "/download/steady.apk");
+  assert.equal(dl.headers["Content-Type"], "application/vnd.android.package-archive");
+  assert.match(dl.headers["Content-Disposition"], /steady\.apk/);
+});
+
+test("system: only server admins can check for or start updates, and only once set up", () => {
+  const { pub, ctl } = distDirs();
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl }) });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const admin = rt.makeUser({ name: "Admin", role: "clinician", active: true, serverAdmin: true, email: "a@example.org" });
+  const pat = rt.makeUser({ name: "P", role: "patient", active: true, clinician: doc.id, email: "p@example.org" });
+
+  assert.equal(rt.call("GET", "/api/steady/system", { auth: doc }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/system", { auth: pat }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/system", { auth: admin }).data.managed, false);
+  assert.equal(rt.call("POST", "/api/steady/system/request", { auth: admin, body: { action: "update" } }).status, 400);
+
+  fs.writeFileSync(path.join(ctl, "status.json"), JSON.stringify({ check: { behind: 2 } }));
+  assert.equal(rt.call("POST", "/api/steady/system/request", { auth: admin, body: { action: "rm -rf" } }).status, 400);
+  assert.equal(rt.call("POST", "/api/steady/system/request", { auth: doc, body: { action: "update" } }).status, 403);
+  const r = rt.call("POST", "/api/steady/system/request", { auth: admin, body: { action: "update" } });
+  assert.equal(r.status, 200);
+  assert.equal(fs.readFileSync(path.join(ctl, "request"), "utf8"), "update\n");
+  const st = rt.call("GET", "/api/steady/system", { auth: admin }).data;
+  assert.equal(st.managed, true);
+  assert.equal(st.pending, "update");
+  assert.equal(st.status.check.behind, 2);
+  assert.match(rt.app.findCollectionByNameOrId("users").updateRule, /serverAdmin:isset = false/);
 });

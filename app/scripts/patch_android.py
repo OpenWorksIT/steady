@@ -56,6 +56,27 @@ def patch_kts(text):
     text = re.sub(r"minSdk\s*=\s*flutter\.minSdkVersion", "minSdk = maxOf(flutter.minSdkVersion, 26)", text)
     if 'module = "tink"' not in text:
         text += '\nconfigurations.all {\n    exclude(group = "com.google.crypto.tink", module = "tink")\n}\n'
+    # Release signing with a permanent key when android/key.properties exists (CI writes it
+    # from secrets), so new builds install over old ones. Without it: the debug key, as before.
+    if "keystoreProperties" not in text:
+        # imports first; the rest after plugins {}, which must be the first statement
+        text = 'import java.io.FileInputStream\nimport java.util.Properties\n\n' + text
+        new, n = re.subn(r"^android\s*\{", 'val keystoreProperties = Properties()\n'
+                         'val keystorePropertiesFile = rootProject.file("key.properties")\n'
+                         'if (keystorePropertiesFile.exists()) keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n\n'
+                         'android {\n    signingConfigs {\n        create("release") {\n'
+                         '            keyAlias = keystoreProperties["keyAlias"] as String?\n'
+                         '            keyPassword = keystoreProperties["keyPassword"] as String?\n'
+                         '            storeFile = (keystoreProperties["storeFile"] as String?)?.let { file(it) }\n'
+                         '            storePassword = keystoreProperties["storePassword"] as String?\n'
+                         '        }\n    }', text, count=1, flags=re.M)
+        if n != 1:
+            fail("couldn't find the android block in build.gradle.kts")
+        text = new
+        text, n = re.subn(r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)',
+                          'signingConfig = if (keystorePropertiesFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")', text, count=1)
+        if n != 1:
+            fail("couldn't find the release signingConfig in build.gradle.kts")
     return text
 
 

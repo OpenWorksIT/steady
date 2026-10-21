@@ -1,0 +1,10 @@
+# Runs steady-ctl when a server admin asks for a check or an update in the app.
+[Unit]
+Description=Steady: watch for update requests from the app
+
+[Path]
+PathExists=/var/lib/steady/ctl/request
+Unit=steady-ctl.service
+
+[Install]
+WantedBy=multi-user.target

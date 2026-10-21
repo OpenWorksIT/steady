@@ -6,7 +6,10 @@ import '../app_state.dart';
 import '../services/api.dart';
 import '../services/push.dart';
 import '../wearable/wearable_sync.dart';
+import '../build_info.dart';
 import 'auth/server_screen.dart';
+import 'clinician/server_updates_screen.dart';
+import 'update_notice.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -96,6 +99,29 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               child: const Text('Stop sharing watch data'),
             ),
           ],
+          if (state.isClinician && state.api.isServerAdmin) ...[
+            const SizedBox(height: 12),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.system_update_alt),
+              title: const Text('Server and updates'),
+              subtitle: const Text('Check for and install updates'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const ServerUpdatesScreen()));
+              },
+            ),
+          ],
+          if (appUpdateAvailable(state)) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              icon: const Icon(Icons.download),
+              onPressed: () => downloadAppUpdate(context),
+              label: const Text('Download the new version of Steady'),
+            ),
+          ],
           const SizedBox(height: 20),
           OutlinedButton.icon(
             icon: const Icon(Icons.logout),
@@ -121,6 +147,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                 child: const Text('Change'),
               ),
           ]),
+          Text('Steady ${kAppBuild.isEmpty ? '(development build)' : 'build $kAppBuild'}'
+              '${appUpdateAvailable(state) ? ' · build ${state.config.appBuild} available' : ''}',
+              style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
           Text('Steady is free software (AGPL-3.0) by OpenWorks IT.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
         ]),
       ),

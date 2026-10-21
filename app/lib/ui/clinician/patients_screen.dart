@@ -87,7 +87,8 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
               const Text('Android: your patient installs Steady, taps "Scan invite QR code" and points the camera here. '
                   'Steady connects to the practice and fills in the code.'),
               const SizedBox(height: 6),
-              const Text('iPhone: they scan it with the camera app; Steady opens in the browser, ready to join.'),
+              const Text('No app yet? They scan it with the phone\'s camera: Android phones get the download, '
+                  'iPhones open Steady in the browser, ready to join.'),
               const SizedBox(height: 6),
               Text('Or they type the code. It works once and expires on ${inv.expires.day}/${inv.expires.month}/${inv.expires.year}.',
                   style: TextStyle(color: context.sc.ink2)),

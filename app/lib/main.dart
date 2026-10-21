@@ -16,6 +16,7 @@ import 'ui/auth/sign_in_screen.dart';
 import 'ui/clinician/clinician_shell.dart';
 import 'ui/patient/patient_home.dart';
 import 'ui/theme.dart';
+import 'ui/update_notice.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,7 +37,7 @@ class SteadyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
-        home: const RootGate(),
+        home: const UpdateNudge(child: RootGate()),
       );
 }
 

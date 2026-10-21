@@ -1,0 +1,10 @@
+[Unit]
+Description=Steady: check for updates every night
+
+[Timer]
+OnCalendar=*-*-* 03:20
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

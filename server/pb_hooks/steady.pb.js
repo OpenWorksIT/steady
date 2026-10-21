@@ -27,8 +27,33 @@ routerAdd("GET", "/api/steady/config", (e) => {
     consentVersion: s.env("STEADY_CONSENT_VERSION", "draft-1"),
     consentText: consent,
     // UnifiedPush (Android) apps register with this so the relay can sign with VAPID
-    vapidPublicKey: s.env("STEADY_VAPID_PUBLIC_KEY", "")
+    vapidPublicKey: s.env("STEADY_VAPID_PUBLIC_KEY", ""),
+    // the newest Android build on this server, so older copies can offer the update
+    app: require(`${__hooks}/lib/dist.js`).appInfo(s.publicDir())
   });
+});
+
+// Invite QR codes point here. Android: download the app, then scan again. Elsewhere
+// (iPhone, computer): straight on to the web app with the code filled in.
+routerAdd("GET", "/join", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const d = require(`${__hooks}/lib/dist.js`);
+  const code = d.cleanCode((e.requestInfo().query || {}).invite);
+  const ua = String(e.request.header.get("User-Agent") || "");
+  if (!/Android/i.test(ua)) return e.redirect(302, "/" + (code ? "?invite=" + code : ""));
+  e.response.header().set("Cache-Control", "no-store");
+  return e.html(200, d.joinPage({ practice: s.env("STEADY_PRACTICE_NAME", "Your practice"), code: code, app: d.appInfo(s.publicDir()) }));
+});
+
+// The newest Android build, as an installable download.
+routerAdd("GET", "/download/steady.apk", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const dir = s.publicDir() + "/download";
+  try { $os.stat(dir + "/steady.apk"); } catch (_) { throw new NotFoundError("No Android build on this server yet."); }
+  e.response.header().set("Content-Type", "application/vnd.android.package-archive");
+  e.response.header().set("Content-Disposition", "attachment; filename=\"steady.apk\"");
+  e.response.header().set("Cache-Control", "no-cache");
+  return e.fileFS($os.dirFS(dir), "steady.apk");
 });
 
 // A patient joins with the invite code their psychologist gave them.
@@ -691,6 +716,35 @@ onRecordUpdateRequest((e) => {
   if (err) throw s.badRequest(err);
   e.next();
 }, "devices");
+
+/* =====================================================================
+ * Server updates (for psychologists marked serverAdmin; the work is done on the
+ * server by deploy/ctl/steady-ctl.sh, which this only leaves a request for)
+ * ===================================================================== */
+
+routerAdd("GET", "/api/steady/system", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const d = require(`${__hooks}/lib/dist.js`);
+  s.requireServerAdmin(e);
+  const status = d.ctlStatus(s.ctlDir());
+  return e.json(200, { managed: !!status, pending: d.ctlPending(s.ctlDir()), status: status, app: d.appInfo(s.publicDir()) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/steady/system/request", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const d = require(`${__hooks}/lib/dist.js`);
+  s.requireServerAdmin(e);
+  const action = s.body(e).action;
+  if (action !== "check" && action !== "update") throw s.badRequest("action must be 'check' or 'update'.");
+  if (!d.ctlStatus(s.ctlDir())) throw s.badRequest("Updates from the app aren't set up on this server yet (deploy/ctl/install.sh).");
+  try {
+    d.ctlRequest(s.ctlDir(), action);
+  } catch (err) {
+    throw s.badRequest("Steady can't leave the request for the server. Run deploy/ctl/install.sh again.");
+  }
+  s.audit($app, e, "system." + action, "", "");
+  return e.json(200, { pending: action });
+}, $apis.requireAuth());
 
 /* =====================================================================
  * Start-up

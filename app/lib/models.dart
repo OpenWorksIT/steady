@@ -32,6 +32,12 @@ class CrisisLine {
 
 class AppConfig {
   final String practiceName, crisisNotice, consentVersion, consentText, vapidPublicKey;
+
+  /// The newest Android build on the server ('' if none) and where to download it.
+  final String appBuild, apkPath;
+
+  /// Whether that build installs over older copies (signed with the permanent key).
+  final bool appUpdatable;
   final List<CrisisLine> crisisLines;
   AppConfig({
     required this.practiceName,
@@ -40,6 +46,9 @@ class AppConfig {
     required this.consentText,
     required this.vapidPublicKey,
     required this.crisisLines,
+    this.appBuild = '',
+    this.apkPath = '',
+    this.appUpdatable = false,
   });
 
   /// Used until the server answers, and if it can't be reached.
@@ -62,6 +71,9 @@ class AppConfig {
         consentText: '${j['consentText'] ?? ''}',
         vapidPublicKey: '${j['vapidPublicKey'] ?? ''}',
         crisisLines: asList(j['crisisLines']).map((e) => CrisisLine.fromJson(asMap(e))).toList(),
+        appBuild: '${asMap(j['app'])['build'] ?? ''}',
+        apkPath: '${asMap(j['app'])['apk'] ?? ''}',
+        appUpdatable: asMap(j['app'])['updatable'] == true,
       );
 }
 

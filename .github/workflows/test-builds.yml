@@ -1,5 +1,5 @@
-# Builds an installable Android APK and the web app, and publishes them to the
-# "test-build" pre-release. The APK asks for the server address on first launch.
+# Builds an installable Android APK and the web app, publishes both to the web-dist branch
+# (servers serve them; see deploy/update.sh) and to the "test-build" pre-release.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: Test builds
 on:
@@ -37,13 +37,30 @@ jobs:
           python3 scripts/patch_android.py
           python3 scripts/patch_web.py
 
+      - name: build number and signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          echo "STEADY_BUILD=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "STEADY_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > app/android/app/steady-release.jks
+            printf 'storeFile=steady-release.jks\nstorePassword=%s\nkeyAlias=steady\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > app/android/key.properties
+            echo "STEADY_SIGNING=release" >> "$GITHUB_ENV"
+          else
+            echo "STEADY_SIGNING=throwaway" >> "$GITHUB_ENV"
+            echo "::warning title=signing::No ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD secrets: this APK is signed with a throwaway key, so it can't install over earlier copies and phones won't be offered it as an update. See docs/APP.md, 'Signing key'."
+          fi
+
       - name: build apk
         working-directory: app
         timeout-minutes: 30
         run: |
           set -o pipefail
           # 64-bit ARM only: every current phone, and a third of the native (QR scanner) build time
-          flutter build apk --release --target-platform android-arm64 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          flutter build apk --release --target-platform android-arm64 \
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: build web
         working-directory: app
@@ -53,7 +70,8 @@ jobs:
           # free the memory the Android build's Gradle and Kotlin daemons keep holding
           (cd android && ./gradlew --stop) > /dev/null 2>&1 || true
           pkill -f KotlinCompileDaemon || true
-          flutter build web --verbose --release --no-web-resources-cdn 2>&1 | tee ../web.txt || { echo "::error title=flutter build web::$(sed 's/%/%25/g' ../web.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          flutter build web --verbose --release --no-web-resources-cdn \
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../web.txt || { echo "::error title=flutter build web::$(sed 's/%/%25/g' ../web.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: package
         run: |
@@ -62,9 +80,13 @@ jobs:
           (cd app/build/web && zip -qr ../../../out/steady-web.zip .)
           ls -la out
 
-      - name: publish the web app to the web-dist branch
-        # servers fetch it with their read-only deploy key (deploy/update.sh)
+      - name: publish the web app and the APK to the web-dist branch
+        # servers fetch it with their read-only deploy key (deploy/update.sh) and offer the APK
+        # at /download/steady.apk and on the invite page (/join)
         run: |
+          mkdir -p app/build/web/download
+          cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/download/steady.apk
+          printf '{"build":"%s","date":"%s","signing":"%s"}\n' "$STEADY_BUILD" "$STEADY_BUILD_DATE" "$STEADY_SIGNING" > app/build/web/download/version.json
           cd app/build/web
           git init -q -b web-dist
           git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" add -A

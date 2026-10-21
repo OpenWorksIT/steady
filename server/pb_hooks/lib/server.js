@@ -45,6 +45,20 @@ function requireRole(e, wanted) {
   if (!e.auth.getBool("active")) throw new ForbiddenError("This account has been stopped. Please contact the practice.");
 }
 
+/** Psychologists the superuser has marked "serverAdmin" may check for and run updates. */
+function requireServerAdmin(e) {
+  requireRole(e, "clinician");
+  if (!e.auth.getBool("serverAdmin")) throw new ForbiddenError("Only a server administrator can do this. Ask OpenWorks to tick serverAdmin on your account.");
+}
+
+function publicDir() {
+  return env("STEADY_PUBLIC_DIR", __hooks + "/../pb_public");
+}
+
+function ctlDir() {
+  return env("STEADY_CTL_DIR", "/ctl");
+}
+
 function badRequest(msg, errors) {
   return new BadRequestError(msg, errors ? { errors: errors } : undefined);
 }
@@ -250,6 +264,9 @@ module.exports = {
   body: body,
   role: role,
   requireRole: requireRole,
+  requireServerAdmin: requireServerAdmin,
+  publicDir: publicDir,
+  ctlDir: ctlDir,
   badRequest: badRequest,
   env: env,
   audit: audit,

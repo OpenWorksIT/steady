@@ -75,6 +75,40 @@ lib/
 packages/steady_apns/     iOS push bridge (Swift)
 ```
 
+## Signing key (test builds)
+
+Android only installs a new build over an old one when both are signed with the same key.
+CI signs test builds with a permanent key from two repository secrets; without them it uses a
+throwaway key, and phones are not offered those builds as updates.
+
+Once, on any Linux machine with Docker (or a JDK's `keytool`):
+
+```bash
+read -rs -p "Key password: " PW; echo
+docker run --rm -v "$PWD":/k -w /k eclipse-temurin:21-jdk keytool -genkeypair -keystore steady-release.jks \
+  -alias steady -keyalg RSA -keysize 4096 -validity 10000 -storepass "$PW" \
+  -dname "CN=OpenWorks IT, O=OpenWorks IT (Pty) Ltd, C=ZA"
+base64 -w0 steady-release.jks > steady-release.jks.b64
+```
+
+On GitHub: the steady repository > **Settings > Secrets and variables > Actions > New repository
+secret**: `ANDROID_KEYSTORE_B64` = the contents of `steady-release.jks.b64`, and
+`ANDROID_KEYSTORE_PASSWORD` = the password. Keep `steady-release.jks` and its password somewhere
+safe and private: losing them means every tester must uninstall and reinstall once. Delete the
+`.b64` file.
+
+The first build with the permanent key can't install over a copy signed with a throwaway key:
+testers uninstall once, install it, and sign in again. After that, updates install over the top.
+
+## Updates for testers
+
+Each test build is published to the `web-dist` branch with the web app, and `deploy/update.sh`
+puts it on the server: `https://<server>/download/steady.apk`. Invite QR codes open
+`/join?invite=<code>`: on an Android phone without the app, that page offers the download and
+the steps; on an iPhone it opens the web app with the code filled in. A copy of the app that is
+older than the server's build (and signed with the same permanent key) offers the download
+once per start and in Settings.
+
 ## Watch data
 
 Patients can optionally share a daily summary from their watch. Steady reads it from **Health Connect** on Android (Android 8 or later) and **Apple Health** on iPhone; it never talks to the watch directly.

@@ -27,20 +27,24 @@ String? normaliseServerUrl(String input) {
   return '${u.scheme}://${u.host}${u.hasPort ? ':${u.port}' : ''}$path';
 }
 
-/// Reads an invite QR code: `https://<server>/?invite=<code>`. Returns the server address
-/// and the 8-character code, or null if it isn't a Steady invite.
+/// Reads an invite QR code: `https://<server>/join?invite=<code>` (or the older
+/// `https://<server>/?invite=<code>`). Returns the server address and the 8-character code,
+/// or null if it isn't a Steady invite.
 ({String server, String code})? parseInviteLink(String raw) {
   final u = Uri.tryParse(raw.trim());
   if (u == null || u.host.isEmpty || !(u.scheme == 'https' || u.scheme == 'http')) return null;
   final code = (u.queryParameters['invite'] ?? '').toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
   if (code.length != 8) return null;
-  final server = normaliseServerUrl('${u.scheme}://${u.host}${u.hasPort ? ':${u.port}' : ''}${u.path}');
+  final path = u.path.replaceAll(RegExp(r'/+$'), '').replaceAll(RegExp(r'/join$'), '');
+  final server = normaliseServerUrl('${u.scheme}://${u.host}${u.hasPort ? ':${u.port}' : ''}$path');
   return server == null ? null : (server: server, code: code);
 }
 
-/// The link an invite QR code carries; the web app opens it with the code filled in.
+/// The link an invite QR code carries. Scanned in the Steady app, it connects and fills in
+/// the code; scanned with a phone camera, the server's /join page offers the Android app
+/// (or, on an iPhone, opens the web app with the code filled in).
 String inviteLink(String serverUrl, String code) =>
-    '${serverUrl.replaceAll(RegExp(r'/+$'), '')}/?invite=${code.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '')}';
+    '${serverUrl.replaceAll(RegExp(r'/+$'), '')}/join?invite=${code.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '')}';
 
 /// Turns any error into a sentence a person can act on.
 String errorText(Object error) {
@@ -347,6 +351,15 @@ class Api {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/invites', method: 'POST', body: {'label': label});
     return (code: '${res['code']}', expires: fromMs(res['expiresAt']) ?? DateTime.now());
   }
+
+  bool get isServerAdmin => me?.getBoolValue('serverAdmin') ?? false;
+
+  /// Server and updates (server admins): status from deploy/ctl/steady-ctl.sh.
+  Future<Map<String, dynamic>> systemStatus() => pb.send<Map<String, dynamic>>('/api/steady/system');
+
+  /// Asks the server to 'check' for or install an 'update'.
+  Future<void> systemRequest(String action) =>
+      pb.send('/api/steady/system/request', method: 'POST', body: {'action': action});
 
   /// Renames a patient on the psychologist's screens; returns the name now shown.
   Future<String> setPatientLabel(String id, String label) async {

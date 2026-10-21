@@ -63,6 +63,14 @@ def check(cond, what, detail=None):
 def main():
     s, cfg = call("GET", "/api/steady/config")
     check(s == 200 and cfg.get("crisisLines"), "config is public and has crisis lines", cfg)
+    req = urllib.request.Request(BASE + "/join?invite=ABCD2345", headers={"User-Agent": "Mozilla/5.0 (Linux; Android 15) Chrome/130"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        page = r.read().decode()
+    check(r.status == 200 and "ABCD2345" in page and "<script" not in page, "the invite page works for Android phones", page[:200])
+    s, _ = call("GET", "/download/steady.apk")
+    check(s == 404 if not cfg.get("app") else s == 200, "the APK download matches what config reports", cfg.get("app"))
+    s, r = call("GET", "/api/steady/system")
+    check(s in (401, 403), "server updates need a signed-in server admin", r)
 
     s, a = call("POST", "/api/collections/users/auth-with-password",
                 body={"identity": ENV["CLINICIAN_EMAIL"], "password": ENV["CLINICIAN_PASSWORD"]})

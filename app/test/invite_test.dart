@@ -5,7 +5,7 @@ import 'package:steady/services/api.dart';
 void main() {
   test('invite links round-trip', () {
     final link = inviteLink('https://steady.example.co.za/', 'abcd-2345');
-    expect(link, 'https://steady.example.co.za/?invite=ABCD2345');
+    expect(link, 'https://steady.example.co.za/join?invite=ABCD2345');
     final inv = parseInviteLink(link)!;
     expect(inv.server, 'https://steady.example.co.za');
     expect(inv.code, 'ABCD2345');
@@ -15,6 +15,11 @@ void main() {
     final inv = parseInviteLink('https://example.org:8443/steady/?invite=WXYZ-7890')!;
     expect(inv.server, 'https://example.org:8443/steady');
     expect(inv.code, 'WXYZ7890');
+  });
+
+  test('older links without /join still work', () {
+    final inv = parseInviteLink('https://steady.example.co.za/?invite=ABCD2345')!;
+    expect(inv.server, 'https://steady.example.co.za');
   });
 
   test('rejects things that are not invites', () {

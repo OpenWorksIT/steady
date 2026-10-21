@@ -52,6 +52,9 @@ services:
       - pb_data:/pb/pb_data
       # the web app (iPhones, and invite QR codes opened in a browser); ./update.sh fills it
       - ./web:/pb/pb_public:ro
+      # Settings > Server and updates: requests for deploy/ctl/steady-ctl.sh and its status
+      # (set up by deploy/ctl/install.sh; without it the app just says so)
+      - /var/lib/steady/ctl:/ctl
       # edit the consent text without rebuilding
       - ../server/pb_hooks/content:/pb/pb_hooks/content:ro
     networks:

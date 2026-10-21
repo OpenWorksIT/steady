@@ -152,7 +152,19 @@ sudo ./update.sh              # pulls, fetches the web app, builds and starts
 superuser with `sudo docker compose exec pocketbase /pb/pocketbase superuser upsert <email> <password> --dir=/pb/pb_data`,
 then psychologists as in step 5 above.
 
-**Updating** is `sudo ./update.sh` in `/opt/steady/deploy`.
+**Updating** is `sudo ./update.sh` in `/opt/steady/deploy`, or from the app (below).
+
+**6. Updates from the app (optional).** Lets psychologists you trust check for and install
+updates from Settings > Server and updates, the way Shap does; the server also checks every night.
+
+```bash
+sudo /opt/steady/deploy/ctl/install.sh
+```
+
+Then, in the dashboard, open **users**, edit the psychologist and tick **serverAdmin**. The app
+only leaves a request; `deploy/ctl/steady-ctl.sh` does the work as root (outside the app), saves a
+copy of the data to `/var/backups/steady/` first (the last 5 are kept, root only) and then runs
+`update.sh`.
 
 ## Troubleshooting
 
