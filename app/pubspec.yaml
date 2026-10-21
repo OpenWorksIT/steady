@@ -31,7 +31,7 @@ dependencies:
   # file (BSD-3), and downloads in the web app (BSD-3)
   pdf: ^3.11.3
   excel: ^4.0.6
-  share_plus: ^11.0.0
+  share_plus: ^13.3.1
   web: ^1.1.0
   # iOS push bridge (in this repo)
   steady_apns:

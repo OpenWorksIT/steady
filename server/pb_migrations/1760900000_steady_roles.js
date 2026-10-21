@@ -88,6 +88,14 @@ migrate((app) => {
       col.listRule = extra.listRule;
       col.viewRule = extra.listRule;
     }
+    // staff without two-step sign-in get nothing (also kept in line on every start, in
+    // steady_practice.pb.js, in case STEADY_REQUIRE_2FA changes later)
+    if ($os.getenv("STEADY_REQUIRE_2FA") !== "off") {
+      RULE_NAMES.forEach((r) => {
+        const rule = text(col[r]);
+        if (rule !== null && rule.indexOf(GUARD) >= 0 && rule.indexOf(TWO_STEP) < 0) col[r] = rule.split(GUARD).join(GUARD + TWO_STEP);
+      });
+    }
     if (name === "users" && text(col.updateRule) && text(col.updateRule).indexOf("totpSecret") < 0) col.updateRule = text(col.updateRule) + ROLE_LOCK;
     app.save(col);
   });
