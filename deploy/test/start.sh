@@ -57,6 +57,9 @@ SUPERUSER_PASSWORD=$(rand 18)
 CLINICIAN_EMAIL=clinician@steady.test
 CLINICIAN_PASSWORD=$(rand 12)
 CLINICIAN_NAME="Test Clinician"
+
+# The Sorted feed (docs/SORTED.md): give Sorted's test stack this key to see live data
+STEADY_INTEGRATION_KEY=$(rand 32)
 EOF
   echo "Created deploy/test/.env"
 fi
@@ -121,7 +124,7 @@ EXISTS=$(curl -fsS -G $LOCAL/api/collections/users/records \
   -H "Authorization: $TOKEN" --data-urlencode "filter=email='$CLINICIAN_EMAIL'" | python3 -c 'import json,sys; print(json.load(sys.stdin)["totalItems"])')
 if [ "$EXISTS" = "0" ]; then
   curl -fsS $LOCAL/api/collections/users/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-    -d "$(python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"password":sys.argv[2],"passwordConfirm":sys.argv[2],"name":sys.argv[3],"role":"clinician","active":True,"verified":True,"tzOffset":120}))' "$CLINICIAN_EMAIL" "$CLINICIAN_PASSWORD" "$CLINICIAN_NAME")" >/dev/null
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"password":sys.argv[2],"passwordConfirm":sys.argv[2],"name":sys.argv[3],"role":"clinician","master":True,"active":True,"verified":True,"tzOffset":120}))' "$CLINICIAN_EMAIL" "$CLINICIAN_PASSWORD" "$CLINICIAN_NAME")" >/dev/null
   echo "Created clinician account"
 fi
 
@@ -143,10 +146,10 @@ Steady test server is running.
 
   Address for phones   ${URL:-(set PUBLIC_URL in deploy/test/.env to the hostname you gave the tunnel)}
   Web app              ${URL:-<address>}/      (iPhone: open in Safari, Share > Add to Home Screen)
-  Dashboard (this PC)  $LOCAL/_/
-      superuser        $SUPERUSER_EMAIL  /  $SUPERUSER_PASSWORD
-
-  Clinician sign-in    $CLINICIAN_EMAIL  /  $CLINICIAN_PASSWORD
+  Clinician sign-in    $CLINICIAN_EMAIL  /  $CLINICIAN_PASSWORD   (master clinician)
+                       first sign-in sets up two-step sign-in: have an authenticator app ready
+                       (Aegis, 2FAS, Google or Microsoft Authenticator)
+  Accounts             ../accounts.sh --test list | reset <email> | add-admin ...
   Patients             sign in as the clinician, tap Invite, and join with the code on another phone
 
 EOF

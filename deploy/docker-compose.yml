@@ -47,6 +47,10 @@ services:
       STEADY_NOTIFICATION_RETENTION_DAYS: ${STEADY_NOTIFICATION_RETENTION_DAYS:-90}
       # Caddy puts the visitor's address here; used for rate limits and the audit log
       STEADY_TRUSTED_PROXY_HEADER: X-Forwarded-For
+      # psychologists and administrators sign in with a code from an authenticator app
+      STEADY_REQUIRE_2FA: ${STEADY_REQUIRE_2FA:-staff}
+      # the Sorted feed (docs/SORTED.md); empty switches it off
+      STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data

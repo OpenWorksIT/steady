@@ -5,7 +5,7 @@ FROM alpine:3.22
 ARG PB_VERSION=0.40.5
 ARG TARGETARCH=amd64
 
-RUN apk add --no-cache ca-certificates tzdata unzip wget sqlite \
+RUN apk add --no-cache ca-certificates tzdata unzip wget sqlite curl \
  && cd /tmp \
  && wget -q "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_${TARGETARCH}.zip" \
  && wget -q "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/checksums.txt" \

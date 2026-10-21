@@ -27,6 +27,12 @@ dependencies:
   url_launcher: ^6.3.0
   # Clinicians upload questionnaire files (MIT)
   file_picker: ^13.1.0
+  # Exports: PDF reports with charts (Apache-2.0), Excel workbooks (MIT), saving or sharing the
+  # file (BSD-3), and downloads in the web app (BSD-3)
+  pdf: ^3.11.3
+  excel: ^4.0.6
+  share_plus: ^11.0.0
+  web: ^1.1.0
   # iOS push bridge (in this repo)
   steady_apns:
     path: packages/steady_apns
@@ -40,3 +46,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/brand/
+    # DejaVu Sans for PDF reports (Bitstream Vera licence, see assets/fonts/LICENSE-DejaVu.txt)
+    - assets/fonts/

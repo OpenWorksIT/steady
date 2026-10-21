@@ -7,7 +7,9 @@ import '../services/api.dart';
 import '../services/push.dart';
 import '../wearable/wearable_sync.dart';
 import '../build_info.dart';
+import 'auth/change_password_screen.dart';
 import 'auth/server_screen.dart';
+import 'auth/two_step_screen.dart';
 import 'clinician/server_updates_screen.dart';
 import 'update_notice.dart';
 import 'theme.dart';
@@ -99,7 +101,37 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               child: const Text('Stop sharing watch data'),
             ),
           ],
-          if (state.isClinician && state.api.isServerAdmin) ...[
+          if (state.isPatient) const _CareTeam(),
+          const SizedBox(height: 12),
+          Text('Your account', style: context.tt.titleMedium),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.password),
+            title: const Text('Change password'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              final nav = Navigator.of(context);
+              nav.pop();
+              nav.push(MaterialPageRoute(builder: (_) => const ChangePasswordScreen()));
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(state.api.twoStepOn ? Icons.verified_user : Icons.verified_user_outlined),
+            title: const Text('Two-step sign-in'),
+            subtitle: Text(state.api.twoStepOn
+                ? 'On: signing in needs a code from your authenticator app'
+                : 'Off: add a code from an authenticator app to signing in'),
+            trailing: state.api.twoStepOn ? null : const Icon(Icons.chevron_right),
+            onTap: state.api.twoStepOn
+                ? null
+                : () {
+                    final nav = Navigator.of(context);
+                    nav.pop();
+                    nav.push(MaterialPageRoute(builder: (_) => const TwoStepSetupScreen()));
+                  },
+          ),
+          if (state.api.isStaff && state.api.isServerAdmin) ...[
             const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -158,3 +190,35 @@ class _SettingsSheetState extends State<_SettingsSheet> {
 }
 
 bool get _isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+/// Patients: who at the practice can see what they send.
+class _CareTeam extends StatelessWidget {
+  const _CareTeam();
+  @override
+  Widget build(BuildContext context) {
+    final api = AppScope.api(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: FutureBuilder<({String clinician, List<String> shared})>(
+        future: api.careTeam(),
+        builder: (context, snap) {
+          final t = snap.data;
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Who sees what you send', style: context.tt.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              t == null
+                  ? (snap.hasError ? errorText(snap.error!) : '...')
+                  : [
+                      if (t.clinician.isNotEmpty) 'Your psychologist, ${t.clinician}.',
+                      if (t.shared.isNotEmpty) 'Also shared with ${t.shared.join(', ')}, who can read it but not change anything.',
+                      if (t.clinician.isEmpty && t.shared.isEmpty) 'Nobody yet.',
+                    ].join(' '),
+              style: TextStyle(color: context.sc.ink2),
+            ),
+          ]);
+        },
+      ),
+    );
+  }
+}

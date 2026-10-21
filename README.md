@@ -49,8 +49,7 @@ cd deploy
 cp .env.example .env        # fill in the domain, practice name, Apple keys
 ./gen-keys.sh               # paste the printed values into .env
 docker compose up -d --build
-# then open https://<your-domain>/_/ from an allowed address, create the superuser,
-# and add each psychologist in the users collection with role=clinician and active ticked
+sudo ./accounts.sh add-clinician "Name" email@practice --master   # see docs/DEPLOY.md, "Accounts"
 
 # app
 cd app

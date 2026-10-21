@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
+import '../../export/export_actions.dart';
 import '../../models.dart';
 import '../../services/api.dart';
 import '../../wearable/metrics.dart';
@@ -22,7 +23,11 @@ class _Detail {
 
 class PatientDetailScreen extends StatefulWidget {
   final String patientId, name;
-  const PatientDetailScreen({required this.patientId, required this.name, super.key});
+
+  /// A colleague's patient shared with this psychologist: read only, [owner] is the colleague.
+  final bool shared;
+  final String owner;
+  const PatientDetailScreen({required this.patientId, required this.name, this.shared = false, this.owner = '', super.key});
   @override
   State<PatientDetailScreen> createState() => _PatientDetailScreenState();
 }
@@ -118,23 +123,79 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
     }, done: 'Access stopped');
   }
 
+  Future<void> _share() async {
+    final api = AppScope.api(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (c) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Loader<List<({String id, String name, bool shared})>>(
+            load: () => api.sharing(widget.patientId),
+            builder: (c, list, reload) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Share $_name with a colleague', style: c.tt.titleLarge),
+              const SizedBox(height: 4),
+              Text('They can read check-ins, results and watch data, for supervision or cover. Only you can send '
+                  'things, rename or stop access. $_name can see who it\'s shared with, and every view is logged.',
+                  style: TextStyle(color: c.sc.ink2)),
+              const SizedBox(height: 8),
+              if (list.isEmpty) Text('There are no other psychologists at the practice yet.', style: TextStyle(color: c.sc.ink2)),
+              for (final col in list)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(col.name),
+                  value: col.shared,
+                  onChanged: (v) async {
+                    await guarded(c, () => api.share(widget.patientId, col.id, v), done: v ? 'Shared with ${col.name}' : 'No longer shared with ${col.name}');
+                    await reload();
+                  },
+                ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _menu(String v) {
+    switch (v) {
+      case 'rename':
+        _rename();
+      case 'deactivate':
+        _deactivate();
+      case 'reset':
+        resetPasswordFlow(context, userId: widget.patientId, name: _name);
+      case 'share':
+        _share();
+      case 'pdf':
+        exportPatientPdf(context, widget.patientId);
+      case 'excel':
+        exportExcel(context, patientId: widget.patientId);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final own = !widget.shared;
     return Scaffold(
       appBar: AppBar(
         title: Text(_name),
         actions: [
-          IconButton(tooltip: 'Send something', onPressed: _send, icon: const Icon(Icons.send_outlined)),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'rename') _rename();
-              if (v == 'deactivate') _deactivate();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'rename', child: Text('Rename')),
-              PopupMenuItem(value: 'deactivate', child: Text('Stop access')),
-            ],
-          ),
+          if (own) IconButton(tooltip: 'Send something', onPressed: _send, icon: const Icon(Icons.send_outlined)),
+          if (own)
+            PopupMenuButton<String>(
+              onSelected: _menu,
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'pdf', child: ListTile(leading: Icon(Icons.picture_as_pdf_outlined), title: Text('PDF report'))),
+                PopupMenuItem(value: 'excel', child: ListTile(leading: Icon(Icons.table_chart_outlined), title: Text('Export to Excel'))),
+                PopupMenuItem(value: 'share', child: ListTile(leading: Icon(Icons.group_add_outlined), title: Text('Share with a colleague'))),
+                PopupMenuItem(value: 'reset', child: ListTile(leading: Icon(Icons.key_outlined), title: Text('Reset password'))),
+                PopupMenuItem(value: 'rename', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Rename'))),
+                PopupMenuItem(value: 'deactivate', child: ListTile(leading: Icon(Icons.block), title: Text('Stop access'))),
+              ],
+            ),
         ],
         bottom: TabBar(controller: _tabs, tabs: const [Tab(text: 'Overview'), Tab(text: 'Wearable')]),
       ),
@@ -154,6 +215,16 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
         builder: (context, d, reload) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           children: [
+            if (widget.shared) ...[
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.visibility_outlined),
+                  title: Text('Shared with you by ${widget.owner}'),
+                  subtitle: const Text('Read only. Ask them to send questionnaires or make changes.'),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             if (d.summary.selfName.isNotEmpty && d.summary.selfName != d.summary.name) ...[
               Text('Calls themselves ${d.summary.selfName} in the app', style: TextStyle(color: context.sc.ink2)),
               const SizedBox(height: 10),
@@ -174,8 +245,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
             const SizedBox(height: 12),
             WearableWeekCard(patientId: widget.patientId, onOpen: _openWearable),
             const SizedBox(height: 12),
-            FilledButton.icon(onPressed: _send, icon: const Icon(Icons.send), label: const Text('Send a questionnaire or exercise')),
-            const SizedBox(height: 8),
+            if (!widget.shared) ...[
+              FilledButton.icon(onPressed: _send, icon: const Icon(Icons.send), label: const Text('Send a questionnaire or exercise')),
+              const SizedBox(height: 8),
+            ],
             const SectionHeader('Questionnaires and exercises'),
             if (d.assignments.isEmpty) Text('Nothing sent yet.', style: TextStyle(color: context.sc.ink2)),
             for (final a in d.assignments)

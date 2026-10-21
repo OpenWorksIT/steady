@@ -15,7 +15,8 @@ function guard(rule) {
 
 function unguard(rule) {
   const prefix = ACTIVE + " && (";
-  return typeof rule === "string" && rule.indexOf(prefix) === 0 ? rule.slice(prefix.length, -1) : rule;
+  const r = rule === null || rule === undefined ? null : String(rule);
+  return r !== null && r.indexOf(prefix) === 0 ? r.slice(prefix.length, -1) : rule;
 }
 
 const GUARDED = {

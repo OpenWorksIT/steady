@@ -20,6 +20,8 @@ class SignInScreen extends StatefulWidget {
 class _SignInScreenState extends State<SignInScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _code = TextEditingController();
+  bool _needCode = false;
   String? _error;
 
   @override
@@ -40,6 +42,7 @@ class _SignInScreenState extends State<SignInScreen> {
   void dispose() {
     _email.dispose();
     _password.dispose();
+    _code.dispose();
     super.dispose();
   }
 
@@ -47,25 +50,27 @@ class _SignInScreenState extends State<SignInScreen> {
     setState(() => _error = null);
     final state = AppScope.of(context);
     try {
-      await state.api.signIn(_email.text, _password.text);
+      await state.api.signIn(_email.text, _password.text, code: _needCode ? _code.text : null);
       await state.signedInNow();
+    } on TwoStepNeeded {
+      setState(() => _needCode = true);
     } catch (e) {
       setState(() => _error = errorText(e).contains('Failed to authenticate') ? 'That email and password didn\'t match.' : errorText(e));
     }
   }
 
-  Future<void> _forgot() async {
-    if (_email.text.trim().isEmpty) {
-      setState(() => _error = 'Enter your email first, then tap "Forgot password".');
-      return;
-    }
-    try {
-      await AppScope.api(context).requestPasswordReset(_email.text);
-      if (mounted) showSnack(context, 'If that email has an account, a reset link is on its way.');
-    } catch (e) {
-      if (mounted) showSnack(context, errorText(e));
-    }
-  }
+  // Resets are done by people at the practice, not by email: no reset link can be
+  // intercepted, and nobody needs an inbox they share with others.
+  Future<void> _forgot() => showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Forgot your password?'),
+          content: const Text('Ask your psychologist or the practice to reset it. They give you a temporary password, '
+              'and you choose a new one when you sign in.\n\n'
+              'Psychologists: the practice\'s master clinician resets yours.'),
+          actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +106,20 @@ class _SignInScreenState extends State<SignInScreen> {
                   decoration: const InputDecoration(labelText: 'Password'),
                   onSubmitted: (_) => _signIn(),
                 ),
+                if (_needCode) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _code,
+                    autofocus: true,
+                    keyboardType: TextInputType.visiblePassword,
+                    autofillHints: const [AutofillHints.oneTimeCode],
+                    decoration: const InputDecoration(
+                      labelText: 'Code from your authenticator app',
+                      helperText: 'Lost your phone? Type one of your recovery codes instead.',
+                    ),
+                    onSubmitted: (_) => _signIn(),
+                  ),
+                ],
               ]),
             ),
             if (_error != null) ...[

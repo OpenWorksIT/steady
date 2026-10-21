@@ -28,6 +28,8 @@ routerAdd("GET", "/api/steady/config", (e) => {
     consentText: consent,
     // UnifiedPush (Android) apps register with this so the relay can sign with VAPID
     vapidPublicKey: s.env("STEADY_VAPID_PUBLIC_KEY", ""),
+    // "staff": psychologists and administrators sign in with a code from an authenticator app
+    twoStep: s.env("STEADY_REQUIRE_2FA", "staff") === "off" ? "off" : "staff",
     // the newest Android build on this server, so older copies can offer the update
     app: require(`${__hooks}/lib/dist.js`).appInfo(s.publicDir())
   });
@@ -120,30 +122,7 @@ routerAdd("POST", "/api/steady/join", (e) => {
 routerAdd("POST", "/api/steady/invites", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireRole(e, "clinician");
-  const b = s.body(e);
-  const col = $app.findCollectionByNameOrId("invites");
-  let rec = null;
-  for (let i = 0; i < 5 && !rec; i++) {
-    const code = $security.randomStringWithAlphabet(8, s.core.CODE_ALPHABET);
-    try {
-      $app.findFirstRecordByFilter("invites", "code = {:c}", { c: code });
-    } catch (_) {
-      rec = new Record(col);
-      rec.set("code", code);
-    }
-  }
-  if (!rec) throw new ApiError(500, "Couldn't create a unique code. Please try again.");
-  rec.set("clinician", e.auth.id);
-  rec.set("label", s.core.str(b.label, 80));
-  rec.set("expiresAt", s.dateValue(s.nowMs() + 7 * s.core.DAY));
-  $app.save(rec);
-  s.audit($app, e, "invite.create", "invite:" + rec.id, "");
-  return e.json(200, {
-    id: rec.id,
-    code: s.core.formatCode(rec.getString("code")),
-    label: rec.getString("label"),
-    expiresAt: s.toMs(rec, "expiresAt")
-  });
+  return e.json(200, s.createInvite($app, e, e.auth.id, s.body(e).label));
 }, $apis.requireAuth());
 
 routerAdd("GET", "/api/steady/overview", (e) => {
@@ -152,6 +131,15 @@ routerAdd("GET", "/api/steady/overview", (e) => {
   const tz = e.auth.getInt("tzOffset");
   const patients = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c} && active = true", "name", 1000, 0, { c: e.auth.id });
   const out = patients.map((p) => s.patientSummary($app, p, tz));
+  // colleagues' patients shared with this psychologist (read only)
+  const names = {};
+  $app.findRecordsByFilter("users", "role = 'patient' && active = true && sharedWith.id ?= {:c}", "name", 1000, 0, { c: e.auth.id })
+    .forEach((p) => {
+      const row = s.patientSummary($app, p, tz);
+      row.shared = true;
+      row.owner = s.clinicianName($app, p.getString("clinician"), names);
+      out.push(row);
+    });
   const rank = { alert: 3, warn: 2, info: 1, none: 0 };
   const top = (p) => (p.flags.length ? rank[p.flags[0].severity] || 0 : 0);
   out.sort((a, b) => top(b) - top(a) || a.name.localeCompare(b.name));
@@ -162,9 +150,12 @@ routerAdd("GET", "/api/steady/overview", (e) => {
 routerAdd("GET", "/api/steady/patients/{id}/summary", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireRole(e, "clinician");
-  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
-  s.audit($app, e, "patient.summary", "user:" + p.id, p.id);
-  return e.json(200, s.patientSummary($app, p, e.auth.getInt("tzOffset")));
+  const v = s.viewablePatient($app, e.auth.id, e.request.pathValue("id"));
+  const p = v.patient;
+  s.audit($app, e, "patient.summary", "user:" + p.id + (v.own ? "" : " shared"), p.id);
+  const out = s.patientSummary($app, p, e.auth.getInt("tzOffset"));
+  if (!v.own) { out.shared = true; out.owner = s.clinicianName($app, p.getString("clinician"), {}); }
+  return e.json(200, out);
 }, $apis.requireAuth());
 
 // The psychologist renames a patient on their own screens (the patient's own name is unchanged).
@@ -195,7 +186,8 @@ routerAdd("POST", "/api/steady/assignments/{id}/cancel", (e) => {
   s.requireRole(e, "clinician");
   let a = null;
   try { a = $app.findRecordById("assignments", e.request.pathValue("id")); } catch (_) { a = null; }
-  if (!a || a.getString("clinician") !== e.auth.id) throw new NotFoundError("Not found.");
+  if (!a) throw new NotFoundError("Not found.");
+  s.ownPatient($app, e.auth.id, a.getString("patient"));
   if (a.getString("status") !== "pending") throw s.badRequest("Only waiting activities can be cancelled.");
   a.set("status", "cancelled");
   $app.save(a);
@@ -430,7 +422,7 @@ routerAdd("POST", "/api/steady/assignments/{id}/complete", (e) => {
     detail = "Exercise finished in " + Math.round(result.seconds / 60) + " min";
   }
   s.notify($app, {
-    recipient: a.getString("clinician"),
+    recipient: e.auth.getString("clinician") || a.getString("clinician"),
     kind: "completed",
     patient: e.auth.id,
     assignment: a.id,
@@ -484,6 +476,7 @@ routerAdd("POST", "/api/steady/consent", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   if (!e.auth) throw new UnauthorizedError("Please sign in.");
   if (!e.auth.getBool("active")) throw new ForbiddenError("This account has been stopped. Please contact the practice.");
+  if (e.auth.getBool("mustChangePassword")) throw new ForbiddenError("Please choose a new password first.");
   const b = s.body(e);
   const version = s.core.str(b.version, 40);
   if (!version) throw s.badRequest("version is required.");
@@ -560,7 +553,7 @@ routerAdd("GET", "/api/steady/patients/{id}/biometrics", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const w = require(`${__hooks}/lib/wearable.js`);
   s.requireRole(e, "clinician");
-  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  const p = s.viewablePatient($app, e.auth.id, e.request.pathValue("id")).patient;
   const q = e.requestInfo().query || {};
   const today = w.localDay(s.nowMs(), p.getInt("tzOffset") || 120);
   const to = w.validDay(String(q.to || "")) ? String(q.to) : today;

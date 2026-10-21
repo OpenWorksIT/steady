@@ -37,7 +37,7 @@
 
 ## Manual test script (before first patient)
 
-1. Create a clinician in the dashboard. Sign in on phone A.
+1. Create a clinician with `deploy/accounts.sh --test add-clinician ...` (or use the one start.sh made). Sign in on phone A and set up two-step sign-in.
 2. Invite a patient; join on phone B with the code. Check the consent text and that phone A gets "joined".
 3. Phone B: check in with mood 1. Phone A: notification arrives with no name or scores on the lock screen; Alerts shows the detail.
 4. Phone A: send PHQ-9. Phone B: notification, complete with item 9 > 0. Phone A: result shows the red item 9 flag; patient never sees a score.
@@ -45,5 +45,5 @@
 6. Library: import PHQ-8 from ReproSchema; confirm it can't be sent until the licence is confirmed.
 7. Build a custom questionnaire with a band and a flag; send and complete it.
 8. Stop the patient's access; phone B is signed out at next refresh.
-9. Check `auditlog` in the dashboard shows each read.
+9. Check `deploy/accounts.sh --test audit --days 1` shows each read.
 10. Run `deploy/backup.sh` and restore to a scratch machine.

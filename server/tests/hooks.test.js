@@ -16,6 +16,7 @@ const HOOKS = path.join(ROOT, "pb_hooks");
 function makeRuntime(opts = {}) {
   let clock = opts.now || Date.UTC(2026, 9, 14, 10, 0, 0);
   let idSeq = 0;
+  let randSeq = 0;
   const newId = () => ("r" + String(++idSeq).padStart(14, "0")).slice(0, 15);
   const iso = (ms) => new Date(ms).toISOString().replace("T", " ");
 
@@ -30,6 +31,7 @@ function makeRuntime(opts = {}) {
   class ForbiddenError extends ApiError { constructor(m, d) { super(403, m, d); } }
   class NotFoundError extends ApiError { constructor(m, d) { super(404, m, d); } }
   class UnauthorizedError extends ApiError { constructor(m, d) { super(401, m, d); } }
+  class ValidationError { constructor(code, message) { this.code = code; this.message = message; } }
 
   const collections = {};
   const store = {};
@@ -63,14 +65,17 @@ function makeRuntime(opts = {}) {
     getBool(k) { return this.data[k] === true; }
     getDateTime(k) { return new DateTime(this.data[k] || ""); }
     setEmail(v) { this.data.email = v; }
-    setPassword(v) { this.data.passwordHash = "hashed:" + v.length; }
+    setPassword(v) { this.data.passwordHash = "pw:" + v; }
+    validatePassword(v) { return this.data.passwordHash === "pw:" + v; }
+    email() { return this.data.email || ""; }
+    isSuperuser() { return this.collectionName === "_superusers"; }
     setVerified(v) { this.data.verified = v; }
     original() { return this._original || null; }
     refreshTokenKey() { this.data.tokenKey = "key-" + (++idSeq); }
   }
 
   function matchClause(rec, clause, params) {
-    const m = /^\s*([a-zA-Z_.]+)\s*(>=|<=|!=|=|<|>)\s*(.+?)\s*$/.exec(clause);
+    const m = /^\s*([a-zA-Z_.]+)\s*(\?=|>=|<=|!=|=|<|>)\s*(.+?)\s*$/.exec(clause);
     if (!m) throw new Error("fake filter can't parse: " + clause);
     const [, field, op, rawV] = m;
     let v;
@@ -78,6 +83,12 @@ function makeRuntime(opts = {}) {
     else if (/^'.*'$/.test(rawV)) v = rawV.slice(1, -1);
     else if (rawV === "true" || rawV === "false") v = rawV === "true";
     else throw new Error("fake filter value: " + rawV);
+    if (op === "?=") {
+      // any item of a multi-relation ("sharedWith.id ?= x")
+      let list = rec.data[field.replace(/\.id$/, "")];
+      try { list = typeof list === "string" ? JSON.parse(list) : list; } catch (_) { list = []; }
+      return Array.isArray(list) && list.indexOf(v) >= 0;
+    }
     let a = rec.data[field];
     if (typeof v === "boolean") a = a === true;
     else a = a === undefined || a === null ? "" : String(a);
@@ -115,6 +126,7 @@ function makeRuntime(opts = {}) {
     findCollectionByNameOrId: (n) => { if (!collections[n]) throw new Error("no collection " + n); return collections[n]; },
     findRecordById: (n, id) => { const r = (store[n] || []).find((x) => x.id === id); if (!r) throw new Error("not found"); return r; },
     findFirstRecordByFilter: (n, f, p) => { const r = filterRecords(n, f, p)[0]; if (!r) throw new Error("no rows"); return r; },
+    findAuthRecordByEmail: (n, email) => { const r = (store[n] || []).find((x) => x.data.email === email); if (!r) throw new Error("no rows"); return r; },
     findRecordsByFilter: (n, f, sort, limit, offset, p) => sortRecords(filterRecords(n, f, p), sort).slice(offset || 0, (offset || 0) + (limit || 1e9)),
     save: (model) => {
       if (model instanceof Collection) { defineCollection(model); return; }
@@ -154,18 +166,24 @@ function makeRuntime(opts = {}) {
     console, JSON, Date: FakeDate, Math, Number, String, Array, Object, RegExp, Error, isFinite, parseInt, parseFloat, encodeURIComponent,
     __hooks: HOOKS,
     $app: app,
-    DateTime, Record, Collection, ApiError, BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError,
+    DateTime, Record, Collection, ApiError, BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError,
+    JSONField: fieldClass("json"),
     SelectField: fieldClass("select"), RelationField: fieldClass("relation"), BoolField: fieldClass("bool"),
     DateField: fieldClass("date"), TextField: fieldClass("text"), NumberField: fieldClass("number"),
     toString: (v) => (Buffer.isBuffer(v) ? v.toString("utf8") : Array.isArray(v) ? Buffer.from(v).toString("utf8") : String(v)),
     $os: {
-      getenv: (k) => (opts.env || {})[k] || "",
+      // two-step sign-in is tested on its own; elsewhere staff sign in with a password
+      getenv: (k) => (opts.env || {})[k] || (k === "STEADY_REQUIRE_2FA" ? "off" : ""),
       readFile: (p) => fs.readFileSync(p),
       stat: (p) => { const st = fs.statSync(p); return { size: () => st.size }; },
       dirFS: (d) => d,
       writeFile: (p, bytes) => fs.writeFileSync(p, Buffer.from(bytes))
     },
-    $security: { randomStringWithAlphabet: (n, alpha) => Array.from({ length: n }, (_, i) => alpha[(idSeq * 7 + i * 13) % alpha.length]).join("") },
+    $security: {
+      randomStringWithAlphabet: (n, alpha) => Array.from({ length: n }, (_, i) => alpha[(idSeq * 7 + i * 13 + (++randSeq)) % alpha.length]).join(""),
+      sha256: (t) => require("crypto").createHash("sha256").update(String(t)).digest("hex"),
+      equal: (a, b) => String(a) === String(b)
+    },
     $http: {
       send: (cfg) => {
         pushes.push(JSON.parse(cfg.body));
@@ -182,7 +200,9 @@ function makeRuntime(opts = {}) {
     onRecordCreateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.createRequest[t] = fn)),
     onRecordUpdateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.updateRequest[t] = fn)),
     onRecordUpdate: (fn, ...tags) => tags.forEach((t) => (hooks.update[t] = fn)),
-    onBootstrap: (fn) => { hooks.bootstrap = fn; },
+    onBootstrap: (fn) => { (hooks.bootstraps = hooks.bootstraps || []).push(fn); hooks.bootstrap = (e) => hooks.bootstraps.forEach((f) => f(e)); },
+    routerUse: (fn) => { (hooks.middleware = hooks.middleware || []).push(fn); },
+    onRecordAuthWithPasswordRequest: (fn, ...tags) => tags.forEach((t) => ((hooks.authWithPassword = hooks.authWithPassword || {})[t] = fn)),
     onRecordAfterCreateSuccess: (fn, ...tags) => tags.forEach((t) => (hooks.afterCreate[t] = fn)),
     onRecordsListRequest: (fn, ...tags) => tags.forEach((t) => (hooks.list[t] = fn)),
     onRecordViewRequest: (fn, ...tags) => tags.forEach((t) => (hooks.view[t] = fn)),
@@ -203,6 +223,7 @@ function makeRuntime(opts = {}) {
   const run = (file) => vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file });
   for (const f of fs.readdirSync(path.join(ROOT, "pb_migrations")).sort()) run(path.join(ROOT, "pb_migrations", f));
   run(path.join(HOOKS, "steady.pb.js"));
+  run(path.join(HOOKS, "steady_practice.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -538,7 +559,7 @@ test("security: stopping an account ends its sessions; consent and settings are 
 
   const users = rt.app.findCollectionByNameOrId("users");
   assert.match(users.updateRule, /consentVersion:isset = false/);
-  assert.match(users.listRule, /^@request\.auth\.active = true && \(/);
+  assert.match(users.listRule, /^@request\.auth\.active = true && @request\.auth\.mustChangePassword = false && \(/);
   for (const name of ["checkins", "assignments", "biometrics", "notifications", "devices"]) {
     assert.match(rt.app.findCollectionByNameOrId(name).listRule, /@request\.auth\.active = true/, name);
   }
@@ -682,4 +703,78 @@ test("system: only server admins can check for or start updates, and only once s
   assert.equal(st.pending, "update");
   assert.equal(st.status.check.behind, 2);
   assert.match(rt.app.findCollectionByNameOrId("users").updateRule, /serverAdmin:isset = false/);
+});
+
+/* ------------------------------------------------ the practice: dashboard, two-step sign-in */
+
+test("dashboard: /_/ is closed, and superuser sign-in works only from inside the container", () => {
+  const run = (env, path, remoteAddr) => {
+    const rt = makeRuntime({ env });
+    let passed = false;
+    try {
+      rt.hooks.middleware.forEach((m) => m({ request: { url: { path }, remoteAddr }, next() { passed = true; } }));
+    } catch (err) { return err.status; }
+    return passed ? 200 : 0;
+  };
+  assert.equal(run({}, "/_/", "172.18.0.5:5000"), 404);
+  assert.equal(run({}, "/_", "127.0.0.1:5000"), 404);
+  assert.equal(run({ STEADY_DASHBOARD: "on" }, "/_/", "172.18.0.5:5000"), 200);
+  assert.equal(run({}, "/api/collections/_superusers/auth-with-password", "172.18.0.5:5000"), 404);
+  assert.equal(run({}, "/api/collections/_SUPERUSERS/auth-with-password", "172.18.0.5:5000"), 404);
+  assert.equal(run({}, "/api/collections/pbc_3142635823/auth-with-password", "172.18.0.5:5000"), 404);
+  assert.equal(run({}, "/api/collections/_superusers/auth-with-password", "127.0.0.1:5000"), 200);
+  assert.equal(run({}, "/api/collections/_superusers/auth-with-password", "[::1]:5000"), 200);
+  assert.equal(run({ STEADY_SUPERUSER_API: "open" }, "/api/collections/_superusers/auth-with-password", "172.18.0.5:5000"), 200);
+  assert.equal(run({}, "/api/collections/users/auth-with-password", "172.18.0.5:5000"), 200);
+});
+
+test("two-step: RFC 6238 codes, drift, and no reuse", () => {
+  const t = require(path.join(HOOKS, "lib", "totp.js"));
+  const secret = t.base32Encode(Array.from(Buffer.from("12345678901234567890")));
+  const vectors = { 59: "94287082", 1111111109: "07081804", 1234567890: "89005924", 2000000000: "69279037" };
+  for (const [ts, code] of Object.entries(vectors)) assert.equal(t.codeAt(secret, Math.floor(ts / 30)), code.slice(2), ts);
+  const now = 1234567890 * 1000;
+  const step = t.stepOf(now);
+  assert.equal(t.verify(secret, t.codeAt(secret, step), now, 0), step);
+  assert.equal(t.verify(secret, t.codeAt(secret, step - 1), now, 0), step - 1, "a code from 30 s ago still works");
+  assert.equal(t.verify(secret, t.codeAt(secret, step - 2), now, 0), -1, "older codes don't");
+  assert.equal(t.verify(secret, t.codeAt(secret, step), now, step), -1, "a used code can't be used again");
+  assert.equal(t.verify(secret, "12345", now, 0), -1);
+  assert.match(t.uri("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", "a@b.c", "Steady (VR)"), /^otpauth:\/\/totp\/Steady%20\(VR\):a%40b\.c\?secret=ABCDEFGHIJKLMNOPQRSTUVWXYZ234567&issuer=/);
+});
+
+test("two-step: required for staff by default, and the rules follow the setting on start-up", () => {
+  const on = makeRuntime({ env: { STEADY_REQUIRE_2FA: "staff" } });
+  on.hooks.bootstrap({ app: on.app, next() {} });
+  assert.match(on.app.findCollectionByNameOrId("checkins").listRule, /totpEnabledAt != ''/);
+  const doc = on.makeUser({ role: "clinician", name: "Dr A", email: "a@x.test", active: true });
+  const r = on.call("GET", "/api/steady/overview", { auth: doc });
+  assert.equal(r.status, 403);
+  assert.match(r.error, /two-step/);
+  on.hooks.bootstrap({ app: on.app, next() {} });
+  assert.equal(on.app.findCollectionByNameOrId("checkins").listRule.split("totpEnabledAt").length, 2, "added once");
+
+  const off = makeRuntime({ env: { STEADY_REQUIRE_2FA: "off" } });
+  off.hooks.bootstrap({ app: off.app, next() {} });
+  assert.doesNotMatch(off.app.findCollectionByNameOrId("checkins").listRule, /totpEnabledAt/);
+});
+
+test("roles: an administrator sees names only and can't open patient data", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ role: "clinician", name: "Dr A", email: "a@x.test", active: true });
+  const adm = rt.makeUser({ role: "admin", name: "Admin", email: "admin@x.test", active: true });
+  const pat = rt.makeUser({ role: "patient", name: "Pat", clinician: doc.id, clinicianLabel: "Pat (clinic)", email: "p@x.test", active: true });
+  const people = rt.call("GET", "/api/steady/admin/people", { auth: adm });
+  assert.equal(people.status, 200);
+  const row = people.data.patients.find((p) => p.id === pat.id);
+  assert.equal(row.name, "Pat (clinic)");
+  assert.deepEqual(Object.keys(row).sort(), ["active", "clinician", "id", "joinedAt", "name", "role"]);
+  assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: adm }).status, 403);
+  assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/export`, { auth: adm }).status, 403);
+  assert.equal(rt.call("POST", "/api/steady/admin/people", { auth: adm, body: { role: "clinician", name: "X", email: "x@x.test" } }).status, 403);
+  const reset = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: adm });
+  assert.equal(reset.status, 200);
+  assert.match(reset.data.temporaryPassword, /^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/);
+  assert.equal(rt.app.findRecordById("users", pat.id).getBool("mustChangePassword"), true);
+  assert.equal(rt.call("GET", "/api/steady/me/care-team", { auth: rt.app.findRecordById("users", pat.id) }).status, 403, "nothing but a new password");
 });

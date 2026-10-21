@@ -40,6 +40,13 @@ jobs:
         run: |
           set -o pipefail
           NO_TUNNEL=1 deploy/test/start.sh 2>&1 | tee start.txt || { echo "::error title=start.sh::$(sed 's/%/%25/g' start.txt | tail -c 30000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+      - name: security tests
+        # tries to reach what each kind of account must not: other patients, other
+        # psychologists' patients, hidden fields, admin views of clinical data, the dashboard
+        run: |
+          set -o pipefail
+          python3 deploy/test/security.py 2>&1 | tee security.txt || { echo "::error title=security tests::$(grep -A1 '^FAIL' security.txt | sed 's/%/%25/g' | tail -c 30000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          tail -1 security.txt
       - name: smoke test
         run: |
           set -o pipefail
@@ -68,17 +75,40 @@ jobs:
               req = urllib.request.Request("http://127.0.0.1:8091" + path, data=json.dumps(body).encode(), method="POST",
                                            headers={"Content-Type": "application/json", **({"Authorization": token} if token else {})})
               return json.loads(urllib.request.urlopen(req, timeout=20).read())
-          doc = post("/api/collections/users/auth-with-password", {"identity": env["CLINICIAN_EMAIL"], "password": env["CLINICIAN_PASSWORD"]})
+          import base64, hashlib, hmac, struct, time
+          def totp(secret):
+              key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+              h = hmac.new(key, struct.pack(">Q", int(time.time() // 30)), hashlib.sha1).digest()
+              o = h[19] & 15
+              return f"{(struct.unpack('>I', h[o:o + 4])[0] & 0x7fffffff) % 1000000:06d}"
+          doc = post("/api/steady/auth/sign-in", {"email": env["CLINICIAN_EMAIL"], "password": env["CLINICIAN_PASSWORD"], "code": totp(env["CLINICIAN_TOTP_SECRET"])})
           assert doc["record"]["role"] == "clinician"
-          su = post("/api/collections/_superusers/auth-with-password", {"identity": env["SUPERUSER_EMAIL"], "password": env["SUPERUSER_PASSWORD"]})
-          req = urllib.request.Request("http://127.0.0.1:8091/api/collections/checkins/records?perPage=1", headers={"Authorization": su["token"]})
-          patients = json.loads(urllib.request.urlopen(req, timeout=20).read())["totalItems"]
-          assert patients > 0, "no check-ins after the move"
-          req = urllib.request.Request("http://127.0.0.1:8091/api/settings", headers={"Authorization": su["token"]})
-          headers = json.loads(urllib.request.urlopen(req, timeout=20).read())["trustedProxy"]["headers"]
-          assert headers == ["X-Forwarded-For"], headers
-          print(f"moved: clinician signs in, {patients} check-in(s) carried over, proxy header {headers}")
+          req = urllib.request.Request("http://127.0.0.1:8091/api/steady/overview", headers={"Authorization": doc["token"]})
+          patients = len(json.loads(urllib.request.urlopen(req, timeout=20).read())["patients"])
+          print(f"moved: clinician signs in with two-step sign-in and sees {patients} active patient(s)")
+          try:
+              post("/api/collections/_superusers/auth-with-password", {"identity": env["SUPERUSER_EMAIL"], "password": env["SUPERUSER_PASSWORD"]})
+              raise SystemExit("superuser sign-in from outside the container should be refused")
+          except urllib.error.HTTPError as err:
+              assert err.code == 404, err.code
+          req = urllib.request.Request("http://127.0.0.1:8091/_/")
+          try:
+              urllib.request.urlopen(req, timeout=20)
+              raise SystemExit("the dashboard should be closed")
+          except urllib.error.HTTPError as err:
+              assert err.code == 404, err.code
+          print("dashboard closed, superuser sign-in refused from outside the container")
           PY
+          # the terminal account tools, for real
+          ./accounts.sh check | tee check.txt
+          grep -q "proxy header: X-Forwarded-For" check.txt
+          grep -q "rate limits: on" check.txt
+          ./accounts.sh list | tee list.txt
+          grep -q "(master)" list.txt
+          grep -Eq "Patients: [1-9]" list.txt
+          ./accounts.sh add-admin "CI support" ci-support@steady.test --server-admin | grep -q "Temporary password"
+          ./accounts.sh reset ci-support@steady.test | grep -q "Temporary password"
+          ./accounts.sh audit --days 1 | grep -q "ops.account.create"
           SH
 
       - name: deployment config is valid

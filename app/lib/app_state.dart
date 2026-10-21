@@ -63,6 +63,10 @@ class AppState extends ChangeNotifier {
   bool get signedIn => api.signedIn;
   bool get isClinician => api.role == 'clinician';
   bool get isPatient => api.role == 'patient';
+  bool get isAdmin => api.role == 'admin';
+
+  /// Staff must set up two-step sign-in before they can see anything (unless the server says off).
+  bool get needsTwoStepSetup => api.isStaff && config.twoStep != 'off' && !api.twoStepOn;
 
   Future<void> start() async {
     if (!api.hasServer) {

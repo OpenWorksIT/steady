@@ -39,16 +39,120 @@ function role(e) {
   return e.auth ? e.auth.getString("role") : "";
 }
 
-function requireRole(e, wanted) {
-  if (!e.auth || role(e) !== wanted) throw new ForbiddenError("This action is only available to " + wanted + "s.");
+/** Signed in, not stopped, and not waiting to replace a temporary password. */
+function requireSignedIn(e) {
+  if (!e.auth || e.auth.isSuperuser()) throw new UnauthorizedError("Please sign in.");
   // tokens issued before an account was stopped stay valid until they expire, so check here too
   if (!e.auth.getBool("active")) throw new ForbiddenError("This account has been stopped. Please contact the practice.");
+  if (e.auth.getBool("mustChangePassword")) throw new ForbiddenError("Please choose a new password first.");
+  if (needsTwoStep(e.auth)) throw new ForbiddenError("Please set up two-step sign-in first.");
 }
 
-/** Psychologists the superuser has marked "serverAdmin" may check for and run updates. */
-function requireServerAdmin(e) {
+/** wanted: a role, or a list of roles. */
+function requireRole(e, wanted) {
+  var list = Array.isArray(wanted) ? wanted : [wanted];
+  if (!e.auth || e.auth.isSuperuser() || list.indexOf(role(e)) < 0) throw new ForbiddenError("This action is only available to " + list.join(" or ") + "s.");
+  requireSignedIn(e);
+}
+
+function isStaff(rec) {
+  var r = rec.getString("role");
+  return r === "clinician" || r === "admin";
+}
+
+function isMaster(rec) {
+  return rec.getString("role") === "clinician" && rec.getBool("master");
+}
+
+/** The practice administrator, OpenWorks support, or a master clinician. */
+function requireManager(e) {
+  requireRole(e, ["clinician", "admin"]);
+  if (role(e) === "clinician" && !e.auth.getBool("master")) throw new ForbiddenError("Only the practice's master clinician or administrator can do this.");
+}
+
+function requireMaster(e) {
   requireRole(e, "clinician");
+  if (!e.auth.getBool("master")) throw new ForbiddenError("Only the practice's master clinician can do this.");
+}
+
+/* Two-step sign-in is required for staff unless STEADY_REQUIRE_2FA=off. */
+function twoStepRequired(rec) {
+  var mode = env("STEADY_REQUIRE_2FA", "staff");
+  if (mode === "off") return false;
+  if (mode === "all") return true;
+  return isStaff(rec);
+}
+
+function twoStepOn(rec) {
+  return toMs(rec, "totpEnabledAt") > 0 && !!rec.getString("totpSecret");
+}
+
+function needsTwoStep(rec) {
+  return twoStepRequired(rec) && !twoStepOn(rec);
+}
+
+/** Psychologists or support accounts marked "serverAdmin" may check for and run updates. */
+function requireServerAdmin(e) {
+  requireRole(e, ["clinician", "admin"]);
   if (!e.auth.getBool("serverAdmin")) throw new ForbiddenError("Only a server administrator can do this. Ask OpenWorks to tick serverAdmin on your account.");
+}
+
+/* ---------- accounts ---------- */
+
+var TEMP_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+
+/** A temporary password that's easy to read out over the phone: xxxx-xxxx-xxxx. */
+function tempPassword() {
+  var raw = $security.randomStringWithAlphabet(12, TEMP_ALPHABET);
+  return raw.slice(0, 4) + "-" + raw.slice(4, 8) + "-" + raw.slice(8, 12);
+}
+
+/** Sets a temporary password, signs the account out everywhere, and returns the password. */
+function resetPassword(app, user) {
+  var pw = tempPassword();
+  user.setPassword(pw);
+  user.set("mustChangePassword", true);
+  user.refreshTokenKey();
+  app.save(user);
+  return pw;
+}
+
+/** Name, role and status only: what administrators may see about anyone. */
+function personRow(app, u, names) {
+  var row = {
+    id: u.id,
+    name: u.getString("role") === "patient" ? displayName(u) : u.getString("name"),
+    role: u.getString("role"),
+    active: u.getBool("active"),
+    joinedAt: toMs(u, "created")
+  };
+  if (u.getString("role") === "patient") {
+    var c = u.getString("clinician");
+    row.clinician = c ? { id: c, name: names ? clinicianName(app, c, names) : "" } : null;
+  } else {
+    row.email = u.email();
+    row.master = u.getBool("master");
+    row.serverAdmin = u.getBool("serverAdmin");
+    row.twoStep = twoStepOn(u);
+  }
+  return row;
+}
+
+function clinicianName(app, id, cache) {
+  if (cache[id] === undefined) {
+    try { cache[id] = app.findRecordById("users", id).getString("name"); } catch (e) { cache[id] = ""; }
+  }
+  return cache[id];
+}
+
+function findUser(app, id) {
+  try { return app.findRecordById("users", id); } catch (e) { return null; }
+}
+
+function activeClinician(app, id) {
+  var c = findUser(app, id);
+  if (!c || c.getString("role") !== "clinician" || !c.getBool("active")) throw badRequest("Choose an active psychologist.");
+  return c;
 }
 
 function publicDir() {
@@ -84,6 +188,35 @@ function audit(app, e, action, target, patientId) {
   }
 }
 
+/* ---------- invites ---------- */
+
+/** A new 8-character invite for clinicianId, valid for 7 days. */
+function createInvite(app, e, clinicianId, label) {
+  var col = app.findCollectionByNameOrId("invites");
+  var rec = null;
+  for (var i = 0; i < 5 && !rec; i++) {
+    var code = $security.randomStringWithAlphabet(8, core.CODE_ALPHABET);
+    try {
+      app.findFirstRecordByFilter("invites", "code = {:c}", { c: code });
+    } catch (err) {
+      rec = new Record(col);
+      rec.set("code", code);
+    }
+  }
+  if (!rec) throw new ApiError(500, "Couldn't create a unique code. Please try again.");
+  rec.set("clinician", clinicianId);
+  rec.set("label", core.str(label, 80));
+  rec.set("expiresAt", dateValue(nowMs() + 7 * core.DAY));
+  app.save(rec);
+  audit(app, e, "invite.create", "invite:" + rec.id + (e.auth && e.auth.id !== clinicianId ? " for:" + clinicianId : ""), "");
+  return {
+    id: rec.id,
+    code: core.formatCode(rec.getString("code")),
+    label: rec.getString("label"),
+    expiresAt: toMs(rec, "expiresAt")
+  };
+}
+
 /* ---------- names ---------- */
 
 /** What the psychologist calls a patient: the invite name, else the patient's own name. */
@@ -95,12 +228,26 @@ function displayName(patient) {
 
 /** Returns the patient record if it belongs to clinicianId, otherwise throws 404. */
 function ownPatient(app, clinicianId, patientId) {
-  var p;
-  try { p = app.findRecordById("users", patientId); } catch (e) { p = null; }
+  var p = findUser(app, patientId);
   if (!p || p.getString("role") !== "patient" || p.getString("clinician") !== clinicianId) {
     throw new NotFoundError("Patient not found.");
   }
   return p;
+}
+
+function sharedIds(p) {
+  var ids = p.get("sharedWith");
+  try { ids = JSON.parse(JSON.stringify(ids)); } catch (e) { ids = []; }
+  return Array.isArray(ids) ? ids : [];
+}
+
+/** The patient if it's clinicianId's own, or a colleague shared it with them (read only). */
+function viewablePatient(app, clinicianId, patientId) {
+  var p = findUser(app, patientId);
+  if (!p || p.getString("role") !== "patient") throw new NotFoundError("Patient not found.");
+  if (p.getString("clinician") === clinicianId) return { patient: p, own: true };
+  if (sharedIds(p).indexOf(clinicianId) >= 0) return { patient: p, own: false };
+  throw new NotFoundError("Patient not found.");
 }
 
 function instrumentDef(app, instrumentId) {
@@ -263,11 +410,28 @@ module.exports = {
   readJson: readJson,
   body: body,
   role: role,
+  requireSignedIn: requireSignedIn,
   requireRole: requireRole,
+  requireManager: requireManager,
+  requireMaster: requireMaster,
   requireServerAdmin: requireServerAdmin,
+  isStaff: isStaff,
+  isMaster: isMaster,
+  twoStepRequired: twoStepRequired,
+  twoStepOn: twoStepOn,
+  needsTwoStep: needsTwoStep,
+  tempPassword: tempPassword,
+  resetPassword: resetPassword,
+  personRow: personRow,
+  clinicianName: clinicianName,
+  findUser: findUser,
+  activeClinician: activeClinician,
+  sharedIds: sharedIds,
+  viewablePatient: viewablePatient,
   publicDir: publicDir,
   ctlDir: ctlDir,
   badRequest: badRequest,
+  createInvite: createInvite,
   env: env,
   audit: audit,
   ownPatient: ownPatient,

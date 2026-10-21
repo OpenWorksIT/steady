@@ -33,6 +33,9 @@ class CrisisLine {
 class AppConfig {
   final String practiceName, crisisNotice, consentVersion, consentText, vapidPublicKey;
 
+  /// "staff": psychologists and administrators must use two-step sign-in. "off": optional.
+  final String twoStep;
+
   /// The newest Android build on the server ('' if none) and where to download it.
   final String appBuild, apkPath;
 
@@ -46,6 +49,7 @@ class AppConfig {
     required this.consentText,
     required this.vapidPublicKey,
     required this.crisisLines,
+    this.twoStep = 'staff',
     this.appBuild = '',
     this.apkPath = '',
     this.appUpdatable = false,
@@ -70,6 +74,7 @@ class AppConfig {
         consentVersion: '${j['consentVersion'] ?? ''}',
         consentText: '${j['consentText'] ?? ''}',
         vapidPublicKey: '${j['vapidPublicKey'] ?? ''}',
+        twoStep: '${j['twoStep'] ?? 'staff'}',
         crisisLines: asList(j['crisisLines']).map((e) => CrisisLine.fromJson(asMap(e))).toList(),
         appBuild: '${asMap(j['app'])['build'] ?? ''}',
         apkPath: '${asMap(j['app'])['apk'] ?? ''}',
@@ -413,6 +418,10 @@ class PatientSummary {
   final List<Flag> flags;
   final int pending;
   final WearableSummary wearable;
+
+  /// A colleague's patient, shared with this psychologist to read; [owner] is that colleague.
+  final bool shared;
+  final String owner;
   PatientSummary({
     required this.id,
     required this.name,
@@ -425,6 +434,8 @@ class PatientSummary {
     required this.flags,
     required this.pending,
     required this.wearable,
+    this.shared = false,
+    this.owner = '',
   });
 
   factory PatientSummary.fromJson(Map<String, dynamic> j) {
@@ -442,6 +453,8 @@ class PatientSummary {
       flags: asList(j['flags']).map((f) => Flag.fromJson(asMap(f))).toList(),
       pending: (j['pending'] as num?)?.toInt() ?? 0,
       wearable: WearableSummary.fromJson(asMap(j['wearable'])),
+      shared: j['shared'] == true,
+      owner: '${j['owner'] ?? ''}',
     );
   }
 

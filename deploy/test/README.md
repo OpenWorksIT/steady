@@ -29,7 +29,7 @@ cd deploy/test
 ./start.sh              # later starts
 ```
 
-It prints the address, the clinician sign-in, and the dashboard login. Other commands: `--stop`, `--reset` (deletes all test data).
+It prints the address and the clinician sign-in (the master clinician). Other commands: `--stop`, `--reset` (deletes all test data).
 
 Check the server end to end at any time:
 
@@ -52,4 +52,4 @@ A native iPhone build needs an Apple Developer account and Xcode on a Mac, so fo
 ## Trying both directions
 
 - Clinician on one phone, patient on the other: the clinician taps **Invite**, the patient taps **I have an invite code** on the sign-in screen.
-- Swap roles by signing out (Settings) and creating a second clinician in the dashboard (`users` collection, role `clinician`, active ticked).
+- Swap roles by signing out (Settings) and creating a second clinician in the app (master clinician: Practice > Add psychologist) or with `../accounts.sh --test add-clinician "Name" email`.

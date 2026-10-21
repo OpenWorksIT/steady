@@ -6,7 +6,7 @@
 #   phone ──https──> Cloudflare ──tunnel──> caddy:80 ──> pocketbase:8090 (+ web app)
 #                                                         pusher ──> ntfy / Apple
 #
-# The PocketBase dashboard is only reachable from this PC at http://localhost:<LOCAL_PORT>/_/
+# PocketBase's own dashboard is closed. Accounts: ../accounts.sh --test (see docs/DEPLOY.md).
 
 name: steady-test
 
@@ -22,6 +22,11 @@ services:
       STEADY_VAPID_PUBLIC_KEY: ${STEADY_VAPID_PUBLIC_KEY}
       # the Cloudflare tunnel passes the visitor's address in this header
       STEADY_TRUSTED_PROXY_HEADER: Cf-Connecting-Ip
+      STEADY_REQUIRE_2FA: ${STEADY_REQUIRE_2FA:-staff}
+      STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
+      # this PC's own scripts (start.sh, smoke.py) use the superuser API through the local port;
+      # the tunnel and Caddy still block it, and the dashboard stays closed
+      STEADY_SUPERUSER_API: open
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data

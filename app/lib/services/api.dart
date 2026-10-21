@@ -65,6 +65,48 @@ String errorText(Object error) {
   return 'Something went wrong. Please try again.';
 }
 
+/// Password accepted; the account uses two-step sign-in, so ask for the 6-digit code.
+class TwoStepNeeded implements Exception {
+  const TwoStepNeeded();
+}
+
+/// Someone at the practice, with what an administrator may see: name and role only.
+class Person {
+  final String id, name, role, email;
+  final bool active, master, serverAdmin, twoStep;
+  final String clinicianId, clinicianName;
+  final DateTime? joinedAt;
+  Person({
+    required this.id,
+    required this.name,
+    required this.role,
+    this.email = '',
+    this.active = true,
+    this.master = false,
+    this.serverAdmin = false,
+    this.twoStep = false,
+    this.clinicianId = '',
+    this.clinicianName = '',
+    this.joinedAt,
+  });
+  factory Person.fromJson(Map<String, dynamic> j) {
+    final c = asMap(j['clinician']);
+    return Person(
+      id: '${j['id']}',
+      name: '${j['name'] ?? ''}',
+      role: '${j['role'] ?? ''}',
+      email: '${j['email'] ?? ''}',
+      active: j['active'] == true,
+      master: j['master'] == true,
+      serverAdmin: j['serverAdmin'] == true,
+      twoStep: j['twoStep'] == true,
+      clinicianId: '${c['id'] ?? ''}',
+      clinicianName: '${c['name'] ?? ''}',
+      joinedAt: fromMs(j['joinedAt']),
+    );
+  }
+}
+
 class Api {
   final PocketBase pb;
   final FlutterSecureStorage _storage;
@@ -132,8 +174,62 @@ class Api {
 
   Future<AppConfig> config() async => AppConfig.fromJson(await pb.send<Map<String, dynamic>>('/api/steady/config'));
 
-  Future<void> signIn(String email, String password) async {
-    await pb.collection('users').authWithPassword(email.trim(), password);
+  /// Throws [TwoStepNeeded] when the password is right but a code is needed.
+  Future<void> signIn(String email, String password, {String? code}) async {
+    if (code == null) {
+      try {
+        await pb.collection('users').authWithPassword(email.trim(), password);
+      } on ClientException catch (e) {
+        if (e.statusCode == 400 && '${asMap(asMap(e.response['data'])['twoStep'])['code']}' == 'two_step') throw const TwoStepNeeded();
+        rethrow;
+      }
+      return;
+    }
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/auth/sign-in',
+        method: 'POST', body: {'email': email.trim(), 'password': password, 'code': code.trim()});
+    _saveAuth(res);
+  }
+
+  void _saveAuth(Map<String, dynamic> res) =>
+      pb.authStore.save('${res['token']}', RecordModel.fromJson(asMap(res['record'])));
+
+  bool get mustChangePassword => me?.getBoolValue('mustChangePassword') ?? false;
+  bool get twoStepOn => (me?.getStringValue('totpEnabledAt') ?? '').isNotEmpty;
+  bool get isMaster => role == 'clinician' && (me?.getBoolValue('master') ?? false);
+  bool get isStaff => role == 'clinician' || role == 'admin';
+
+  /// Choose a new password (also the way out of a temporary one).
+  Future<void> changePassword(String current, String next) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/password',
+        method: 'POST', body: {'password': current, 'newPassword': next});
+    _saveAuth(res);
+  }
+
+  /// Two-step sign-in: a new secret and the otpauth:// address for the QR code.
+  Future<({String secret, String uri})> twoStepStart() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/two-step/start', method: 'POST');
+    return (secret: '${res['secret']}', uri: '${res['uri']}');
+  }
+
+  /// Confirms with the first code; returns the one-time recovery codes.
+  Future<List<String>> twoStepConfirm(String code) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/two-step/confirm', method: 'POST', body: {'code': code.trim()});
+    await pb.collection('users').authRefresh();
+    return asList(res['recoveryCodes']).map((c) => '$c').toList();
+  }
+
+  Future<void> twoStepOff(String password) async {
+    await pb.send('/api/steady/me/two-step/off', method: 'POST', body: {'password': password});
+    await pb.collection('users').authRefresh();
+  }
+
+  /// Patients: who at the practice can see what they send.
+  Future<({String clinician, List<String> shared})> careTeam() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/care-team');
+    return (
+      clinician: '${asMap(res['clinician'])['name'] ?? ''}',
+      shared: asList(res['sharedWith']).map((x) => '${asMap(x)['name']}').toList(),
+    );
   }
 
   Future<void> join({
@@ -183,9 +279,6 @@ class Api {
     } catch (_) {/* best effort; the server drops dead registrations */}
     _deviceToken = null;
   }
-
-  Future<void> requestPasswordReset(String email) =>
-      pb.collection('users').requestPasswordReset(email.trim());
 
   /* ---------------- shared ---------------- */
 
@@ -353,6 +446,69 @@ class Api {
   }
 
   bool get isServerAdmin => me?.getBoolValue('serverAdmin') ?? false;
+
+  /* ---------------- the practice (master clinician, administrator) ---------------- */
+
+  /// A temporary password for someone; they must choose their own at next sign-in.
+  Future<String> resetPassword(String userId, {bool twoStep = false}) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/people/$userId/reset-password',
+        method: 'POST', body: {'twoStep': twoStep});
+    return '${res['temporaryPassword']}';
+  }
+
+  Future<({List<Person> patients, List<Person> clinicians, List<Person> admins})> people() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/admin/people');
+    List<Person> list(Object? v) => asList(v).map((p) => Person.fromJson(asMap(p))).toList();
+    return (patients: list(res['patients']), clinicians: list(res['clinicians']), admins: list(res['admins']));
+  }
+
+  /// Active psychologists (names only).
+  Future<List<({String id, String name, bool you})>> clinicians() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/clinicians');
+    return asList(res['clinicians']).map((raw) {
+      final j = asMap(raw);
+      return (id: '${j['id']}', name: '${j['name']}', you: j['you'] == true);
+    }).toList();
+  }
+
+  Future<({String code, DateTime expires})> createInviteFor(String clinicianId, String label) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/admin/invites',
+        method: 'POST', body: {'label': label, 'clinician': clinicianId});
+    return (code: '${res['code']}', expires: fromMs(res['expiresAt']) ?? DateTime.now());
+  }
+
+  Future<void> reassignPatient(String patientId, String clinicianId) =>
+      pb.send('/api/steady/admin/patients/$patientId/reassign', method: 'POST', body: {'clinician': clinicianId});
+
+  Future<void> setActive(String userId, bool active) =>
+      pb.send('/api/steady/admin/people/$userId/active', method: 'POST', body: {'active': active});
+
+  /// role: clinician | admin. Returns the temporary password.
+  Future<String> createStaff({required String role, required String name, required String email}) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/admin/people',
+        method: 'POST', body: {'role': role, 'name': name, 'email': email});
+    return '${res['temporaryPassword']}';
+  }
+
+  /* ---------------- sharing and exports ---------------- */
+
+  Future<List<({String id, String name, bool shared})>> sharing(String patientId) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/sharing');
+    return asList(res['colleagues']).map((raw) {
+      final j = asMap(raw);
+      return (id: '${j['id']}', name: '${j['name']}', shared: j['shared'] == true);
+    }).toList();
+  }
+
+  Future<void> share(String patientId, String clinicianId, bool shared) =>
+      pb.send('/api/steady/patients/$patientId/share', method: 'POST', body: {'clinician': clinicianId, 'shared': shared});
+
+  /// One patient's whole record (or a date range), for a PDF or Excel export.
+  Future<Map<String, dynamic>> exportPatient(String patientId, {String? from, String? to}) =>
+      pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/export', query: {'from': ?from, 'to': ?to});
+
+  /// All of this psychologist's own patients.
+  Future<Map<String, dynamic>> exportAll() => pb.send<Map<String, dynamic>>('/api/steady/export');
 
   /// Server and updates (server admins): status from deploy/ctl/steady-ctl.sh.
   Future<Map<String, dynamic>> systemStatus() => pb.send<Map<String, dynamic>>('/api/steady/system');

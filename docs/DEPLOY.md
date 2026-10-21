@@ -45,19 +45,47 @@ docker compose logs -f pocketbase pusher
 
 The PocketBase image downloads the pinned release from GitHub and checks it against the published checksums.
 
-## 5. First-time setup in the dashboard
+## 5. Accounts
 
-The dashboard is at `https://<domain>/_/`. The Caddyfile only allows it from private addresses: edit the ranges, or use an SSH tunnel (`ssh -L 8090:localhost:8090` and expose port 8090 on 127.0.0.1 temporarily).
+PocketBase's own dashboard (`/_/`) is **closed**: it showed every record to anyone holding a
+superuser login, which is the kind of open tap that gets forgotten. Superuser sign-in is refused
+from anywhere but inside the server container. Accounts are managed in two places:
 
-1. Create the superuser account (PocketBase prints a one-time setup link in the logs on first start).
-2. **Settings > Mail settings**: configure SMTP so password resets work.
-3. **Collections > _superusers > Options**: turn on **Multi-factor authentication** (needs SMTP from step 2), so the dashboard needs a password and an emailed code.
-4. **Collections > users**: create each psychologist with `role = clinician`, `active` ticked, a name and email. Ask them to reset their password from the app. Passwords need at least 10 characters.
-5. Don't turn on multi-factor authentication for **users** yet: the app doesn't ask for the emailed code, so psychologists couldn't sign in.
+**On the server, by OpenWorks** (`deploy/accounts.sh`, run with sudo in `/opt/steady/deploy`):
 
-Rate limits and the trusted proxy header are set by a migration (`1760600000_steady_hardening.js`); adjust them under **Settings > Rate limits** if needed.
+```bash
+sudo ./accounts.sh add-clinician "Kempie van Rooyen" kempie@vrpsych.co.za --master   # the master clinician
+sudo ./accounts.sh add-admin "Front desk" reception@vrpsych.co.za                     # practice administrator
+sudo ./accounts.sh add-admin "OpenWorks support" support@openworks.co.za --server-admin
+sudo ./accounts.sh list                         # who has which role, and who still lacks two-step sign-in
+sudo ./accounts.sh reset <email> [--two-step]   # a temporary password (and a fresh two-step set-up)
+sudo ./accounts.sh set <email> master|server-admin|active on|off
+sudo ./accounts.sh audit --patient <id>         # who looked at a patient's data (POPIA access requests)
+sudo ./accounts.sh check                        # proxy header, rate limits, dashboard closed
+```
 
-Patients never get accounts from the dashboard; psychologists create invite codes in the app.
+Each run makes a superuser that exists only for that command, signs in from inside the
+container, and deletes it again. New accounts and resets print a **temporary password**: give it
+by phone or in person. The person must choose their own password before they can do anything,
+then set up two-step sign-in.
+
+**In the app**, by the people at the practice:
+
+| Who | Can | Can't |
+|---|---|---|
+| Psychologist | Invite patients, see and send to their own patients, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records | See other psychologists' patients unless shared with them |
+| Master clinician | All of the above, plus create psychologist and administrator accounts, reset their passwords, stop or restore them, invite patients for and move patients to any psychologist | Reset their own or another master's password (that's `accounts.sh`) |
+| Practice administrator, OpenWorks support | See names only. Invite a patient for a chosen psychologist, reset patients' passwords, stop or restore patients, move a patient to another psychologist. Support accounts marked server admin can run updates. | See check-ins, scores, notes or watch data; create psychologist accounts (that would let them open patient data) |
+
+Every one of these actions is in the audit log, and the psychologist is told when someone else
+resets their patient's password or moves a patient. Psychologists and administrators **must use
+two-step sign-in** (a 6-digit code from Aegis, 2FAS, Google or Microsoft Authenticator) unless
+`STEADY_REQUIRE_2FA=off`; until they set it up, their account can't see anything.
+
+Rate limits and the trusted proxy header are set by migrations; `accounts.sh check` shows them.
+For an emergency, `STEADY_DASHBOARD=on` in `.env` (then `docker compose up -d`) reopens `/_/`
+behind the SSH tunnel; it still needs a superuser, which only `accounts.sh` can make. Close it
+again afterwards.
 
 ## 6. Server hardening
 
@@ -68,8 +96,8 @@ Do these on the VPS before real patient data arrives:
 - [ ] Automatic security updates (`unattended-upgrades` on Debian/Ubuntu).
 - [ ] Docker's data on an encrypted volume (LUKS), or full-disk encryption if the provider supports it.
 - [ ] `chmod 600 deploy/.env` and keep `deploy/secrets/` readable only by root and the relay (uid 65532).
-- [ ] Edit the allowed ranges in the Caddyfile so the dashboard and superuser sign-in are reachable only from your office or VPN.
-- [ ] Superuser multi-factor authentication on (step 5).
+- [ ] `sudo ./accounts.sh check` says the dashboard is closed; `accounts.sh list` shows two-step sign-in for every staff account.
+- [ ] Delete any permanent superuser left from before (`docker compose exec pocketbase /pb/pocketbase superuser delete <email> --dir=/pb/pb_data`).
 - [ ] Backups running and copied off the server (step 7), restore tested.
 - [ ] Uptime monitoring on `https://<domain>/api/health`.
 - [ ] Review and merge Dependabot pull requests (they run the full test suite first).
@@ -147,10 +175,7 @@ sudo nano .env                # STEADY_DOMAIN, practice name, VAPID_SUBJECT, and
 sudo ./update.sh              # pulls, fetches the web app, builds and starts
 ```
 
-**5. Accounts.** The dashboard is only reachable through an SSH tunnel:
-`ssh -L 8091:localhost:8091 <you>@<server>`, then open `http://localhost:8091/_/`. Create the
-superuser with `sudo docker compose exec pocketbase /pb/pocketbase superuser upsert <email> <password> --dir=/pb/pb_data`,
-then psychologists as in step 5 above.
+**5. Accounts.** With `sudo ./accounts.sh`, as in step 5 above: the master clinician first.
 
 **Updating** is `sudo ./update.sh` in `/opt/steady/deploy`, or from the app (below).
 
@@ -161,7 +186,7 @@ updates from Settings > Server and updates, the way Shap does; the server also c
 sudo /opt/steady/deploy/ctl/install.sh
 ```
 
-Then, in the dashboard, open **users**, edit the psychologist and tick **serverAdmin**. The app
+Then `sudo ./accounts.sh set <email> server-admin on` for the psychologist or support account. The app
 only leaves a request; `deploy/ctl/steady-ctl.sh` does the work as root (outside the app), saves a
 copy of the data to `/var/backups/steady/` first (the last 5 are kept, root only) and then runs
 `update.sh`.

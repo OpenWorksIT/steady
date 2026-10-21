@@ -7,8 +7,13 @@
 Creates a throwaway patient each run. Standard library only.
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
+import base64
+import hashlib
+import hmac
 import json
 import os
+import struct
+import time
 import pathlib
 import secrets
 import sys
@@ -49,6 +54,49 @@ def call(method, path, token=None, body=None, query=None):
             return e.code, {}
 
 
+def totp(secret, step=None):
+    """The 6-digit code an authenticator app would show (RFC 6238, SHA-1, 30 s)."""
+    step = int(time.time() // 30) if step is None else step
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    h = hmac.new(key, struct.pack(">Q", step), hashlib.sha1).digest()
+    o = h[19] & 15
+    return f"{(struct.unpack('>I', h[o:o + 4])[0] & 0x7fffffff) % 1000000:06d}"
+
+
+def staff_sign_in(email, password, secret_key):
+    """Signs a staff account in, setting up two-step sign-in on first use (the secret is kept
+    in deploy/test/.env under secret_key so later runs can sign in again)."""
+    s, a = call("POST", "/api/collections/users/auth-with-password", body={"identity": email, "password": password})
+    if s == 200:
+        tok = a["token"]
+        if a["record"].get("totpEnabledAt"):
+            return a
+        s, cfg = call("GET", "/api/steady/config")
+        if cfg.get("twoStep") == "off":
+            return a
+        s, st = call("POST", "/api/steady/me/two-step/start", tok)
+        check(s == 200 and st["uri"].startswith("otpauth://totp/"), "two-step sign-in can be set up", st)
+        s, r = call("POST", "/api/steady/me/two-step/confirm", tok, {"code": "000000"})
+        check(s == 400, "a wrong first code is refused", r)
+        s, r = call("POST", "/api/steady/me/two-step/confirm", tok, {"code": totp(st["secret"])})
+        check(s == 200 and len(r.get("recoveryCodes", [])) == 8, "two-step sign-in is switched on, with recovery codes", r)
+        ENV[secret_key] = st["secret"]
+        envfile = pathlib.Path(__file__).with_name(".env")
+        if envfile.exists():
+            with envfile.open("a") as f:
+                f.write(f"{secret_key}={st['secret']}\n")
+        time.sleep(31 - time.time() % 30)   # the next code; a used code can't be used again
+    secret = ENV.get(secret_key)
+    check(bool(secret), f"{email} uses two-step sign-in; set {secret_key} to its secret")
+    s, r = call("POST", "/api/collections/users/auth-with-password", body={"identity": email, "password": password})
+    check(s == 400 and "two_step" in json.dumps(r), "password alone no longer signs a two-step account in", r)
+    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": email, "password": password, "code": "123456"})
+    check(s == 400, "a wrong code is refused", r)
+    s, a = call("POST", "/api/steady/auth/sign-in", body={"email": email, "password": password, "code": totp(secret)})
+    check(s == 200 and a.get("token"), "sign-in with password and code works", a)
+    return a
+
+
 def check(cond, what, detail=None):
     global passed
     if not cond:
@@ -72,9 +120,8 @@ def main():
     s, r = call("GET", "/api/steady/system")
     check(s in (401, 403), "server updates need a signed-in server admin", r)
 
-    s, a = call("POST", "/api/collections/users/auth-with-password",
-                body={"identity": ENV["CLINICIAN_EMAIL"], "password": ENV["CLINICIAN_PASSWORD"]})
-    check(s == 200, "clinician signs in", a)
+    a = staff_sign_in(ENV["CLINICIAN_EMAIL"], ENV["CLINICIAN_PASSWORD"], "CLINICIAN_TOTP_SECRET")
+    check(bool(a.get("token")), "clinician signs in", a)
     doc, doc_id = a["token"], a["record"]["id"]
 
     s, inv = call("POST", "/api/steady/invites", doc, {"label": "Smoke Patient (clinic)"})
@@ -204,6 +251,9 @@ def main():
     check(s in (401, 403) or (s == 200 and r.get("totalItems") == 0), "a stopped patient's old session no longer reads data", r)
     s, r = call("POST", "/api/collections/users/auth-refresh", pat)
     check(s in (401, 403), "a stopped patient's session can't be renewed", r)
+
+    s, r = call("GET", "/_/")
+    check(s == 404, "PocketBase's own dashboard is closed", r)
 
     # server settings, as the superuser
     if ENV.get("SUPERUSER_EMAIL") and ENV.get("SUPERUSER_PASSWORD"):

@@ -8,6 +8,7 @@ import '../../app_state.dart';
 import '../../models.dart';
 import '../../services/api.dart';
 import '../../services/push.dart';
+import '../practice/people_screen.dart';
 import '../widgets.dart';
 import 'alerts_screen.dart';
 import 'library_screen.dart';
@@ -91,10 +92,12 @@ class _ClinicianShellState extends State<ClinicianShell> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
+    final master = AppScope.api(context).isMaster;
     final pages = [
       PatientsScreen(bus: _bus),
       AlertsScreen(bus: _bus, onRead: _refreshUnread),
       const LibraryScreen(),
+      if (master) const PeopleScreen(),
     ];
     return Scaffold(
       body: IndexedStack(index: _tab, children: pages),
@@ -116,6 +119,7 @@ class _ClinicianShellState extends State<ClinicianShell> with WidgetsBindingObse
             label: 'Alerts',
           ),
           const NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Library'),
+          if (master) const NavigationDestination(icon: Icon(Icons.apartment_outlined), selectedIcon: Icon(Icons.apartment), label: 'Practice'),
         ],
       ),
     );
