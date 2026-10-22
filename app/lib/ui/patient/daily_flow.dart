@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The patient's first visit of the day, as a slow, calm sequence rather than a dashboard:
+// How the patient side opens, every time: a slow, calm sequence rather than a dashboard:
 //   1. a quiet screen with a few words and a breathing circle; tapping it starts
-//   2. the daily check-in, then
+//   2. the check-in, if there hasn't been one today, then
 //   3. anything the psychologist has sent, one at a time, then
-//   4. a short thank-you, fading into the usual home screen.
-// A breathing glow runs behind every step and paces the transitions. Each step can be skipped.
+//   4. a short thank-you, fading into the usual home screen (straight there if there was nothing to do).
+// A breathing glow runs behind every step and paces the transitions. Each step can be skipped;
+// tapping the circle or skipping it also refreshes the watch upload.
 import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../app_state.dart';
 import '../../content/daily_words.dart';
@@ -27,12 +27,9 @@ import 'patient_home.dart';
 const _inhale = 4.0, _exhale = 6.0; // seconds
 const _cycle = Duration(milliseconds: 10000);
 
-String _today() {
-  final d = DateTime.now();
-  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-}
-
-/// Shows the daily start the first time the app opens each day, then the home screen.
+/// Every time the app is opened: the calm start first, then the check-in or anything the
+/// psychologist sent if needed, then the home screen. Coming back after a short trip to
+/// another app (under [_away]) returns to where the patient was.
 class PatientGate extends StatefulWidget {
   const PatientGate({super.key});
   @override
@@ -40,16 +37,15 @@ class PatientGate extends StatefulWidget {
 }
 
 class _PatientGateState extends State<PatientGate> with WidgetsBindingObserver {
-  static const _storage = FlutterSecureStorage();
-  bool? _showFlow;
-
-  String get _key => 'steady.daily.${AppScope.api(context).myId}';
+  static const _away = Duration(minutes: 5);
+  bool _showFlow = true;
+  int _flowRun = 0;
+  DateTime? _leftAt;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _decide());
   }
 
   @override
@@ -60,22 +56,21 @@ class _PatientGateState extends State<PatientGate> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
-    // the app left open overnight: a new day starts calmly too
-    if (s == AppLifecycleState.resumed && _showFlow == false) _decide();
+    if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
+      _leftAt ??= DateTime.now();
+    } else if (s == AppLifecycleState.resumed) {
+      final left = _leftAt;
+      _leftAt = null;
+      if (left != null && DateTime.now().difference(left) >= _away && !_showFlow && mounted) {
+        setState(() {
+          _flowRun++;
+          _showFlow = true;
+        });
+      }
+    }
   }
 
-  Future<void> _decide() async {
-    String? last;
-    try {
-      last = await _storage.read(key: _key);
-    } catch (_) {/* storage unavailable: show the start, it does no harm */}
-    if (mounted) setState(() => _showFlow = last != _today());
-  }
-
-  Future<void> _finished() async {
-    try {
-      await _storage.write(key: _key, value: _today());
-    } catch (_) {}
+  void _finished() {
     if (mounted) setState(() => _showFlow = false);
   }
 
@@ -86,19 +81,11 @@ class _PatientGateState extends State<PatientGate> with WidgetsBindingObserver {
       duration: Duration(milliseconds: reduce ? 200 : 1800),
       switchInCurve: Curves.easeInOutCubic,
       switchOutCurve: Curves.easeInOutCubic,
-      child: _showFlow == null
-          ? const _Blank(key: ValueKey('blank'))
-          : _showFlow!
-              ? DailyFlow(key: const ValueKey('flow'), onFinished: _finished)
-              : const PatientHome(key: ValueKey('home')),
+      child: _showFlow
+          ? DailyFlow(key: ValueKey('flow$_flowRun'), onFinished: () async => _finished())
+          : const PatientHome(key: ValueKey('home')),
     );
   }
-}
-
-class _Blank extends StatelessWidget {
-  const _Blank({super.key});
-  @override
-  Widget build(BuildContext context) => Scaffold(body: _CalmBackdrop(breath: const AlwaysStoppedAnimation(0.3), child: const SizedBox.expand()));
 }
 
 enum _Step { breathe, checkin, activity, thanks }
@@ -119,10 +106,14 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
   String _words = wordsForToday(const []);
   Timer? _thanks;
 
+  final _prepared = Completer<void>();
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prepare().whenComplete(() {
+          if (!_prepared.isCompleted) _prepared.complete();
+        }));
   }
 
   @override
@@ -162,11 +153,24 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
 
   void _afterCheckin() => _go(_pending.isEmpty ? _Step.thanks : _Step.activity);
 
-  void _tapCircle() {
+  bool _leaving = false;
+
+  Future<void> _tapCircle() async {
+    if (_leaving) return;
+    _leaving = true;
     HapticFeedback.lightImpact();
     final api = AppScope.api(context);
     if (api.wearableConnected) unawaited(WearableSync.instance.sync(api).catchError((_) => null));
-    _go(_checkedInToday ? (_pending.isEmpty ? _Step.thanks : _Step.activity) : _Step.checkin);
+    // know whether there's a check-in or anything waiting before choosing the next step
+    await _prepared.future.timeout(const Duration(seconds: 6), onTimeout: () {});
+    if (!mounted) return;
+    if (!_checkedInToday) {
+      _go(_Step.checkin);
+    } else if (_pending.isNotEmpty) {
+      _go(_Step.activity);
+    } else {
+      widget.onFinished(); // checked in already and nothing waiting: straight to home
+    }
   }
 
   Future<void> _begin(Assignment a) async {
@@ -207,7 +211,7 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
       _Step.thanks => _ThanksStep(key: const ValueKey('thanks'), breath: _breath, onTap: widget.onFinished),
     };
     final (String?, VoidCallback?) skip = switch (_step) {
-      _Step.breathe => ('Skip for today', () => widget.onFinished()),
+      _Step.breathe => ('Skip', () => _tapCircle()),
       _Step.checkin => ('Skip the check-in', () => _go(_pending.isEmpty ? _Step.thanks : _Step.activity)),
       _Step.activity => ('Later', () => _go(_Step.thanks)),
       _Step.thanks => (null, null),
