@@ -79,8 +79,7 @@ class _DailyWordsScreenState extends State<DailyWordsScreen> {
                 subtitle: q.active ? null : const Text('Hidden from patients'),
                 trailing: PopupMenuButton<String>(
                   onSelected: (v) async {
-                    if (v == 'toggle') await guardedCall(context, () => api.setQuoteActive(q.id, !q.active));
-                    if (v == 'delete') await guardedCall(context, () => api.deleteQuote(q.id));
+                    await guardedCall(context, () => v == 'toggle' ? api.setQuoteActive(q.id, !q.active) : api.deleteQuote(q.id));
                     reload();
                   },
                   itemBuilder: (_) => [

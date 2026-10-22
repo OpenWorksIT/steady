@@ -180,14 +180,29 @@ pw.Widget _section(String title, [String? caption]) => pw.Padding(
 
 pw.Widget _muted(String text) => pw.Text(text, style: _small);
 
-pw.Widget _card(String value, String label, {PdfColor colour = _brand}) => pw.Container(
-      width: 120,
-      padding: const pw.EdgeInsets.fromLTRB(10, 8, 10, 8),
-      decoration: pw.BoxDecoration(
-        color: _soft,
-        borderRadius: pw.BorderRadius.circular(6),
-        border: pw.Border(left: pw.BorderSide(color: colour, width: 3)),
+/// A rounded, tinted box with a coloured strip down its left edge (the PDF library can't round
+/// a border that differs per side, so the strip is its own box, clipped by the rounded corners).
+pw.Widget _stripBox({required PdfColor colour, required PdfColor background, required pw.Widget child, double? width}) => pw.SizedBox(
+      width: width,
+      child: pw.ClipRRect(
+        horizontalRadius: 6,
+        verticalRadius: 6,
+        child: pw.Stack(children: [
+          pw.Container(
+            width: width,
+            color: background,
+            padding: const pw.EdgeInsets.fromLTRB(12, 8, 9, 8),
+            child: child,
+          ),
+          pw.Positioned(left: 0, top: 0, bottom: 0, child: pw.Container(width: 3, color: colour)),
+        ]),
       ),
+    );
+
+pw.Widget _card(String value, String label, {PdfColor colour = _brand}) => _stripBox(
+      width: 120,
+      colour: colour,
+      background: _soft,
       child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         pw.Text(value, style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: _ink)),
         pw.SizedBox(height: 1),
@@ -405,13 +420,10 @@ List<pw.Widget> _radr(ExportPatient p) {
   final out = <pw.Widget>[
     _section('RADR · Research Amon Dîn Rating',
         'How far the watch data and check-ins are from this person\'s own normal, 0 (usual) to 4 (far from usual).'),
-    pw.Container(
-      padding: const pw.EdgeInsets.all(9),
-      decoration: pw.BoxDecoration(
-        color: _accentSoft,
-        borderRadius: pw.BorderRadius.circular(6),
-        border: const pw.Border(left: pw.BorderSide(color: _accent, width: 3)),
-      ),
+    _stripBox(
+      width: double.infinity,
+      colour: _accent,
+      background: _accentSoft,
       child: pw.Text(
         'For research only: not a risk score, prediction or diagnosis, and not monitored around the clock. Each measure is '
         'compared with the person\'s previous four weeks; four domains are scored and shown with the check-ins beside them. '
