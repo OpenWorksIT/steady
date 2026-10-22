@@ -121,6 +121,16 @@ function patientRecord(app, p, fromMs, toMs, opts) {
     out.patient.selfName = p.getString("name");
     out.instruments = instruments;
   }
+  if (opts.radr && connected) {
+    // the research view for the period (at most its last year), for the report
+    var W = require(__hooks + "/lib/wearable.js");
+    var R = require(__hooks + "/lib/radr.js");
+    var D = require(__hooks + "/lib/radr_data.js");
+    var tzr = p.getInt("tzOffset") || 120;
+    var rTo = W.localDay(Math.min(toMs, s.nowMs()), tzr);
+    var rFrom = W.localDay(Math.max(fromMs, Math.min(toMs, s.nowMs()) - 364 * core.DAY), tzr);
+    if (rFrom <= rTo) out.radr = D.compact(D.forPatient(app, p, rFrom, R.addDays(rTo, 0)));
+  }
   return out;
 }
 

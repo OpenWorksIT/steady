@@ -31,6 +31,7 @@ Uint8List buildWorkbook(ExportBundle bundle) {
     ['Prepared on', timeText(bundle.generatedAt)],
     ['Patients', '${bundle.patients.length}'],
     ['Note', 'Confidential health information from Steady. Keep it in the patient file. Flags are review aids, not a diagnosis.'],
+    ['RADR', 'Research only: how far watch data and check-ins are from the person\'s own normal, 0 to 4. Not a risk score or diagnosis. See docs/RADR.md.'],
   ]) {
     about.appendRow([TextCellValue(row[0]), TextCellValue(row[1])]);
   }
@@ -43,6 +44,11 @@ Uint8List buildWorkbook(ExportBundle bundle) {
   final keys = <String>{for (final p in bundle.patients) for (final d in p.wearableDays) ...d.values.keys};
   final order = [...kWearableLabels.keys.where(keys.contains), ...keys.where((k) => !kWearableLabels.containsKey(k)).toList()..sort()];
   final watch = sheet('Watch', ['Patient', 'Day', for (final k in order) kWearableLabels[k] == null ? k : '${kWearableLabels[k]!.$1}${kWearableLabels[k]!.$2.isEmpty ? '' : ' (${kWearableLabels[k]!.$2})'}']);
+
+  final radr = sheet('RADR (research)', [
+    'Patient', 'Day', 'Watch index (0-4)', 'Check-in score (0-4)', 'Combined', 'Domains away from usual',
+    'Sleep', 'Body clock', 'Activity', 'Heart',
+  ]);
 
   for (final p in bundle.patients) {
     final who = TextCellValue(p.name);
@@ -81,6 +87,17 @@ Uint8List buildWorkbook(ExportBundle bundle) {
     }
     for (final e in p.exercises) {
       exercises.appendRow([who, dt(e.at), TextCellValue(e.name), n(e.minutes), TextCellValue(e.selfStarted ? 'yes' : 'no')]);
+    }
+    for (final d in p.radr?.rated ?? const <ExportRadrDay>[]) {
+      radr.appendRow([
+        who,
+        TextCellValue(dayText(d.day)),
+        n(d.watch),
+        n(d.self),
+        n(d.combined),
+        IntCellValue(d.convergent),
+        for (final k in ExportRadr.domainKeys) n(d.domains[k]),
+      ]);
     }
     for (final d in p.wearableDays) {
       watch.appendRow([who, TextCellValue(d.day), for (final k in order) d.values[k] is num ? n(d.values[k] as num) : null]);

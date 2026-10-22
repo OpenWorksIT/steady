@@ -18,47 +18,7 @@ routerAdd("GET", "/api/steady/patients/{id}/radr", (e) => {
   const tz = p.getInt("tzOffset") || 120;
   const to = w.localDay(s.nowMs(), tz);
   const from = R.addDays(to, -(days - 1));
-  const reach = R.addDays(from, -(R.BASELINE_GAP + R.BASELINE_DAYS + 7));
-
-  const byDay = {};
-  $app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:a} && day <= {:b}", "day", 2000, 0, { p: p.id, a: reach, b: to })
-    .forEach((r) => { byDay[r.getString("day")] = s.readJson(r, "values") || {}; });
-
-  // check-ins: one mean per local day
-  const sums = {};
-  const since = s.dateValue(Date.parse(reach + "T00:00:00Z") - tz * 60000).string();
-  $app.findRecordsByFilter("checkins", "patient = {:p} && created >= {:a}", "created", 20000, 0, { p: p.id, a: since })
-    .forEach((r) => {
-      const d = w.localDay(s.toMs(r, "created"), tz);
-      const o = sums[d] || (sums[d] = { n: 0, mood: 0, anxiety: 0, sleep: 0, energy: 0 });
-      o.n++;
-      ["mood", "anxiety", "sleep", "energy"].forEach((k) => { o[k] += r.getInt(k); });
-    });
-  const checkins = {};
-  Object.keys(sums).forEach((d) => {
-    const o = sums[d];
-    checkins[d] = { mood: o.mood / o.n, anxiety: o.anxiety / o.n, sleep: o.sleep / o.n, energy: o.energy / o.n };
-  });
-
-  const out = R.rate(byDay, checkins, from, to);
-
-  // questionnaire totals in the period, for the chart
-  const names = {};
-  out.questionnaires = $app.findRecordsByFilter("assignments", "patient = {:p} && status = 'done' && completedAt >= {:a}", "completedAt", 2000, 0,
-    { p: p.id, a: s.dateValue(Date.parse(from + "T00:00:00Z") - tz * 60000).string() })
-    .map((a) => {
-      const score = s.readJson(a, "score");
-      if (!score || typeof score.total !== "number") return null;
-      const id = a.getString("instrument");
-      if (names[id] === undefined) {
-        try { const i = $app.findRecordById("instruments", id); names[id] = { key: i.getString("key"), name: i.getString("name") }; } catch (_) { names[id] = null; }
-      }
-      if (!names[id]) return null;
-      return { day: w.localDay(s.toMs(a, "completedAt"), tz), key: names[id].key, name: names[id].name, total: score.total, max: score.max, severity: score.severity || "none" };
-    })
-    .filter((x) => x);
-  out.demo = p.getBool("demo");
-  out.watchConnected = s.toMs(p, "wearableConsentAt") > 0;
+  const out = require(`${__hooks}/lib/radr_data.js`).forPatient($app, p, from, to);
   s.audit($app, e, "patient.radr", "user:" + p.id + " " + from + ".." + to + (v.own ? "" : " shared"), p.id);
   return e.json(200, out);
 }, $apis.requireAuth());

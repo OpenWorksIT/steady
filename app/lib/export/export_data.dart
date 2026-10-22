@@ -46,6 +46,58 @@ class ExportInstrument {
   ExportInstrument(this.name, this.items, this.responseSets);
 }
 
+/// RADR (the research view) for the report period: see server/pb_hooks/lib/radr.js.
+class ExportRadrDay {
+  final DateTime day;
+  final double? watch, self, combined;
+  final int convergent;
+  final Map<String, double?> domains;
+  ExportRadrDay(this.day, this.watch, this.self, this.combined, this.convergent, this.domains);
+}
+
+class ExportRadr {
+  final List<ExportRadrDay> days;
+  final List<({int lag, int n, double? rho})> concordance;
+  final ExportRadrDay? latest;
+  final String shift;
+  final int wearDays, checkinDays;
+  ExportRadr(this.days, this.concordance, this.latest, this.shift, this.wearDays, this.checkinDays);
+
+  static const domainKeys = ['sleep', 'circadian', 'activity', 'cardiac'];
+  static const domainNames = {'sleep': 'Sleep', 'circadian': 'Body clock', 'activity': 'Activity', 'cardiac': 'Heart'};
+
+  List<ExportRadrDay> get rated => days.where((d) => d.watch != null).toList();
+
+  static ExportRadrDay _day(Map<String, dynamic> j) {
+    final dom = asMap(j['domains']);
+    return ExportRadrDay(
+      DateTime.tryParse('${j['day']}') ?? DateTime(1970),
+      _num(j['watch']),
+      _num(j['self']),
+      _num(j['combined']),
+      (j['convergent'] as num?)?.toInt() ?? 0,
+      {for (final k in domainKeys) k: _num(dom[k])},
+    );
+  }
+
+  static ExportRadr? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final j = asMap(raw);
+    final latest = j['latest'] is Map ? _day(asMap(j['latest'])) : null;
+    return ExportRadr(
+      asList(j['days']).map((d) => _day(asMap(d))).toList(),
+      asList(j['concordance']).map((c) {
+        final m = asMap(c);
+        return (lag: (m['lag'] as num?)?.toInt() ?? 0, n: (m['n'] as num?)?.toInt() ?? 0, rho: _num(m['rho']));
+      }).toList(),
+      latest,
+      '${asMap(j['latest'])['shift'] ?? ''}',
+      (j['wearDays'] as num?)?.toInt() ?? 0,
+      (j['checkinDays'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class ExportPatient {
   final String id, name, selfName;
   final DateTime? joinedAt, from, to;
@@ -56,6 +108,7 @@ class ExportPatient {
   final List<ExportFlag> flags;
   final List<({String day, Map<String, dynamic> values})> wearableDays;
   final Map<String, ExportInstrument> instruments;
+  final ExportRadr? radr;
   ExportPatient({
     required this.id,
     required this.name,
@@ -71,6 +124,7 @@ class ExportPatient {
     required this.flags,
     required this.wearableDays,
     required this.instruments,
+    this.radr,
   });
 
   factory ExportPatient.fromJson(Map<String, dynamic> j) {
@@ -120,6 +174,7 @@ class ExportPatient {
       flags: asList(j['flags']).map(ExportFlag.fromJson).toList(),
       wearableDays: asList(w['days']).map((raw) => (day: '${asMap(raw)['day']}', values: asMap(asMap(raw)['values']))).toList(),
       instruments: inst,
+      radr: ExportRadr.fromJson(j['radr']),
     );
   }
 

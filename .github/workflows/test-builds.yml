@@ -94,6 +94,18 @@ jobs:
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" web-dist
           rm -rf .git
 
+      - name: report previews
+        # a PDF report and an Excel export for a fictional demo patient, on the previews branch,
+        # so the layout can be checked without a phone
+        run: |
+          mkdir -p /tmp/previews
+          (cd app && STEADY_PREVIEW_DIR=/tmp/previews flutter test test/export_test.dart)
+          cd /tmp/previews
+          git init -q -b previews
+          git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" add -A
+          git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" commit -qm "Report previews from ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" previews
+
       - name: publish pre-release
         env:
           GH_TOKEN: ${{ github.token }}

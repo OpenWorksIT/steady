@@ -387,7 +387,7 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
   const q = e.requestInfo().query || {};
   const joined = s.toMs(p, "created");
   const span = r.range(q, 3660, Math.ceil((s.nowMs() - joined) / s.core.DAY) + 1);
-  const rec = r.patientRecord($app, p, span[0], span[1], { answers: true });
+  const rec = r.patientRecord($app, p, span[0], span[1], { answers: true, radr: true });
   s.audit($app, e, "patient.export", "user:" + p.id + " " + rec.from.slice(0, 10) + ".." + rec.to.slice(0, 10), p.id);
   return e.json(200, {
     practice: s.env("STEADY_PRACTICE_NAME", "Your practice"),
@@ -405,7 +405,7 @@ routerAdd("GET", "/api/steady/export", (e) => {
   const q = e.requestInfo().query || {};
   const span = r.range(q, 3660, 3660);
   const list = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c}", "name", 1000, 0, { c: e.auth.id });
-  const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true }));
+  const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true, radr: true }));
   s.audit($app, e, "patients.export", "count:" + out.length, "");
   return e.json(200, {
     practice: s.env("STEADY_PRACTICE_NAME", "Your practice"),
