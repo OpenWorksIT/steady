@@ -2,6 +2,7 @@
 // A patient's Steady record as a PDF report: check-in trends, questionnaire scores, the RADR
 // research view, exercises, watch data and the patient's notes. Built on the device; nothing is
 // sent anywhere else.
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
@@ -163,6 +164,11 @@ pw.Widget _cover(ExportBundle bundle, ExportPatient p, String range, pw.MemoryIm
   ]);
 }
 
+/// Widgets that stay on one page together (a heading is never left alone at the foot of a page).
+/// A Container doesn't split across pages, unlike a bare Column.
+pw.Widget _keep(List<pw.Widget> children) =>
+    pw.Container(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: children));
+
 pw.Widget _section(String title, [String? caption]) => pw.Padding(
       padding: const pw.EdgeInsets.only(top: 20, bottom: 8),
       child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
@@ -283,6 +289,28 @@ List<({DateTime start, double? value})> _buckets<T>(List<T> rows, DateTime Funct
   return [for (var i = 0; i < n; i++) (start: start.add(Duration(days: i * step)), value: counts[i] == 0 ? null : sums[i] / counts[i])];
 }
 
+/// 1, 2, 2.5 or 5 times a power of ten: tick steps that read well on an axis.
+double _niceStep(double raw) {
+  if (raw <= 1) return 1;
+  final mag = math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
+  for (final m in [1.0, 2.0, 2.5, 5.0, 10.0]) {
+    if (raw <= m * mag) return m * mag;
+  }
+  return 10 * mag;
+}
+
+pw.Widget _legend(Map<String, (PdfColor, List<double?>)> series) => pw.Padding(
+      padding: const pw.EdgeInsets.only(left: 18, bottom: 4),
+      child: pw.Row(children: [
+        for (final e in series.entries) ...[
+          pw.Container(width: 9, height: 2.4, color: e.value.$1),
+          pw.SizedBox(width: 4),
+          pw.Text(e.key, style: const pw.TextStyle(fontSize: 7, color: _ink2)),
+          pw.SizedBox(width: 12),
+        ],
+      ]),
+    );
+
 pw.Widget _chart(List<DateTime> xs, Map<String, (PdfColor, List<double?>)> series,
     {required double min, required double max, String Function(num)? yFormat, double height = 150, bool fill = true}) {
   final drawn = {
@@ -293,7 +321,8 @@ pw.Widget _chart(List<DateTime> xs, Map<String, (PdfColor, List<double?>)> serie
   final every = (xs.length / 7).ceil().clamp(1, 1000);
   final labels = [for (var i = 0; i < xs.length; i++) i % every == 0 ? _short(xs[i]) : ''];
   final span = max - min <= 0 ? 1.0 : max - min;
-  final stepY = span <= 5 ? 1.0 : (span / 5).ceilToDouble();
+  final stepY = _niceStep(span / 5);
+  min = (min / stepY).floorToDouble() * stepY;
   final ticks = <double>[];
   for (var v = min; ; v += stepY) {
     ticks.add(v);
@@ -301,24 +330,17 @@ pw.Widget _chart(List<DateTime> xs, Map<String, (PdfColor, List<double?>)> serie
   }
   final top = ticks.last;
   final dense = xs.length > 45;
-  return pw.Container(
-    height: height,
-    padding: pw.EdgeInsets.only(top: drawn.length > 1 ? 14 : 4),
+  final chart = pw.Container(
+    height: height - (drawn.length > 1 ? 14 : 0),
+    padding: const pw.EdgeInsets.only(top: 4),
     child: pw.Chart(
       grid: pw.CartesianGrid(
         xAxis: pw.FixedAxis.fromStrings(labels,
-            marginStart: 10, marginEnd: 10, ticks: true, color: _line, textStyle: const pw.TextStyle(fontSize: 6.5, color: _ink3)),
+            marginStart: 14, marginEnd: 14, ticks: true, color: _line, textStyle: const pw.TextStyle(fontSize: 6.5, color: _ink3)),
         yAxis: pw.FixedAxis(ticks,
             divisions: true, divisionsColor: _line, divisionsWidth: 0.4, color: _line,
             format: yFormat ?? (v) => v.toStringAsFixed(0), textStyle: const pw.TextStyle(fontSize: 6.5, color: _ink3)),
       ),
-      overlay: drawn.length > 1
-          ? pw.ChartLegend(
-              position: const pw.Alignment(-1, -1.25),
-              direction: pw.Axis.horizontal,
-              textStyle: const pw.TextStyle(fontSize: 7, color: _ink2),
-              decoration: const pw.BoxDecoration(color: _white))
-          : null,
       datasets: [
         for (final (i, e) in drawn.entries.indexed)
           pw.LineDataSet(
@@ -340,6 +362,7 @@ pw.Widget _chart(List<DateTime> xs, Map<String, (PdfColor, List<double?>)> serie
       ],
     ),
   );
+  return drawn.length > 1 ? pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [_legend(drawn), chart]) : chart;
 }
 
 List<pw.Widget> _checkinTrend(ExportPatient p) {
@@ -352,8 +375,10 @@ List<pw.Widget> _checkinTrend(ExportPatient p) {
   final weekly = to.difference(from).inDays + 1 > 120;
   List<double?> vals(String k) => buckets[k]!.map((b) => b.value).toList();
   return [
-    _section('Check-ins', '${weekly ? 'Weekly' : 'Daily'} averages from 1 (low) to 5 (high). For anxiety, higher means more anxious.'),
-    _chart(xs, {'Mood': (_scaleColours['mood']!, vals('mood')), 'Anxiety': (_scaleColours['anxiety']!, vals('anxiety'))}, min: 1, max: 5),
+    _keep([
+      _section('Check-ins', '${weekly ? 'Weekly' : 'Daily'} averages from 1 (low) to 5 (high). For anxiety, higher means more anxious.'),
+      _chart(xs, {'Mood': (_scaleColours['mood']!, vals('mood')), 'Anxiety': (_scaleColours['anxiety']!, vals('anxiety'))}, min: 1, max: 5),
+    ]),
     pw.SizedBox(height: 12),
     _chart(xs, {'Sleep': (_scaleColours['sleep']!, vals('sleep')), 'Energy': (_scaleColours['energy']!, vals('energy'))}, min: 1, max: 5),
   ];
@@ -381,7 +406,7 @@ List<pw.Widget> _assessments(ExportPatient p) {
     }
   }
   if (charts.isNotEmpty) {
-    out.add(pw.Wrap(spacing: 14, runSpacing: 10, children: charts));
+    out[0] = _keep([out[0], pw.Wrap(spacing: 14, runSpacing: 10, children: charts)]);
     out.add(pw.SizedBox(height: 12));
   }
   out.add(_table(
@@ -445,6 +470,10 @@ List<pw.Widget> _radr(ExportPatient p) {
     _card(f(last.self), 'check-in score', colour: _scaleColours['anxiety']!),
     _card(f(last.combined), 'combined', colour: _ink2),
   ]));
+  final head = _keep(List.of(out));
+  out
+    ..clear()
+    ..add(head);
   out.add(pw.SizedBox(height: 10));
 
   // latest domain bars
@@ -575,8 +604,10 @@ List<pw.Widget> _wearable(ExportPatient p) {
   add('hr_avg', 'Average heart rate', _ink2, unit: 'bpm');
   if (charts.isEmpty) return [];
   return [
-    _section('Watch data', 'Daily summaries the patient chose to share from their watch.'),
-    pw.Wrap(spacing: 14, runSpacing: 12, children: charts),
+    _keep([
+      _section('Watch data', 'Daily summaries the patient chose to share from their watch.'),
+      pw.Wrap(spacing: 14, runSpacing: 12, children: charts),
+    ]),
   ];
 }
 
