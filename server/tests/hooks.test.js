@@ -67,6 +67,7 @@ function makeRuntime(opts = {}) {
     setEmail(v) { this.data.email = v; }
     setPassword(v) { this.data.passwordHash = "pw:" + v; }
     validatePassword(v) { return this.data.passwordHash === "pw:" + v; }
+    setRandomPassword() { this.data.passwordHash = "pw:random-" + (++idSeq); return ""; }
     email() { return this.data.email || ""; }
     isSuperuser() { return this.collectionName === "_superusers"; }
     setVerified(v) { this.data.verified = v; }
@@ -153,6 +154,7 @@ function makeRuntime(opts = {}) {
       store[model.collectionName] = store[model.collectionName].filter((r) => r !== model);
     },
     runInTransaction: (fn) => fn(app),
+    unsafeWithoutHooks: () => app,
     settings: () => settings,
     logger: () => ({ warn: (...a) => { if (opts.verbose) console.warn(...a); }, info() {} })
   };
@@ -224,6 +226,7 @@ function makeRuntime(opts = {}) {
   for (const f of fs.readdirSync(path.join(ROOT, "pb_migrations")).sort()) run(path.join(ROOT, "pb_migrations", f));
   run(path.join(HOOKS, "steady.pb.js"));
   run(path.join(HOOKS, "steady_practice.pb.js"));
+  run(path.join(HOOKS, "steady_research.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {

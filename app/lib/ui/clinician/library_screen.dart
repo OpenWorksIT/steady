@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'builder_screen.dart';
 import 'clinician_shell.dart';
+import 'daily_words_screen.dart';
 import 'import_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -58,7 +59,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     final api = AppScope.api(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Library')),
+      appBar: AppBar(title: const Text('Library'), actions: [
+        IconButton(
+          tooltip: 'Daily words for your patients',
+          icon: const Icon(Icons.format_quote_outlined),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DailyWordsScreen())),
+        ),
+      ]),
       floatingActionButton: FloatingActionButton.extended(onPressed: _add, icon: const Icon(Icons.add), label: const Text('Add')),
       body: Loader<List<Instrument>>(
         key: _key,

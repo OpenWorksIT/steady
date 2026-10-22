@@ -447,6 +447,9 @@ class Api {
 
   bool get isServerAdmin => me?.getBoolValue('serverAdmin') ?? false;
 
+  /// Who may check for and install server updates (the server checks the same).
+  bool get canUpdate => isServerAdmin || isMaster || role == 'admin';
+
   /* ---------------- the practice (master clinician, administrator) ---------------- */
 
   /// A temporary password for someone; they must choose their own at next sign-in.
@@ -502,6 +505,27 @@ class Api {
 
   Future<void> share(String patientId, String clinicianId, bool shared) =>
       pb.send('/api/steady/patients/$patientId/share', method: 'POST', body: {'clinician': clinicianId, 'shared': shared});
+
+  /// RADR, the research view: daily domain scores against the patient's own normal (radr_tab.dart).
+  Future<Map<String, dynamic>> radr(String patientId, {int days = 56}) =>
+      pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/radr', query: {'days': '$days'});
+
+  /* ---------------- daily start ---------------- */
+
+  /// Words of encouragement: the psychologist's own (for their patients), or a psychologist's list.
+  Future<List<({String id, String text, String author, bool active})>> quotes() async {
+    final list = await pb.collection('quotes').getFullList(sort: '-created');
+    return list
+        .map((r) => (id: r.id, text: r.getStringValue('text'), author: r.getStringValue('author'), active: r.getBoolValue('active')))
+        .toList();
+  }
+
+  Future<void> addQuote(String text, {String author = ''}) =>
+      pb.collection('quotes').create(body: {'text': text, 'author': author, 'active': true, 'createdBy': myId});
+
+  Future<void> setQuoteActive(String id, bool active) => pb.collection('quotes').update(id, body: {'active': active});
+
+  Future<void> deleteQuote(String id) => pb.collection('quotes').delete(id);
 
   /// One patient's whole record (or a date range), for a PDF or Excel export.
   Future<Map<String, dynamic>> exportPatient(String patientId, {String? from, String? to}) =>

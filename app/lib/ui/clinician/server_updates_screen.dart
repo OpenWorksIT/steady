@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Settings > Server and updates, for psychologists marked serverAdmin. The server does the
+// Settings > Server and updates, for the master clinician, administrators and psychologists marked serverAdmin. The server does the
 // work (deploy/ctl/steady-ctl.sh, as root); this screen asks for it and shows how it went.
 import 'dart:async';
 
@@ -13,7 +13,9 @@ import '../theme.dart';
 import '../widgets.dart';
 
 class ServerUpdatesScreen extends StatefulWidget {
-  const ServerUpdatesScreen({super.key});
+  /// 'check' or 'update': start that straight away (from Settings' buttons).
+  final String? ask;
+  const ServerUpdatesScreen({this.ask, super.key});
   @override
   State<ServerUpdatesScreen> createState() => _ServerUpdatesScreenState();
 }
@@ -28,7 +30,9 @@ class _ServerUpdatesScreenState extends State<ServerUpdatesScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _load().then((_) {
+      if (mounted && widget.ask != null && _info?['managed'] == true && !_working) _ask(widget.ask!);
+    });
   }
 
   @override
@@ -241,5 +245,85 @@ class _ServerUpdatesScreenState extends State<ServerUpdatesScreen> {
         ]),
       ),
     );
+  }
+}
+
+/// The version and the two update buttons, for Settings (master clinician and administrators).
+/// The full progress and history are on [ServerUpdatesScreen].
+class UpdateControls extends StatefulWidget {
+  const UpdateControls({super.key});
+  @override
+  State<UpdateControls> createState() => _UpdateControlsState();
+}
+
+class _UpdateControlsState extends State<UpdateControls> {
+  Map<String, dynamic>? _info;
+  String? _error;
+
+  Map<String, dynamic> _map(Object? v) => v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final info = await AppScope.api(context).systemStatus();
+      if (mounted) setState(() => _info = info);
+    } catch (e) {
+      if (mounted) setState(() => _error = errorText(e));
+    }
+  }
+
+  void _open(BuildContext context, {String? ask}) {
+    final nav = Navigator.of(context);
+    nav.pop();
+    nav.push(MaterialPageRoute(builder: (_) => ServerUpdatesScreen(ask: ask)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final st = _map(_info?['status']);
+    final check = _map(st['check']);
+    final behind = (check['behind'] as num?)?.toInt() ?? 0;
+    final sha = '${_map(check['current'])['sha'] ?? ''}';
+    final managed = _info?['managed'] == true;
+    final line = _error ??
+        (_info == null
+            ? 'Checking the server...'
+            : !managed
+                ? 'Updates from the app aren\'t set up on this server yet.'
+                : check.isEmpty
+                    ? 'Not checked for updates yet.'
+                    : behind == 0
+                        ? 'Up to date'
+                        : '$behind update${behind == 1 ? '' : 's'} available');
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Steady version', style: context.tt.titleMedium),
+      const SizedBox(height: 4),
+      Text('This phone: ${kAppBuild.isEmpty ? 'development build' : 'build $kAppBuild'}'
+          '${sha.isEmpty ? '' : ' · server: ${sha.length > 7 ? sha.substring(0, 7) : sha}'}',
+          style: TextStyle(color: context.sc.ink2)),
+      Text(line, style: TextStyle(color: behind > 0 ? context.cs.primary : context.sc.ink2, fontWeight: behind > 0 ? FontWeight.w600 : null)),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: managed ? () => _open(context, ask: 'check') : null,
+            child: const Text('Check for updates'),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: FilledButton(
+            onPressed: managed ? () => _open(context, ask: 'update') : null,
+            child: const Text('Update now'),
+          ),
+        ),
+      ]),
+      TextButton(onPressed: () => _open(context), child: const Text('Details and history')),
+    ]);
   }
 }

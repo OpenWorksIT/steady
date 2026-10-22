@@ -11,6 +11,7 @@
 #   sudo ./accounts.sh set kempie@vrpsych.co.za master|server-admin|active on|off
 #   sudo ./accounts.sh audit [--patient <id>] [--actor <id>] [--days 90]
 #   sudo ./accounts.sh check                                     # proxy, rate limits, dashboard
+#   sudo ./accounts.sh demo-patients <psychologist email> [--remove]   # 3 fictional RADR patients
 #   ./accounts.sh --test ...                                      # the test stack on a PC
 #
 # How it works: it makes a superuser that lives only for this command, signs in from inside the
@@ -28,7 +29,7 @@ if [ "${1:-}" = "--test" ]; then
 fi
 command -v jq >/dev/null || { echo "Please install jq first (apt-get install -y jq)." >&2; exit 1; }
 
-usage() { sed -n '5,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '5,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 [ $# -ge 1 ] || usage
 
 pbx() { "${COMPOSE[@]}" exec -T pocketbase "$@"; }
@@ -128,6 +129,13 @@ case "$cmd" in
       esac
     done
     api GET "/api/steady/ops/audit?$q" | jq -r '.rows[] | [.at, .actor, .action, .target, .patient, .ip] | @tsv'
+    ;;
+  demo-patients)
+    [ $# -ge 1 ] || usage
+    rm=false; [ "${2:-}" = "--remove" ] && rm=true
+    res="$(api POST /api/steady/ops/demo "$(jq -n --arg e "$1" --argjson r "$rm" '{clinician:$e,remove:$r}')")"
+    jq -r '"Removed \(.removed) demo patient(s).", (.created[] | "Added \(.name): \(.days) days of watch data, \(.checkins) check-ins, \(.questionnaires) questionnaires.\n  \(.summary)")' <<<"$res"
+    [ "$rm" = true ] || echo "They're fictional, for trying out the RADR tab. Remove them with: $0 demo-patients $1 --remove"
     ;;
   *) usage ;;
 esac

@@ -381,10 +381,12 @@ def run(su):
     # ---- server administration
     S = "server admin"
     for path, method in [("/api/steady/system", "GET"), ("/api/steady/system/request", "POST")]:
-        s, r = call(method, path, doc1, {"action": "check"} if method == "POST" else None)
-        check(S, f"{method} {path} is refused to a psychologist who isn't a server admin", s == 403, r)
+        s, r = call(method, path, doc2, {"action": "check"} if method == "POST" else None)
+        check(S, f"{method} {path} is refused to a psychologist who isn't the master clinician", s == 403, r)
         s, r = call(method, path, patA, {"action": "update"} if method == "POST" else None)
         check(S, f"{method} {path} is refused to a patient", s == 403, r)
+    s, r = call("GET", "/api/steady/system", doc1)
+    check(S, "the master clinician may see the version and updates", s == 200 and "managed" in r, r)
     s, r = call("GET", "/api/settings", doc1)
     check(S, "server settings are superuser-only", s in (401, 403), r)
     s, r = call("GET", "/api/logs", doc1)
@@ -527,6 +529,8 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(M, "the administrator can't stop a psychologist's account", s == 403, r)
     s, r = call("GET", "/api/steady/admin/people", doc2)
     check(M, "a psychologist who isn't the master clinician can't list the practice", s == 403, r)
+    s, r = call("GET", "/api/steady/system", adm)
+    check(M, "the administrator may see the version and updates", s == 200 and "managed" in r, r)
 
     # ---- password resets and the forced change
     P = "password resets"
@@ -646,6 +650,31 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(E, "patients can't use the export route", s == 403, r)
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"actor='{d1}' && action~'export'", "perPage": 50})
     check(E, "exports are audit-logged", {"patient.export", "patients.export"} <= {i["action"] for i in items(logs)}, [i["action"] for i in items(logs)])
+
+    # ---- research: RADR and the psychologist's own daily words
+    Q = "research"
+    s, r = call("GET", f"/api/steady/patients/{a}/radr", doc1)
+    check(Q, "the psychologist opens RADR for their patient", s == 200 and "days" in r and "concordance" in r, list(r)[:6])
+    s, r = call("GET", f"/api/steady/patients/{c}/radr", S2.token)
+    check(Q, "and another psychologist's own patient's RADR for theirs", s == 200, r)
+    s, r = call("GET", f"/api/steady/patients/{a}/radr", doc2)
+    check(Q, "RADR follows the same rules: someone else's patient is refused", s == 404, r)
+    s, r = call("GET", f"/api/steady/patients/{a}/radr", adm)
+    check(Q, "administrators can't open RADR", s in (403, 404), r)
+    s, r = call("GET", f"/api/steady/patients/{a}/radr", patA)
+    check(Q, "patients can't open RADR", s == 403, r)
+    s, qd1 = call("POST", "/api/collections/quotes/records", doc1, {"text": "One step at a time.", "createdBy": d1, "active": True})
+    check(Q, "a psychologist adds words for their patients' daily start", s == 200, qd1)
+    s, r = call("POST", "/api/collections/quotes/records", doc2, {"text": "Not mine to add.", "createdBy": d1, "active": True})
+    check(Q, "nobody adds words in someone else's name", s in (400, 403), r)
+    s, r = call("POST", "/api/collections/quotes/records", patA, {"text": "Patient words", "createdBy": a, "active": True})
+    check(Q, "patients can't add words", s in (400, 403), r)
+    s, r = call("GET", "/api/collections/quotes/records", patA)
+    check(Q, "a patient sees their own psychologist's words", s == 200 and any(i["id"] == qd1.get("id") for i in items(r)), r)
+    s, r = call("GET", "/api/collections/quotes/records", patC)
+    check(Q, "another psychologist's patient doesn't", s == 200 and not any(i["id"] == qd1.get("id") for i in items(r)), r)
+    s, r = call("PATCH", f"/api/collections/quotes/records/{qd1.get('id')}", doc2, {"text": "changed"})
+    check(Q, "only the author edits them", s in (403, 404), r)
 
     # ---- the Sorted feed
     I = "Sorted feed"

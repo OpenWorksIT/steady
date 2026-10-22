@@ -34,7 +34,7 @@ onBootstrap((e) => {
   const GUARD = "@request.auth.active = true && @request.auth.mustChangePassword = false";
   const TWO = " && (@request.auth.role = 'patient' || @request.auth.totpEnabledAt != '')";
   const want = $os.getenv("STEADY_REQUIRE_2FA") !== "off";
-  ["users", "checkins", "assignments", "biometrics", "notifications", "devices", "invites", "instruments"].forEach((name) => {
+  ["users", "checkins", "assignments", "biometrics", "notifications", "devices", "invites", "instruments", "quotes"].forEach((name) => {
     let col = null;
     try { col = e.app.findCollectionByNameOrId(name); } catch (_) { return; }
     let changed = false;

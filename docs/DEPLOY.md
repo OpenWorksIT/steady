@@ -62,6 +62,7 @@ sudo ./accounts.sh reset <email> [--two-step]   # a temporary password (and a fr
 sudo ./accounts.sh set <email> master|server-admin|active on|off
 sudo ./accounts.sh audit --patient <id>         # who looked at a patient's data (POPIA access requests)
 sudo ./accounts.sh check                        # proxy header, rate limits, dashboard closed
+sudo ./accounts.sh demo-patients <email> [--remove]   # three fictional patients for the RADR tab
 ```
 
 Each run makes a superuser that exists only for that command, signs in from inside the
@@ -74,8 +75,8 @@ then set up two-step sign-in.
 | Who | Can | Can't |
 |---|---|---|
 | Psychologist | Invite patients, see and send to their own patients, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records | See other psychologists' patients unless shared with them |
-| Master clinician | All of the above, plus create psychologist and administrator accounts, reset their passwords, stop or restore them, invite patients for and move patients to any psychologist | Reset their own or another master's password (that's `accounts.sh`) |
-| Practice administrator, OpenWorks support | See names only. Invite a patient for a chosen psychologist, reset patients' passwords, stop or restore patients, move a patient to another psychologist. Support accounts marked server admin can run updates. | See check-ins, scores, notes or watch data; create psychologist accounts (that would let them open patient data) |
+| Master clinician | All of the above, plus create psychologist and administrator accounts, reset their passwords, stop or restore them, invite patients for and move patients to any psychologist, and install server updates from Settings | Reset their own or another master's password (that's `accounts.sh`) |
+| Practice administrator, OpenWorks support | See names only. Invite a patient for a chosen psychologist, reset patients' passwords, stop or restore patients, move a patient to another psychologist. Both can install server updates from Settings. | See check-ins, scores, notes or watch data; create psychologist accounts (that would let them open patient data) |
 
 Every one of these actions is in the audit log, and the psychologist is told when someone else
 resets their patient's password or moves a patient. Psychologists and administrators **must use
@@ -186,7 +187,7 @@ updates from Settings > Server and updates, the way Shap does; the server also c
 sudo /opt/steady/deploy/ctl/install.sh
 ```
 
-Then `sudo ./accounts.sh set <email> server-admin on` for the psychologist or support account. The app
+The master clinician and administrators can use it straight away; for another psychologist, `sudo ./accounts.sh set <email> server-admin on`. The app
 only leaves a request; `deploy/ctl/steady-ctl.sh` does the work as root (outside the app), saves a
 copy of the data to `/var/backups/steady/` first (the last 5 are kept, root only) and then runs
 `update.sh`.

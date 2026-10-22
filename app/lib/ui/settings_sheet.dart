@@ -131,20 +131,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     nav.push(MaterialPageRoute(builder: (_) => const TwoStepSetupScreen()));
                   },
           ),
-          if (state.api.isStaff && state.api.isServerAdmin) ...[
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.system_update_alt),
-              title: const Text('Server and updates'),
-              subtitle: const Text('Check for and install updates'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                final nav = Navigator.of(context);
-                nav.pop();
-                nav.push(MaterialPageRoute(builder: (_) => const ServerUpdatesScreen()));
-              },
-            ),
+          if (state.api.canUpdate) ...[
+            const SizedBox(height: 16),
+            const UpdateControls(),
           ],
           if (appUpdateAvailable(state)) ...[
             const SizedBox(height: 12),

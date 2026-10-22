@@ -91,10 +91,15 @@ function needsTwoStep(rec) {
   return twoStepRequired(rec) && !twoStepOn(rec);
 }
 
-/** Psychologists or support accounts marked "serverAdmin" may check for and run updates. */
+/** Who may check for and install server updates: the master clinician, administrators and
+ *  OpenWorks support, and any psychologist marked "serverAdmin". */
+function canUpdate(rec) {
+  return rec.getBool("serverAdmin") || isMaster(rec) || rec.getString("role") === "admin";
+}
+
 function requireServerAdmin(e) {
   requireRole(e, ["clinician", "admin"]);
-  if (!e.auth.getBool("serverAdmin")) throw new ForbiddenError("Only a server administrator can do this. Ask OpenWorks to tick serverAdmin on your account.");
+  if (!canUpdate(e.auth)) throw new ForbiddenError("Only the master clinician or an administrator can do this.");
 }
 
 /* ---------- accounts ---------- */
@@ -415,6 +420,7 @@ module.exports = {
   requireManager: requireManager,
   requireMaster: requireMaster,
   requireServerAdmin: requireServerAdmin,
+  canUpdate: canUpdate,
   isStaff: isStaff,
   isMaster: isMaster,
   twoStepRequired: twoStepRequired,

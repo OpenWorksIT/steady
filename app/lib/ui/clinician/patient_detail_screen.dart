@@ -12,6 +12,7 @@ import '../wearable/wearable_views.dart';
 import '../widgets.dart';
 import 'assign_screen.dart';
 import 'clinician_shell.dart';
+import 'radr_tab.dart';
 import 'result_screen.dart';
 
 class _Detail {
@@ -34,7 +35,7 @@ class PatientDetailScreen extends StatefulWidget {
 
 class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTickerProviderStateMixin {
   Key _key = UniqueKey();
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+  late final TabController _tabs = TabController(length: 3, vsync: this);
   WearableMetric? _openMetric;
   late String _name = widget.name;
 
@@ -197,13 +198,14 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
               ],
             ),
         ],
-        bottom: TabBar(controller: _tabs, tabs: const [Tab(text: 'Overview'), Tab(text: 'Wearable')]),
+        bottom: TabBar(controller: _tabs, tabs: const [Tab(text: 'Overview'), Tab(text: 'Wearable'), Tab(text: 'RADR')]),
       ),
       body: TabBarView(
         controller: _tabs,
         children: [
           _overview(),
           WearableTab(patientId: widget.patientId, initialMetric: _openMetric),
+          RadrTab(patientId: widget.patientId),
         ],
       ),
     );

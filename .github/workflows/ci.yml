@@ -109,6 +109,10 @@ jobs:
           ./accounts.sh add-admin "CI support" ci-support@steady.test --server-admin | grep -q "Temporary password"
           ./accounts.sh reset ci-support@steady.test | grep -q "Temporary password"
           ./accounts.sh audit --days 1 | grep -q "ops.account.create"
+          # the fictional RADR research patients: added with backdated data, then removed again
+          ./accounts.sh demo-patients "$(sed -n 's/^CLINICIAN_EMAIL=//p' test/.env)" | tee demo.txt
+          grep -q "Added DEMO C" demo.txt
+          ./accounts.sh demo-patients "$(sed -n 's/^CLINICIAN_EMAIL=//p' test/.env)" --remove | grep -q "Removed 3"
           SH
 
       - name: deployment config is valid
