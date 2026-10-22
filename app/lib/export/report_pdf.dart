@@ -165,9 +165,9 @@ pw.Widget _cover(ExportBundle bundle, ExportPatient p, String range, pw.MemoryIm
 }
 
 /// Widgets that stay on one page together (a heading is never left alone at the foot of a page).
-/// A Container doesn't split across pages, unlike a bare Column.
+/// Containers and Columns pass page breaks through to their children; a Stack is never split.
 pw.Widget _keep(List<pw.Widget> children) =>
-    pw.Container(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: children));
+    pw.Stack(children: [pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: children)]);
 
 pw.Widget _section(String title, [String? caption]) => pw.Padding(
       padding: const pw.EdgeInsets.only(top: 20, bottom: 8),
@@ -362,7 +362,7 @@ pw.Widget _chart(List<DateTime> xs, Map<String, (PdfColor, List<double?>)> serie
       ],
     ),
   );
-  return drawn.length > 1 ? pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [_legend(drawn), chart]) : chart;
+  return drawn.length > 1 ? _keep([_legend(drawn), chart]) : chart;
 }
 
 List<pw.Widget> _checkinTrend(ExportPatient p) {
