@@ -397,15 +397,15 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
   });
 }, $apis.requireAuth());
 
-const EXPORT_MAX = 500;
-const EXPORT_RADR = 100;
-
 // All of the psychologist's own patients, stopped ones included. The last 12 months unless
 // asked for a longer period: ten years of everyone is too much to build on a phone.
 routerAdd("GET", "/api/steady/export", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const r = require(`${__hooks}/lib/records.js`);
   s.requireRole(e, "clinician");
+  // (inside the handler: PocketBase runs handlers apart from the file's top-level constants)
+  const EXPORT_MAX = 500;
+  const EXPORT_RADR = 100;
   const q = e.requestInfo().query || {};
   const span = r.range(q, 3660, 365);
   const list = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c}", "name", EXPORT_MAX + 1, 0, { c: e.auth.id });
