@@ -35,13 +35,13 @@ void main() {
   testWidgets('a long press on the Feedback button opens the feedback sheet like a tap', (tester) async {
     final errors = <String>[];
     final previous = FlutterError.onError;
-    FlutterError.onError = (d) => errors.add(d.exceptionAsString().split('\n').take(8).join(' | '));
+    FlutterError.onError = (d) => errors.add(d.toString().split('\n').take(30).join(' | '));
     addTearDown(() => FlutterError.onError = previous);
     await tester.pumpWidget(app(GlobalKey<NavigatorState>()));
     await tester.longPress(find.byIcon(Icons.feedback_outlined));
     await tester.pumpAndSettle();
     FlutterError.onError = previous;
-    expect(errors, isEmpty);
+    expect(errors.isEmpty ? '' : errors.first, '', reason: '${errors.length} errors; the first is shown');
     expect(find.text('Bug found'), findsOneWidget);
     expect(find.text('screen'), findsOneWidget);
   });
