@@ -55,7 +55,28 @@ function msToDay(ms) {
   var p = function (n) { return (n < 10 ? "0" : "") + n; };
   return d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate());
 }
-function addDays(day, n) { return msToDay(dayToMs(day) + n * DAY_MS); }
+var ADD_CACHE = {};
+var ADD_SIZE = 0;
+/** day + n days. Cached: the rating asks for the same few hundred dates many thousands of times. */
+function addDays(day, n) {
+  var k = day + "|" + n;
+  var v = ADD_CACHE[k];
+  if (v === undefined) {
+    v = msToDay(dayToMs(day) + n * DAY_MS);
+    if (++ADD_SIZE > 50000) { ADD_CACHE = {}; ADD_SIZE = 1; }
+    ADD_CACHE[k] = v;
+  }
+  return v;
+}
+
+/** fn(day), worked out once per day. */
+function memo(fn) {
+  var cache = {};
+  return function (day) {
+    if (!(day in cache)) cache[day] = fn(day);
+    return cache[day];
+  };
+}
 function isNum(v) { return typeof v === "number" && isFinite(v); }
 function r2(n) { return n === null ? null : Math.round(n * 100) / 100; }
 
@@ -162,18 +183,20 @@ function compare(fn, day, floor) {
 
 /* ---------- the rating ---------- */
 
-function dayRating(s, day) {
+/** The daily measures, each worked out once per day however often the baselines ask. */
+function measures(s) {
+  var sm = function (series) { return memo(function (d) { return smoothed(series, d); }); };
+  return {
+    sleep_min: sm(s.sleep_min), sleep_var: memo(function (d) { return variability(s, d); }), midpoint: sm(s.midpoint),
+    steps: sm(s.steps), rhr: sm(s.rhr), hrv: sm(s.hrv),
+    mood: sm(s.mood), anxiety: sm(s.anxiety), energy: sm(s.energy), sleepq: sm(s.sleepq)
+  };
+}
+
+function dayRating(s, day, m) {
+  m = m || measures(s);
   var f = {};
-  f.sleep_min = compare(function (d) { return smoothed(s.sleep_min, d); }, day, FLOOR.sleep_min);
-  f.sleep_var = compare(function (d) { return variability(s, d); }, day, FLOOR.sleep_var);
-  f.midpoint = compare(function (d) { return smoothed(s.midpoint, d); }, day, FLOOR.midpoint);
-  f.steps = compare(function (d) { return smoothed(s.steps, d); }, day, FLOOR.steps);
-  f.rhr = compare(function (d) { return smoothed(s.rhr, d); }, day, FLOOR.rhr);
-  f.hrv = compare(function (d) { return smoothed(s.hrv, d); }, day, FLOOR.hrv);
-  f.mood = compare(function (d) { return smoothed(s.mood, d); }, day, FLOOR.mood);
-  f.anxiety = compare(function (d) { return smoothed(s.anxiety, d); }, day, FLOOR.anxiety);
-  f.energy = compare(function (d) { return smoothed(s.energy, d); }, day, FLOOR.energy);
-  f.sleepq = compare(function (d) { return smoothed(s.sleepq, d); }, day, FLOOR.sleepq);
+  Object.keys(m).forEach(function (k) { f[k] = compare(m[k], day, FLOOR[k]); });
 
   var z = function (k) { return f[k].z; };
   var maxOf = function (xs) {
@@ -268,8 +291,9 @@ function concordance(rows) {
  */
 function rate(byDay, checkins, from, to) {
   var s = rawSeries(byDay, checkins);
+  var m = measures(s);
   var rows = [];
-  for (var d = from; d <= to; d = addDays(d, 1)) rows.push(dayRating(s, d));
+  for (var d = from; d <= to; d = addDays(d, 1)) rows.push(dayRating(s, d, m));
   var rated = rows.filter(function (r) { return r.watch !== null; });
   var last = rated.length ? rated[rated.length - 1] : null;
   return {

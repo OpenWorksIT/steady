@@ -11,6 +11,7 @@ import '../../build_info.dart';
 import '../../services/api.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'server_health.dart';
 
 class ServerUpdatesScreen extends StatefulWidget {
   /// 'check' or 'update': start that straight away (from Settings' buttons).
@@ -147,6 +148,8 @@ class _ServerUpdatesScreenState extends State<ServerUpdatesScreen> {
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(18, 8, 18, 28), children: [
           if (_error != null) Text(_error!, style: TextStyle(color: context.cs.error)),
+          const ServerHealthCard(),
+          const SizedBox(height: 8),
           if (info == null && _error == null) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
           if (info != null && info['managed'] != true)
             Card(

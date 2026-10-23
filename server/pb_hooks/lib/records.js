@@ -102,7 +102,9 @@ function patientRecord(app, p, fromMs, toMs, opts) {
     var tz = p.getInt("tzOffset") || 120;
     var d1 = w.localDay(fromMs, tz);
     var d2 = w.localDay(toMs, tz);
-    days = app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:a} && day <= {:b}", "day", 1000, 0, { p: p.id, a: d1, b: d2 })
+    // one row per day: room for the whole period (exports reach back up to ten years)
+    var limit = Math.min(4000, Math.ceil((toMs - fromMs) / core.DAY) + 3);
+    days = app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:a} && day <= {:b}", "day", limit, 0, { p: p.id, a: d1, b: d2 })
       .map(function (r) { return { day: r.getString("day"), values: s.readJson(r, "values") || {} }; });
   }
 

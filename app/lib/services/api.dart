@@ -554,6 +554,9 @@ class Api {
   /// Server and updates (server admins): status from deploy/ctl/steady-ctl.sh.
   Future<Map<String, dynamic>> systemStatus() => pb.send<Map<String, dynamic>>('/api/steady/system');
 
+  /// How the server is coping (master clinician and administrators): see ServerHealthCard.
+  Future<Map<String, dynamic>> serverHealth() => pb.send<Map<String, dynamic>>('/api/steady/health', query: {'hours': 24});
+
   /// Asks the server to 'check' for or install an 'update'.
   Future<void> systemRequest(String action) =>
       pb.send('/api/steady/system/request', method: 'POST', body: {'action': action});

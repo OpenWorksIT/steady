@@ -33,6 +33,9 @@ mkdir -p brand && chmod 755 brand
 echo "Building and starting..."
 docker compose up -d --build
 
+# each build leaves the previous images behind; without this they slowly fill the disk
+docker image prune -f >/dev/null 2>&1 || true
+
 for _ in $(seq 1 30); do
   if docker compose exec -T pocketbase wget -qO- http://127.0.0.1:8090/api/health >/dev/null 2>&1; then
     echo "Steady is running."

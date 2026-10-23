@@ -4,7 +4,9 @@
 #     leaves a request file; it never gets root, Docker or the code)
 #   - every night (check for updates)
 #
-#   steady-ctl.sh [check|update]     (no argument: read the app's request)
+#   - every 5 minutes (stats: disk, memory and load for Settings > Server health)
+#
+#   steady-ctl.sh [check|update|stats]     (no argument: read the app's request)
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 main() {
@@ -14,6 +16,8 @@ main() {
   CTL="${STEADY_CTL_DIR:-/var/lib/steady/ctl}"
   SNAPS="${STEADY_SNAPSHOT_DIR:-/var/backups/steady}"
   mkdir -p "$CTL"
+  # stats is quick and read-only: it never waits for, or blocks, a check or an update
+  if [ "${1:-}" = "stats" ]; then stats; return $?; fi
 
   exec 9>/run/steady-ctl.lock
   flock -n 9 || { echo "steady-ctl is already running"; return 0; }
@@ -27,6 +31,7 @@ main() {
   case "$action" in
     check) check ;;
     update) update ;;
+    stats) stats ;;
     *) echo "Unknown action: $action"; return 1 ;;
   esac
 }
@@ -40,6 +45,22 @@ put() { # put KEY JSON
   if [ -s "$f" ] && jq -e . "$f" >/dev/null 2>&1; then jq --arg k "$1" --argjson v "$2" '.[$k] = $v' "$f" > "$tmp"
   else jq -n --arg k "$1" --argjson v "$2" '{($k): $v}' > "$tmp"; fi
   chmod 644 "$tmp" && mv -f "$tmp" "$f"
+}
+
+# host.json, read by /api/steady/health: disk, memory, load (bytes; load averages per core)
+stats() {
+  local tmp disk mem
+  tmp="$(mktemp "$CTL/.host.XXXXXX")"
+  disk="$(df -B1 --output=size,used,avail / | tail -1)"
+  mem="$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print t*1024, a*1024}' /proc/meminfo)"
+  jq -n --arg at "$(now)" \
+    --argjson total "$(echo "$disk" | awk '{print $1}')" --argjson used "$(echo "$disk" | awk '{print $2}')" --argjson free "$(echo "$disk" | awk '{print $3}')" \
+    --argjson memTotal "$(echo "$mem" | awk '{print $1}')" --argjson memAvail "$(echo "$mem" | awk '{print $2}')" \
+    --argjson cpus "$(nproc)" --arg load "$(cut -d' ' -f1-3 /proc/loadavg)" \
+    --argjson snapshots "$(du -sb "$SNAPS" 2>/dev/null | awk '{print $1}' || echo 0)" \
+    '{at: $at, cpus: $cpus, load: ($load | split(" ") | map(tonumber)),
+      disk: {total: $total, used: $used, free: $free}, memory: {total: $memTotal, available: $memAvail},
+      snapshotsBytes: $snapshots}' > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$CTL/host.json"
 }
 
 app_build() { # the Android build in a version.json on stdin

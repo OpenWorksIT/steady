@@ -335,13 +335,20 @@ function startOfDayUtc(ms, tzOffsetMinutes) {
  * checkins: [{ ts, mood, anxiety, ... }]. Missing days are null.
  */
 function dailySeries(checkins, key, nowMs, days, tzOffsetMinutes) {
-  var today = startOfDayUtc(nowMs, tzOffsetMinutes);
-  var out = [];
-  for (var d = days - 1; d >= 0; d--) {
-    var start = today - d * DAY, end = start + DAY;
-    var hits = checkins.filter(function (c) { return c.ts >= start && c.ts < end && isNum(c[key]); });
-    out.push(hits.length ? round1(hits.reduce(function (a, c) { return a + c[key]; }, 0) / hits.length) : null);
+  var out = [], sum = [], n = [], i;
+  for (i = 0; i < days; i++) { out.push(null); sum.push(0); n.push(0); }
+  if (!checkins.length) return out;
+  // one pass: each check-in into its day (oldest day first), as patient lists can be thousands long
+  var first = startOfDayUtc(nowMs, tzOffsetMinutes) - (days - 1) * DAY;
+  for (i = 0; i < checkins.length; i++) {
+    var c = checkins[i];
+    if (!isNum(c[key])) continue;
+    var idx = Math.floor((c.ts - first) / DAY);
+    if (idx < 0 || idx >= days) continue;
+    sum[idx] += c[key];
+    n[idx]++;
   }
+  for (i = 0; i < days; i++) if (n[i]) out[i] = round1(sum[i] / n[i]);
   return out;
 }
 

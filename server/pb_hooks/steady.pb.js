@@ -145,17 +145,17 @@ routerAdd("GET", "/api/steady/overview", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireRole(e, "clinician");
   const tz = e.auth.getInt("tzOffset");
-  const patients = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c} && active = true", "name", 1000, 0, { c: e.auth.id });
-  const out = patients.map((p) => s.patientSummary($app, p, tz));
+  // psychiatrists may have thousands; s.patientSummaries keeps it to a few queries per 400
+  const patients = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c} && active = true", "name", 20000, 0, { c: e.auth.id });
+  const out = s.patientSummaries($app, patients, tz);
   // colleagues' patients shared with this psychologist (read only)
   const names = {};
-  $app.findRecordsByFilter("users", "role = 'patient' && active = true && sharedWith.id ?= {:c}", "name", 1000, 0, { c: e.auth.id })
-    .forEach((p) => {
-      const row = s.patientSummary($app, p, tz);
-      row.shared = true;
-      row.owner = s.clinicianName($app, p.getString("clinician"), names);
-      out.push(row);
-    });
+  const shared = $app.findRecordsByFilter("users", "role = 'patient' && active = true && sharedWith.id ?= {:c}", "name", 20000, 0, { c: e.auth.id });
+  s.patientSummaries($app, shared, tz).forEach((row, i) => {
+    row.shared = true;
+    row.owner = s.clinicianName($app, shared[i].getString("clinician"), names);
+    out.push(row);
+  });
   const rank = { alert: 3, warn: 2, info: 1, none: 0 };
   const top = (p) => (p.flags.length ? rank[p.flags[0].severity] || 0 : 0);
   out.sort((a, b) => top(b) - top(a) || a.name.localeCompare(b.name));

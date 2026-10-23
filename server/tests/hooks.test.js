@@ -48,7 +48,10 @@ function makeRuntime(opts = {}) {
         removeByName: (n) => { const i = fields.findIndex((f) => f.name === n); if (i >= 0) fields.splice(i, 1); },
         getByName: (n) => fields.find((f) => f.name === n)
       };
+      this.indexes = (data.indexes || []).slice();
     }
+    addIndex(name, unique, cols) { this.indexes.push("CREATE " + (unique ? "UNIQUE " : "") + "INDEX `" + name + "` (" + cols + ")"); }
+    removeIndex(name) { this.indexes = this.indexes.filter((i) => i.indexOf("`" + name + "`") < 0); }
   }
   const fieldClass = (type) => class { constructor(d) { Object.assign(this, d, { type }); } };
 
@@ -156,8 +159,14 @@ function makeRuntime(opts = {}) {
     runInTransaction: (fn) => fn(app),
     unsafeWithoutHooks: () => app,
     settings: () => settings,
-    logger: () => ({ warn: (...a) => { if (opts.verbose) console.warn(...a); }, info() {} })
+    logger: () => ({ warn: (...a) => { if (opts.verbose) console.warn(...a); }, info() {} }),
+    // PocketBase's in-memory app store, and the data folder
+    store: () => memStore,
+    dataDir: () => opts.dataDir || "/nonexistent"
   };
+
+  const mem = new Map();
+  const memStore = { get: (k) => mem.get(k), set: (k, v) => mem.set(k, v), keys: () => Array.from(mem.keys()), remove: (k) => mem.delete(k) };
 
   // Date whose "now" follows the fake clock, so time-based logic in the hooks can be tested.
   class FakeDate extends Date {
@@ -227,6 +236,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady.pb.js"));
   run(path.join(HOOKS, "steady_practice.pb.js"));
   run(path.join(HOOKS, "steady_research.pb.js"));
+  run(path.join(HOOKS, "steady_health.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -721,6 +731,78 @@ test("brand: the practice's look comes from a folder on the server, not from the
   // a broken file means plain Steady, never an error
   fs.writeFileSync(path.join(brandDir, "brand.json"), "{not json");
   assert.equal(rt.call("GET", "/api/steady/config").data.practiceName, "Old Env Name");
+});
+
+test("health: request times are kept per minute and summarised for admins and a monitor key", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "steady-data-"));
+  fs.writeFileSync(path.join(dataDir, "data.db"), Buffer.alloc(5000));
+  const { ctl } = distDirs();
+  fs.writeFileSync(path.join(ctl, "host.json"), JSON.stringify({ disk: { total: 100, used: 85 }, memory: { total: 2000, available: 900 } }));
+  const KEY = "monitor-key-0123456789abcdef";
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_MONITOR_KEY: KEY, STEADY_CTL_DIR: ctl }), dataDir });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const master = rt.makeUser({ name: "M", role: "clinician", active: true, master: true, email: "m@example.org" });
+
+  // the timing middleware is the last one registered; a request that takes 1.2 s
+  const timing = rt.hooks.middleware[rt.hooks.middleware.length - 1];
+  const request = (p, ms, status) => timing({
+    request: { url: { path: p } },
+    status: () => status,
+    next: () => { rt.tick(ms); }
+  });
+  for (let i = 0; i < 18; i++) request("/api/steady/overview", 40, 200);
+  request("/api/steady/patients/abcdefghij12345/radr", 1200, 200);
+  request("/api/steady/patients/abcdefghij12345/export", 3000, 500);
+  rt.tick(60 * 1000);
+  rt.crons.steady_health();
+  assert.equal(rt.store.healthlog.length, 1, "one row for the finished minute");
+  const row = JSON.parse(rt.store.healthlog[0].getString("data"));
+  assert.equal(row.n, 20);
+  assert.equal(row.err, 1);
+  assert.equal(row.p50, 50);
+  assert.equal(row.slow["/api/steady/patients/:id/export"], 3000);
+  assert.equal(row.dbBytes, 5000);
+
+  // a quiet minute still gets a row, so the database check runs all day
+  rt.tick(60 * 1000);
+  rt.crons.steady_health();
+  assert.equal(rt.store.healthlog.length, 2);
+
+  // who may look
+  assert.equal(rt.call("GET", "/api/steady/health").status, 401);
+  assert.equal(rt.call("GET", "/api/steady/health", { auth: doc }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/health", { headers: { "X-Steady-Monitor": "wrong" } }).status, 401);
+  const viaKey = rt.call("GET", "/api/steady/health", { headers: { "X-Steady-Monitor": KEY } });
+  assert.equal(viaKey.status, 200);
+  const h = rt.call("GET", "/api/steady/health", { auth: master }).data;
+  assert.equal(h.windows.last15m.requests, 20);
+  assert.equal(h.windows.last15m.slow[0].route, "/api/steady/patients/:id/export");
+  assert.equal(h.health.status, "slow");
+  assert.ok(h.health.reasons.some((r) => /80% full/.test(r)), "disk use from the host is part of the verdict");
+  assert.equal(h.database.bytes, 5000);
+  assert.ok(h.series.length >= 1);
+
+  // fourteen days later the rows are gone
+  rt.tick(15 * 86400000);
+  rt.crons.steady_health();
+  assert.ok(rt.store.healthlog.every((r) => r.getString("minute") > "2026"), "only recent rows kept");
+  assert.equal(rt.store.healthlog.length, 1);
+});
+
+test("exports keep every watch day of a long history, newest included", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const DAY = 86400000;
+  const joined = new Date(rt.now() - 1200 * DAY).toISOString().replace("T", " ");
+  const p = rt.makeUser({ name: "Long", role: "patient", active: true, clinician: doc.id, email: "l@example.org", created: joined, wearableConsentAt: joined });
+  const days = [];
+  for (let i = 1100; i >= 0; i--) days.push(new Date(rt.now() - i * DAY).toISOString().slice(0, 10));
+  days.forEach((d) => rt.makeRecord("biometrics", { patient: p.id, day: d, values: JSON.stringify({ steps: 5000 }) }));
+  const out = rt.call("GET", "/api/steady/patients/" + p.id + "/export", { auth: doc });
+  assert.equal(out.status, 200);
+  const got = out.data.patients[0].wearable.days;
+  assert.equal(got.length, days.length, "all 1 101 days, not the first 1 000");
+  assert.equal(got[got.length - 1].day, days[days.length - 1]);
 });
 
 test("system: only server admins can check for or start updates, and only once set up", () => {

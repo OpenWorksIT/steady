@@ -55,6 +55,18 @@ deploy/brand.sh push <server> <brand folder>   # from your own computer
 sudo ./brand.sh install <brand folder>          # or on the server
 ```
 
+## 4b. Watching the server
+
+```sh
+./health.sh              # speed, errors, database, disk and memory, in a few lines
+watch -n 30 ./health.sh  # keep it on screen
+./health.sh --json       # everything, for a dashboard
+```
+
+It needs `STEADY_MONITOR_KEY` in `.env` (`./gen-keys.sh` prints one; then `docker compose up -d`).
+Disk, memory and load come from `deploy/ctl` (run `sudo ./ctl/install.sh` again after updating, to
+add the 5-minute stats timer). Limits and when to move up a server size: [CAPACITY.md](CAPACITY.md).
+
 ## 5. Accounts
 
 PocketBase's own dashboard (`/_/`) is **closed**: it showed every record to anyone holding a

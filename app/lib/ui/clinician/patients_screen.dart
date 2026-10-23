@@ -83,7 +83,7 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
             icon: const Icon(Icons.download_outlined),
             onSelected: (_) => exportExcel(context),
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'all', child: ListTile(leading: Icon(Icons.table_chart_outlined), title: Text('Export all my patients to Excel'))),
+              PopupMenuItem(value: 'all', child: ListTile(leading: Icon(Icons.table_chart_outlined), title: Text('Export all my patients to Excel'), subtitle: Text('The last 12 months'))),
             ],
           ),
           IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: () => showSettingsSheet(context)),

@@ -371,14 +371,94 @@ function patientSummary(app, patient, tzOffset) {
   var cks = app.findRecordsByFilter("checkins", "patient = {:p} && created >= {:since}", "-created", 200, 0, { p: patient.id, since: since.string() });
   var asg = app.findRecordsByFilter("assignments", "patient = {:p} && status != 'cancelled' && created >= {:since}", "-created", 200, 0,
     { p: patient.id, since: dateValue(now - 45 * core.DAY).string() });
-  var rows = cks.map(checkinRow);
-  var names = {};
-  var arows = asg.map(function (r) { return assignmentRow(app, r, names); });
-  var allRows = rows;
-  if (!rows.length) {
-    var older = app.findRecordsByFilter("checkins", "patient = {:p}", "-created", 1, 0, { p: patient.id });
-    allRows = older.map(checkinRow);
+  var older = cks.length ? [] : app.findRecordsByFilter("checkins", "patient = {:p}", "-created", 1, 0, { p: patient.id });
+  var w = require(__hooks + "/lib/wearable.js");
+  var today = w.localDay(now, patient.getInt("tzOffset") || 120);
+  var recent = app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:d}", "-day", 14, 0,
+    { p: patient.id, d: w.addDays(today, -13) });
+  return summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, {});
+}
+
+var BATCH = 400;
+
+function inList(ids, prefix, params) {
+  return ids.map(function (id, i) { params[prefix + i] = id; return "{:" + prefix + i + "}"; }).join(",");
+}
+
+/** Records from one SQL condition (PocketBase's record query), or null where that isn't available. */
+function query(app, collection, where, params, order) {
+  if (typeof app.recordQuery !== "function" || typeof arrayOf !== "function") return null;
+  var out = arrayOf(new Record());
+  var q = app.recordQuery(collection).andWhere($dbx.exp(where, params));
+  if (order) q = q.orderBy(order);
+  q.all(out);
+  return out;
+}
+
+function groupBy(list, field) {
+  var out = {};
+  list.forEach(function (r) { var k = r.getString(field); (out[k] = out[k] || []).push(r); });
+  return out;
+}
+
+/**
+ * patientSummary for a whole list, in a handful of queries rather than five per patient, so a
+ * psychiatrist's list of thousands still opens quickly. Same output as patientSummary.
+ */
+function patientSummaries(app, patients, tzOffset) {
+  var now = nowMs();
+  if (!patients.length) return [];
+  var probe = query(app, "checkins", "1 = 0", {}, null);
+  if (probe === null) return patients.map(function (p) { return patientSummary(app, p, tzOffset); });
+  var w = require(__hooks + "/lib/wearable.js");
+  var since15 = dateValue(now - 15 * core.DAY).string();
+  var since45 = dateValue(now - 45 * core.DAY).string();
+  var firstDay = null;
+  patients.forEach(function (p) {
+    var d = w.addDays(w.localDay(now, p.getInt("tzOffset") || 120), -13);
+    if (firstDay === null || d < firstDay) firstDay = d;
+  });
+  var cks = {}, asg = {}, older = {}, bio = {};
+  for (var i = 0; i < patients.length; i += BATCH) {
+    var ids = patients.slice(i, i + BATCH).map(function (p) { return p.id; });
+    var pa = {};
+    var list = inList(ids, "p", pa);
+    pa.since = since15;
+    var got = groupBy(query(app, "checkins", "[[patient]] IN (" + list + ") AND [[created]] >= {:since}", pa, "[[created]] DESC"), "patient");
+    Object.keys(got).forEach(function (k) { cks[k] = got[k].slice(0, 200); });
+    var pb = {};
+    list = inList(ids, "p", pb);
+    pb.since = since45;
+    got = groupBy(query(app, "assignments", "[[patient]] IN (" + list + ") AND [[status]] != 'cancelled' AND [[created]] >= {:since}", pb, "[[created]] DESC"), "patient");
+    Object.keys(got).forEach(function (k) { asg[k] = got[k].slice(0, 200); });
+    var quiet = ids.filter(function (id) { return !cks[id]; });
+    if (quiet.length) {
+      var pc = {};
+      var ql = inList(quiet, "p", pc);
+      // each quiet patient's latest check-in, however old
+      got = groupBy(query(app, "checkins",
+        "[[id]] IN (SELECT (SELECT c2.id FROM checkins c2 WHERE c2.patient = u.id ORDER BY c2.created DESC LIMIT 1) FROM users u WHERE u.id IN (" + ql + "))",
+        pc, null), "patient");
+      Object.keys(got).forEach(function (k) { older[k] = got[k]; });
+    }
+    var pd = {};
+    list = inList(ids, "p", pd);
+    pd.d = firstDay;
+    got = groupBy(query(app, "biometrics", "[[patient]] IN (" + list + ") AND [[day]] >= {:d}", pd, "[[day]] DESC"), "patient");
+    Object.keys(got).forEach(function (k) { bio[k] = got[k]; });
   }
+  var names = {};
+  return patients.map(function (p) {
+    var d = w.addDays(w.localDay(now, p.getInt("tzOffset") || 120), -13);
+    var recent = (bio[p.id] || []).filter(function (r) { return r.getString("day") >= d; }).slice(0, 14);
+    return summaryOf(app, p, tzOffset, now, cks[p.id] || [], asg[p.id] || [], older[p.id] || [], recent, names);
+  });
+}
+
+function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names) {
+  var rows = cks.map(checkinRow);
+  var arows = asg.map(function (r) { return assignmentRow(app, r, names); });
+  var allRows = rows.length ? rows : older.map(checkinRow);
   var last = allRows.length ? allRows[0] : null;
   return {
     id: patient.id,
@@ -391,15 +471,11 @@ function patientSummary(app, patient, tzOffset) {
     anxiety: core.dailySeries(rows, "anxiety", now, 14, tzOffset),
     flags: core.reviewFlags(allRows, arows, now),
     pending: arows.filter(function (a) { return a.status === "pending"; }).length,
-    wearable: wearableSummary(app, patient, now)
+    wearable: wearableSummary(patient, recent)
   };
 }
 
-function wearableSummary(app, patient, now) {
-  var w = require(__hooks + "/lib/wearable.js");
-  var today = w.localDay(now, patient.getInt("tzOffset") || 120);
-  var recent = app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:d}", "-day", 14, 0,
-    { p: patient.id, d: w.addDays(today, -13) });
+function wearableSummary(patient, recent) {
   return {
     connected: toMs(patient, "wearableConsentAt") > 0,
     days14: recent.length,
@@ -446,5 +522,6 @@ module.exports = {
   sendable: sendable,
   notify: notify,
   push: push,
-  patientSummary: patientSummary
+  patientSummary: patientSummary,
+  patientSummaries: patientSummaries
 };

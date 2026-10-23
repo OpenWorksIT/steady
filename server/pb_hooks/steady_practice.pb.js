@@ -397,15 +397,25 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
   });
 }, $apis.requireAuth());
 
-// All of the psychologist's own patients, stopped ones included.
+const EXPORT_MAX = 500;
+const EXPORT_RADR = 100;
+
+// All of the psychologist's own patients, stopped ones included. The last 12 months unless
+// asked for a longer period: ten years of everyone is too much to build on a phone.
 routerAdd("GET", "/api/steady/export", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const r = require(`${__hooks}/lib/records.js`);
   s.requireRole(e, "clinician");
   const q = e.requestInfo().query || {};
-  const span = r.range(q, 3660, 3660);
-  const list = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c}", "name", 1000, 0, { c: e.auth.id });
-  const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true, radr: true }));
+  const span = r.range(q, 3660, 365);
+  const list = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c}", "name", EXPORT_MAX + 1, 0, { c: e.auth.id });
+  if (list.length > EXPORT_MAX) {
+    throw s.badRequest("That's more patients than the app can export at once (over " + EXPORT_MAX + "). Export patients one at a time, or ask OpenWorks IT for a full export.");
+  }
+  // RADR is worked out per patient and is slow in bulk; past EXPORT_RADR patients it's left out
+  // (each patient's own export still has it)
+  const radr = list.length <= EXPORT_RADR;
+  const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true, radr: radr }));
   s.audit($app, e, "patients.export", "count:" + out.length, "");
   return e.json(200, {
     practice: require(`${__hooks}/lib/brand.js`).current().name,

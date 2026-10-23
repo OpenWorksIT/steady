@@ -1,0 +1,6 @@
+[Unit]
+Description=Steady: disk, memory and load for Settings > Server health
+
+[Service]
+Type=oneshot
+ExecStart=/opt/steady/deploy/ctl/steady-ctl.sh stats
