@@ -36,21 +36,26 @@ class FeedbackLayer extends StatelessWidget {
         Positioned(
           left: 6,
           bottom: 92 + MediaQuery.viewPaddingOf(context).bottom,
-          child: _FeedbackButton(navigatorKey: navigatorKey),
+          child: FeedbackButton(navigatorKey: navigatorKey),
         ),
     ]);
   }
 }
 
-class _FeedbackButton extends StatefulWidget {
+/// The round Feedback button. It sits above the app's navigator (in MaterialApp.builder), where
+/// there is no Overlay, so it must not use a Tooltip or anything else that needs one: a Tooltip
+/// there fails on hover (web) or long-press and Flutter paints an error panel over the screen.
+/// The hint is drawn beside the button instead.
+class FeedbackButton extends StatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
-  const _FeedbackButton({required this.navigatorKey});
+  const FeedbackButton({required this.navigatorKey, super.key});
   @override
-  State<_FeedbackButton> createState() => _FeedbackButtonState();
+  State<FeedbackButton> createState() => _FeedbackButtonState();
 }
 
-class _FeedbackButtonState extends State<_FeedbackButton> {
+class _FeedbackButtonState extends State<FeedbackButton> {
   bool _busy = false;
+  bool _hover = false;
 
   Future<void> _open() async {
     final nav = widget.navigatorKey.currentState;
@@ -74,23 +79,44 @@ class _FeedbackButtonState extends State<_FeedbackButton> {
   }
 
   @override
-  Widget build(BuildContext context) => Tooltip(
-        message: 'Feedback or a bug',
-        child: Material(
-          color: context.cs.secondaryContainer.withValues(alpha: 0.92),
-          shape: const CircleBorder(),
-          elevation: 2,
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _open,
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: _busy
-                  ? const Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2))
-                  : Icon(Icons.feedback_outlined, size: 20, color: context.cs.onSecondaryContainer),
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: 'Feedback or a bug',
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hover = true),
+          onExit: (_) => setState(() => _hover = false),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Material(
+              color: context.cs.secondaryContainer.withValues(alpha: 0.92),
+              shape: const CircleBorder(),
+              elevation: 2,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _open,
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: _busy
+                      ? const Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2))
+                      : Icon(Icons.feedback_outlined, size: 20, color: context.cs.onSecondaryContainer),
+                ),
+              ),
             ),
-          ),
+            if (_hover && !_busy)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: IgnorePointer(
+                  child: Material(
+                    color: context.cs.inverseSurface.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      child: Text('Feedback or a bug', style: TextStyle(color: context.cs.onInverseSurface, fontSize: 12.5)),
+                    ),
+                  ),
+                ),
+              ),
+          ]),
         ),
       );
 }
