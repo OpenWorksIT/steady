@@ -20,6 +20,7 @@ import 'ui/auth/two_step_screen.dart';
 import 'ui/clinician/clinician_shell.dart';
 import 'ui/patient/daily_flow.dart';
 import 'ui/practice/admin_shell.dart';
+import 'ui/calm.dart';
 import 'ui/theme.dart';
 import 'ui/update_notice.dart';
 
@@ -39,17 +40,22 @@ class SteadyApp extends StatelessWidget {
   const SteadyApp({super.key});
   static final navigatorKey = GlobalKey<NavigatorState>();
   @override
-  Widget build(BuildContext context) => MaterialApp(
+  Widget build(BuildContext context) {
+    // patients get slow, calm transitions everywhere (ui/calm.dart); staff keep the quick ones
+    final patient = AppScope.of(context).isPatient;
+    ThemeData theme(Brightness b) => patient ? withCalmTransitions(buildTheme(b)) : buildTheme(b);
+    return MaterialApp(
         title: 'Steady',
         debugShowCheckedModeBanner: false,
-        theme: buildTheme(Brightness.light),
-        darkTheme: buildTheme(Brightness.dark),
+        theme: theme(Brightness.light),
+        darkTheme: theme(Brightness.dark),
         navigatorKey: navigatorKey,
         // screens opened go into the feedback trail; staff get the Feedback button
         navigatorObservers: [TrailObserver()],
         builder: (context, child) => FeedbackLayer(navigatorKey: navigatorKey, child: child ?? const SizedBox()),
         home: const UpdateNudge(child: RootGate()),
       );
+  }
 }
 
 /// Picks the first screen from who is signed in, and switches when that changes.

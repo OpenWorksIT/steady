@@ -18,6 +18,7 @@ import '../../content/daily_words.dart';
 import '../../models.dart';
 import '../../wearable/wearable_sync.dart';
 import '../brand.dart';
+import '../calm.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'activity_screens.dart';
@@ -111,6 +112,8 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
+    // notices (such as a new app version) wait until the calm start is over (calm.dart)
+    calmStartActive.value = true;
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare().whenComplete(() {
           if (!_prepared.isCompleted) _prepared.complete();
         }));
@@ -118,6 +121,7 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
 
   @override
   void dispose() {
+    calmStartActive.value = false;
     _thanks?.cancel();
     _breath.dispose();
     super.dispose();

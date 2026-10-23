@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../build_info.dart';
+import 'calm.dart';
 import 'widgets.dart';
 
 /// True when this is the Android app and the server has a different (newer) build.
@@ -36,17 +37,50 @@ class UpdateNudge extends StatefulWidget {
 
 class _UpdateNudgeState extends State<UpdateNudge> {
   static String? _offered;
+  VoidCallback? _waitForCalm;
+
+  @override
+  void dispose() {
+    if (_waitForCalm != null) calmStartActive.removeListener(_waitForCalm!);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     if (appUpdateAvailable(state) && _offered != state.config.appBuild) {
       _offered = state.config.appBuild;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        showDialog<void>(
-          context: context,
-          builder: (c) => AlertDialog(
+      final patient = state.isPatient;
+      WidgetsBinding.instance.addPostFrameCallback((_) => patient ? _offerWhenCalm() : _offer(calm: false));
+    }
+    return widget.child;
+  }
+
+  /// Patients: never during the calm start. Once it's over, let the home screen settle, then ask.
+  void _offerWhenCalm() {
+    if (!mounted) return;
+    if (calmStartActive.value) {
+      void listener() {
+        if (calmStartActive.value) return;
+        calmStartActive.removeListener(listener);
+        _waitForCalm = null;
+        _offerWhenCalm();
+      }
+
+      _waitForCalm = listener;
+      calmStartActive.addListener(listener);
+      return;
+    }
+    Future<void>.delayed(const Duration(milliseconds: 2500), () {
+      if (!mounted) return;
+      // reopened in the meantime: wait for that calm start to finish too
+      calmStartActive.value ? _offerWhenCalm() : _offer(calm: true);
+    });
+  }
+
+  void _offer({required bool calm}) {
+    if (!mounted) return;
+    Widget dialog(BuildContext c) => AlertDialog(
             title: const Text('A new version of Steady'),
             content: const Text('Download it and tap Install when your phone asks. '
                 'You stay signed in and nothing is lost.'),
@@ -60,10 +94,11 @@ class _UpdateNudgeState extends State<UpdateNudge> {
                 child: const Text('Download'),
               ),
             ],
-          ),
-        );
-      });
+          );
+    if (calm) {
+      showCalmDialog<void>(context: context, builder: dialog);
+    } else {
+      showDialog<void>(context: context, builder: dialog);
     }
-    return widget.child;
   }
 }

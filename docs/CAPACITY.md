@@ -28,6 +28,24 @@ list, the summaries and RADR only read recent weeks. Exports grow with the perio
 Two cores don't make one request faster; they let more people use the server at once, and
 keep it responsive while an export or an update runs.
 
+### 20 000 patients on one core
+
+A second test, the same day: ten psychiatrists with 2 000 patients each (20 000 in all, 950 000
+check-ins, 860 000 watch days, 127 000 questionnaires, a 681 MB database), one CPU core.
+
+| What | 1 core |
+|---|---|
+| One psychiatrist's list of 2 000, with 20 000 on the server | 1.4 s |
+| RADR, 13 weeks | 0.18 s |
+| One patient's full export | 0.6 s |
+| Check-ins, sustained (3 000 arriving 30 at a time) | about 8 900 a minute, median 0.16 s, all accepted |
+| A psychiatrist's list while those check-ins arrive | 7 to 8 s (the single core is saturated) |
+| Server memory | under 200 MB |
+
+The practice's total doesn't slow a psychiatrist's list: 2 000 patients take the same time
+whether the server holds 2 000 or 20 000. The earlier figure of about 1 800 check-ins a minute
+was measured while a 3 000-patient list was being built on the same core.
+
 Before these measurements the list stopped at 1 000 patients and took 8 s for 3 000, and RADR
 took 1.5 s; both were fixed in the same change.
 
@@ -45,17 +63,21 @@ A fully engaged patient (watch every day, daily check-in, a weekly questionnaire
 about 70 KB a year. The health log (deploy/health.sh) and notifications are trimmed
 automatically and stay small.
 
+The 20 000-patient test measured the same: 189 bytes per patient a day, 67 KB per patient a year,
+so 20 000 such patients add about 1.4 GB a year.
+
 On a 25 GB disk, after the operating system and Docker (about 5 GB), the five pre-update copies
-of the data that `deploy/ctl` keeps, and 20% free space, the database can grow to about 4 GB:
-some 13 000 fully engaged patient-years, or 55 000 patient-years of the psychiatry mix. On
-60 GB, about 15 GB. In practice the disk fills from old Docker images (now cleaned up after
+of the data that `deploy/ctl` keeps (compressed, about a fifth of the database each) and 20%
+free space, the database can grow to about 7 GB: some 23 000 fully engaged patient-years, or
+100 000 patient-years of the psychiatry mix (20 000 such patients for about five years). On
+60 GB, about 20 GB. In practice the disk fills from old Docker images (now cleaned up after
 every update) and from backups kept on the server (keep those elsewhere).
 
 ## Safe operating limits
 
 | Server | Patients per psychiatrist list | Patients per practice | Notes |
 |---|---|---|---|
-| KLX1 (1 core, 2 GB, 25 GB) | up to about 2 000 (list under 2.5 s) | 10 000 or more | Fine for a psychology practice or one or two psychiatrists |
+| KLX1 (1 core, 2 GB, 25 GB) | about 2 000 (list 1.4 s) | 20 000 (measured) | A psychology practice, or several psychiatrists |
 | KLX2 (2 cores, 4 GB, 60 GB) | up to about 2 000 per psychiatrist | 20 000 or more | Several psychiatrists working at once; heavy exports don't hold others up |
 
 Beyond about 2 000 active patients per psychiatrist, the list needs search-first or paging (a

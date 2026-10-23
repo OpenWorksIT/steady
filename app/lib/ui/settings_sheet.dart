@@ -12,12 +12,14 @@ import 'auth/server_screen.dart';
 import 'auth/two_step_screen.dart';
 import 'clinician/server_updates_screen.dart';
 import 'update_notice.dart';
+import 'calm.dart';
 import 'theme.dart';
 import 'widgets.dart';
 import 'clinician/feedback_inbox_screen.dart';
 
 Future<void> showSettingsSheet(BuildContext context) => showModalBottomSheet(
       context: context,
+      sheetAnimationStyle: calmSheetStyle(AppScope.of(context).isPatient),
       showDragHandle: true,
       isScrollControlled: true,
       builder: (_) => const _SettingsSheet(),
