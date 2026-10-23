@@ -32,13 +32,7 @@ cronAdd("steady_health", "* * * * *", () => {
 // the server's STEADY_MONITOR_KEY in X-Steady-Monitor instead of signing in.
 routerAdd("GET", "/api/steady/health", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
-  const key = $os.getenv("STEADY_MONITOR_KEY") || "";
-  const given = String(e.request.header.get("X-Steady-Monitor") || "");
-  const byKey = key.length >= 24 && given.length > 0 && $security.equal(given, key);
-  if (!byKey) {
-    if (!e.auth) throw new UnauthorizedError("Sign in first.");
-    if (!s.canUpdate(e.auth)) throw new ForbiddenError("Only the master psychologist and administrators can see server health.");
-  }
+  s.requireUpdaterOrMonitor(e, "server health");
   e.response.header().set("Cache-Control", "no-store");
   const hours = Number((e.requestInfo().query || {}).hours) || 24;
   let started = 0;

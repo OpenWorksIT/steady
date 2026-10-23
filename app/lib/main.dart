@@ -8,6 +8,8 @@
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
+import 'feedback/feedback.dart';
+import 'feedback/trail.dart';
 import 'services/api.dart';
 import 'services/push.dart';
 import 'ui/auth/change_password_screen.dart';
@@ -23,6 +25,7 @@ import 'ui/update_notice.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  startTrailErrorHooks();
   final api = await Api.create();
   // Must run before runApp: UnifiedPush delivers background messages by starting main().
   await PushService.instance.init(api);
@@ -34,12 +37,17 @@ Future<void> main() async {
 
 class SteadyApp extends StatelessWidget {
   const SteadyApp({super.key});
+  static final navigatorKey = GlobalKey<NavigatorState>();
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Steady',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
+        navigatorKey: navigatorKey,
+        // screens opened go into the feedback trail; staff get the Feedback button
+        navigatorObservers: [TrailObserver()],
+        builder: (context, child) => FeedbackLayer(navigatorKey: navigatorKey, child: child ?? const SizedBox()),
         home: const UpdateNudge(child: RootGate()),
       );
 }

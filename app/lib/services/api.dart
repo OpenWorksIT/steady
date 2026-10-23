@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 
+import '../feedback/trail.dart';
 import '../models.dart';
 
 /// Server address. Practice builds set it at build time:
@@ -133,7 +136,8 @@ class Api {
             : kIsWeb
                 ? Uri.base.origin
                 : '';
-    return Api._(PocketBase(url, authStore: store), storage);
+    // every server call goes into the feedback trail (method, path shape, result, time)
+    return Api._(PocketBase(url, authStore: store, httpClientFactory: () => TrailClient(http.Client())), storage);
   }
 
   /// Fixed at build time, so the server can't be changed in the app.
@@ -555,6 +559,56 @@ class Api {
   Future<Map<String, dynamic>> systemStatus() => pb.send<Map<String, dynamic>>('/api/steady/system');
 
   /// How the server is coping (master clinician and administrators): see ServerHealthCard.
+  /* ---------------- feedback (staff) ---------------- */
+
+  Future<void> sendFeedback({
+    required String kind,
+    required String message,
+    required String screen,
+    required DateTime pressedAt,
+    required List<Map<String, dynamic>> trail,
+    required Map<String, dynamic> client,
+    Uint8List? screenshot,
+    bool screenshotBlurred = true,
+  }) =>
+      pb.send(
+        '/api/steady/feedback',
+        method: 'POST',
+        body: {
+          'kind': kind,
+          'message': message,
+          'screen': screen,
+          'pressedAt': pressedAt.toUtc().toIso8601String(),
+          'trail': jsonEncode(trail),
+          'client': jsonEncode(client),
+          'screenshotMasked': screenshotBlurred ? 'true' : 'false',
+        },
+        files: [if (screenshot != null) http.MultipartFile.fromBytes('screenshot', screenshot, filename: 'screenshot.png')],
+      );
+
+  /// status: open, done or all (master psychologist and administrators).
+  Future<List<Map<String, dynamic>>> feedbackList(String status) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/feedback', query: {'status': status});
+    return ((res['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>> feedbackGet(String id) => pb.send<Map<String, dynamic>>('/api/steady/feedback/$id');
+
+  Future<void> feedbackSetStatus(String id, String status, String note) =>
+      pb.send('/api/steady/feedback/$id', method: 'PATCH', body: {'status': status, 'note': note});
+
+  Future<Uint8List?> feedbackScreenshot(String id) async {
+    final client = pb.httpClientFactory();
+    try {
+      final res = await client.get(Uri.parse(serverAddress('/api/steady/feedback/$id/screenshot')), headers: {'Authorization': pb.authStore.token});
+      return res.statusCode == 200 ? res.bodyBytes : null;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
   Future<Map<String, dynamic>> serverHealth() => pb.send<Map<String, dynamic>>('/api/steady/health', query: {'hours': 24});
 
   /// Asks the server to 'check' for or install an 'update'.

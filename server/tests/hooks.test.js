@@ -237,6 +237,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_practice.pb.js"));
   run(path.join(HOOKS, "steady_research.pb.js"));
   run(path.join(HOOKS, "steady_health.pb.js"));
+  run(path.join(HOOKS, "steady_feedback.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -803,6 +804,54 @@ test("exports keep every watch day of a long history, newest included", () => {
   const got = out.data.patients[0].wearable.days;
   assert.equal(got.length, days.length, "all 1 101 days, not the first 1 000");
   assert.equal(got[got.length - 1].day, days[days.length - 1]);
+});
+
+test("feedback: staff send love, dislikes and bugs with a trail; the master clinician and the monitor key read them", () => {
+  const KEY = "monitor-key-0123456789abcdef";
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_MONITOR_KEY: KEY }) });
+  const doc = rt.makeUser({ name: "Dr Doc", role: "clinician", active: true, email: "d@example.org" });
+  const master = rt.makeUser({ name: "Dr Master", role: "clinician", active: true, master: true, email: "m@example.org" });
+  const adm = rt.makeUser({ name: "Front desk", role: "admin", active: true, email: "a@example.org" });
+  const pat = rt.makeUser({ name: "P", role: "patient", active: true, clinician: doc.id, email: "p@example.org" });
+  const trail = [];
+  for (let i = 0; i < 70; i++) trail.push({ t: rt.now() - (70 - i) * 1000, kind: i % 2 ? "tap" : "api", detail: "step " + i });
+  trail.push({ t: rt.now(), kind: "keystroke", detail: "secret" }); // unknown kinds are dropped
+
+  assert.equal(rt.call("POST", "/api/steady/feedback", { auth: pat, body: { kind: "love" } }).status, 403, "patients don't get the feedback button");
+  assert.equal(rt.call("POST", "/api/steady/feedback", { auth: doc, body: { kind: "rant" } }).status, 400);
+  assert.equal(rt.call("POST", "/api/steady/feedback", { auth: doc, body: { kind: "bug", message: "   " } }).status, 400, "a bug needs a few words");
+  const love = rt.call("POST", "/api/steady/feedback", { auth: doc, body: { kind: "love", screen: "PatientsScreen", trail } });
+  assert.equal(love.status, 200);
+  const bug = rt.call("POST", "/api/steady/feedback", { auth: adm, body: {
+    kind: "bug", message: "The export spun forever", screen: "PatientDetailScreen", pressedAt: new Date(rt.now()).toISOString(),
+    trail: JSON.stringify(trail), client: JSON.stringify({ build: "abc1234", platform: "android 15", screenSize: "412x915" }), screenshotMasked: "false"
+  } });
+  assert.equal(bug.status, 200);
+
+  // who may read
+  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: doc }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/feedback").status, 401);
+  const list = rt.call("GET", "/api/steady/feedback", { auth: master }).data.items;
+  assert.equal(list.length, 2);
+  assert.equal(list[0].kind, "bug", "newest first");
+  assert.match(list[0].who, /Front desk \(admin\)/);
+  const viaKey = rt.call("GET", "/api/steady/feedback/" + bug.data.id, { headers: { "X-Steady-Monitor": KEY } });
+  assert.equal(viaKey.status, 200);
+  assert.equal(viaKey.data.trail.length, 70, "the last steps, with unknown kinds dropped");
+  assert.ok(viaKey.data.trail.every((x) => x.kind !== "keystroke"));
+  assert.equal(viaKey.data.client.build, "abc1234");
+  assert.equal(rt.call("GET", "/api/steady/feedback/" + love.data.id, { auth: master }).data.trail.length, 10, "love and dislikes keep only the last ten steps");
+  assert.equal(rt.call("GET", "/api/steady/feedback/" + bug.data.id + "/screenshot", { auth: master }).status, 404, "no screenshot was attached");
+
+  // marking it done
+  assert.equal(rt.call("PATCH", "/api/steady/feedback/" + bug.data.id, { auth: doc, body: { status: "done" } }).status, 403);
+  assert.equal(rt.call("PATCH", "/api/steady/feedback/" + bug.data.id, { auth: master, body: { status: "done", note: "Fixed in 0.4" } }).status, 200);
+  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: master }).data.items.length, 1, "done ones leave the open list");
+  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: master, query: { status: "done" } }).data.items[0].note, "Fixed in 0.4");
+
+  // twenty in ten minutes, then a pause
+  for (let i = 0; i < 19; i++) rt.call("POST", "/api/steady/feedback", { auth: doc, body: { kind: "love" } });
+  assert.equal(rt.call("POST", "/api/steady/feedback", { auth: doc, body: { kind: "love" } }).status, 429);
 });
 
 test("system: only server admins can check for or start updates, and only once set up", () => {

@@ -14,6 +14,7 @@ import 'clinician/server_updates_screen.dart';
 import 'update_notice.dart';
 import 'theme.dart';
 import 'widgets.dart';
+import 'clinician/feedback_inbox_screen.dart';
 
 Future<void> showSettingsSheet(BuildContext context) => showModalBottomSheet(
       context: context,
@@ -134,6 +135,18 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           if (state.api.canUpdate) ...[
             const SizedBox(height: 16),
             const UpdateControls(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.feedback_outlined),
+              title: const Text('Feedback'),
+              subtitle: const Text('Love, dislikes and bugs sent from staff screens'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const FeedbackInboxScreen()));
+              },
+            ),
           ],
           if (appUpdateAvailable(state)) ...[
             const SizedBox(height: 12),

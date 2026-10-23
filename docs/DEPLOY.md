@@ -64,6 +64,10 @@ watch -n 30 ./health.sh  # keep it on screen
 ```
 
 It needs `STEADY_MONITOR_KEY` in `.env` (`./gen-keys.sh` prints one; then `docker compose up -d`).
+`./feedback.sh` lists what staff sent with the Feedback button ("Love this", "Don't like this",
+"Bug found"); `./feedback.sh show <id>` gives one report with the steps that led to it, and
+`./feedback.sh shot <id>` saves its screenshot. Same key.
+
 Disk, memory and load come from `deploy/ctl` (run `sudo ./ctl/install.sh` again after updating, to
 add the 5-minute stats timer). Limits and when to move up a server size: [CAPACITY.md](CAPACITY.md).
 

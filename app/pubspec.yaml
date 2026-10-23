@@ -12,6 +12,8 @@ dependencies:
     sdk: flutter
   # PocketBase client (MIT)
   pocketbase: ^0.25.0
+  # the feedback trail records server calls through PocketBase's HTTP client (BSD-3)
+  http: ^1.2.2
   # Keychain / Keystore storage for the session token (BSD-3)
   flutter_secure_storage: ^11.2.0
   # Android push without Google services (Apache-2.0). iOS uses APNs via a small platform channel.

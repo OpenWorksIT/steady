@@ -164,6 +164,20 @@ function publicDir() {
   return env("STEADY_PUBLIC_DIR", __hooks + "/../pb_public");
 }
 
+/** True when the request carries this server's STEADY_MONITOR_KEY (deploy/health.sh, a dashboard). */
+function monitorKeyOk(e) {
+  var key = $os.getenv("STEADY_MONITOR_KEY") || "";
+  var given = String(e.request.header.get("X-Steady-Monitor") || "");
+  return key.length >= 24 && given.length > 0 && $security.equal(given, key);
+}
+
+/** The master psychologist, administrators and server admins, or the monitor key. */
+function requireUpdaterOrMonitor(e, what) {
+  if (monitorKeyOk(e)) return;
+  if (!e.auth) throw new UnauthorizedError("Sign in first.");
+  if (!canUpdate(e.auth)) throw new ForbiddenError("Only the master psychologist and administrators can see " + what + ".");
+}
+
 function ctlDir() {
   return env("STEADY_CTL_DIR", "/ctl");
 }
@@ -497,6 +511,8 @@ module.exports = {
   requireMaster: requireMaster,
   requireServerAdmin: requireServerAdmin,
   canUpdate: canUpdate,
+  monitorKeyOk: monitorKeyOk,
+  requireUpdaterOrMonitor: requireUpdaterOrMonitor,
   isStaff: isStaff,
   isMaster: isMaster,
   twoStepRequired: twoStepRequired,
