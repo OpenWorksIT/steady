@@ -299,7 +299,8 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
             if (_error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_error!, style: TextStyle(color: context.cs.error))),
             const SizedBox(height: 14),
             Row(children: [
-              FilledButton(onPressed: canSend ? _send : null, child: Text(_sending ? 'Sending...' : 'Send')),
+              // the theme makes filled buttons full width: in a Row they need Expanded
+              Expanded(child: FilledButton(onPressed: canSend ? _send : null, child: Text(_sending ? 'Sending...' : 'Send'))),
               const SizedBox(width: 10),
               TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
             ]),

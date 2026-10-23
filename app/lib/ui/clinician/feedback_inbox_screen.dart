@@ -191,9 +191,9 @@ class _FeedbackReportScreenState extends State<FeedbackReportScreen> {
               TextField(controller: _note, maxLength: 1000, decoration: const InputDecoration(labelText: 'Note (optional)', border: OutlineInputBorder())),
               if (_error != null) Text(_error!, style: TextStyle(color: context.cs.error)),
               Row(children: [
-                OutlinedButton(onPressed: () => _mark('seen'), child: const Text('Mark seen')),
+                Expanded(child: OutlinedButton(onPressed: () => _mark('seen'), child: const Text('Mark seen'))),
                 const SizedBox(width: 10),
-                FilledButton(onPressed: () => _mark('done'), child: const Text('Mark done')),
+                Expanded(child: FilledButton(onPressed: () => _mark('done'), child: const Text('Mark done'))),
               ]),
             ]),
     );

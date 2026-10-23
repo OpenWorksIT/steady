@@ -41,7 +41,7 @@ void main() {
     await tester.longPress(find.byIcon(Icons.feedback_outlined));
     await tester.pumpAndSettle();
     FlutterError.onError = previous;
-    expect(errors.isEmpty ? '' : errors.first, '', reason: '${errors.length} errors; the first is shown');
+    expect(errors, isEmpty, reason: errors.isEmpty ? null : errors.first);
     expect(find.text('Bug found'), findsOneWidget);
     expect(find.text('screen'), findsOneWidget);
   });
