@@ -3,10 +3,12 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:steady/feedback/feedback.dart';
+import 'package:steady/ui/theme.dart';
 
 void main() {
   // The button lives in MaterialApp.builder, above the navigator, exactly as in the app.
   Widget app(GlobalKey<NavigatorState> key) => MaterialApp(
+        theme: buildTheme(Brightness.light),
         navigatorKey: key,
         builder: (context, child) => Stack(children: [
           child!,
@@ -30,11 +32,12 @@ void main() {
     expect(find.text('Feedback or a bug'), findsNothing);
   });
 
-  testWidgets('a long press on the Feedback button does not break the screen', (tester) async {
+  testWidgets('a long press on the Feedback button opens the feedback sheet like a tap', (tester) async {
     await tester.pumpWidget(app(GlobalKey<NavigatorState>()));
     await tester.longPress(find.byIcon(Icons.feedback_outlined));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    expect(find.text('Bug found'), findsOneWidget);
     expect(find.text('screen'), findsOneWidget);
   });
 }
