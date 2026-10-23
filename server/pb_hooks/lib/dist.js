@@ -73,9 +73,10 @@ function joinPage(opts) {
     'main{max-width:520px;margin:0 auto}h1{font-size:1.5rem;margin:0 0 4px}.sub{color:#4a5c5e;margin:0 0 24px}' +
     '.btn{display:block;text-align:center;background:#2c5f7c;color:#fff;text-decoration:none;font-weight:700;padding:16px;border-radius:14px;font-size:1.05rem}' +
     '.small{color:#6e8081;font-size:.85rem;text-align:center;margin:8px 0 20px}ol{padding-left:1.2em}li{margin-bottom:12px}' +
-    '.code{letter-spacing:2px}.alt{margin-top:28px;padding-top:16px;border-top:1px solid #d5dedc;color:#4a5c5e}a{color:#2c5f7c}' +
+    '.logo{display:block;max-width:180px;max-height:96px;margin:0 0 16px}.code{letter-spacing:2px}.alt{margin-top:28px;padding-top:16px;border-top:1px solid #d5dedc;color:#4a5c5e}a{color:#2c5f7c}' +
     '@media (prefers-color-scheme:dark){body{background:#172224;color:#e4ecea}.sub,.alt{color:#aebdbc}.btn{background:#86b4d0;color:#0f1718}a{color:#86b4d0}}' +
     '</style></head><body><main>' +
+    (opts.logo ? '<img class="logo" src="' + esc(opts.logo) + '" alt="">' : '') +
     '<h1>Join ' + practice + ' on Steady</h1>' +
     '<p class="sub">Your between-session check-ins.</p>' +
     steps +

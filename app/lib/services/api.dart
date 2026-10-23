@@ -174,6 +174,23 @@ class Api {
 
   Future<AppConfig> config() async => AppConfig.fromJson(await pb.send<Map<String, dynamic>>('/api/steady/config'));
 
+  /// The full address of a path on this server, e.g. the practice logo.
+  String serverAddress(String path) => Uri.parse(pb.baseURL).resolve(path).toString();
+
+  /// The practice logo's bytes (for PDF reports), or null without one.
+  Future<Uint8List?> brandLogo(String path) async {
+    if (path.isEmpty || !hasServer) return null;
+    final client = pb.httpClientFactory();
+    try {
+      final res = await client.get(Uri.parse(serverAddress(path)));
+      return res.statusCode == 200 && res.bodyBytes.isNotEmpty ? res.bodyBytes : null;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
   /// Throws [TwoStepNeeded] when the password is right but a code is needed.
   Future<void> signIn(String email, String password, {String? code}) async {
     if (code == null) {

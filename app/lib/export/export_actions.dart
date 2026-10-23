@@ -43,13 +43,15 @@ Future<void> _run(BuildContext context, Future<void> Function() fn) async {
 /// A PDF report with charts for one patient.
 Future<void> exportPatientPdf(BuildContext context, String patientId) async {
   final api = AppScope.api(context);
+  final logoPath = AppScope.of(context).config.brandLogo;
   if (!await _confirm(context, 'a PDF report')) return;
   if (!context.mounted) return;
   await _run(context, () async {
     final bundle = ExportBundle.fromJson(await api.exportPatient(patientId));
     if (bundle.patients.isEmpty) throw const FormatException('Nothing to export.');
     final p = bundle.patients.first;
-    final bytes = await buildPdfReport(bundle, p);
+    final logo = await api.brandLogo(logoPath);
+    final bytes = await buildPdfReport(bundle, p, practiceLogo: logo);
     await saveBytes(bytes, 'steady-${fileSafe(p.name)}-${dayText(bundle.generatedAt)}.pdf', 'application/pdf',
         subject: 'Steady report: ${p.name}');
   });

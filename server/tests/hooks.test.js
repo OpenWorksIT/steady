@@ -683,6 +683,46 @@ test("dist: the invite page offers the Android app, and iPhones go to the web ap
   assert.match(dl.headers["Content-Disposition"], /steady\.apk/);
 });
 
+test("brand: the practice's look comes from a folder on the server, not from the code", () => {
+  const brandDir = fs.mkdtempSync(path.join(os.tmpdir(), "steady-brand-"));
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_BRAND_DIR: brandDir, STEADY_PRACTICE_NAME: "Old Env Name" }) });
+  const android = { "User-Agent": "Mozilla/5.0 (Linux; Android 15) Chrome/130" };
+
+  // nothing installed: the old setting still names the practice, and there's no logo
+  let cfg = rt.call("GET", "/api/steady/config").data;
+  assert.equal(cfg.practiceName, "Old Env Name");
+  assert.deepEqual(cfg.brand, { tagline: "", accent: "", logo: "" });
+  assert.equal(rt.call("GET", "/api/steady/brand/logo").status, 404);
+
+  // OpenWorks IT installs the practice's brand
+  fs.writeFileSync(path.join(brandDir, "brand.json"), JSON.stringify({
+    name: "VR Clinical Psychology", tagline: "Scientific practice, authentic care.", accent: "#B0690C", installed: "2026-10-23T14:00:00Z"
+  }));
+  fs.writeFileSync(path.join(brandDir, "logo.png"), Buffer.alloc(2048, 1));
+  cfg = rt.call("GET", "/api/steady/config").data;
+  assert.equal(cfg.practiceName, "VR Clinical Psychology");
+  assert.equal(cfg.brand.tagline, "Scientific practice, authentic care.");
+  assert.equal(cfg.brand.accent, "#B0690C");
+  assert.equal(cfg.brand.logo, "/api/steady/brand/logo?v=2026-10-23T14%3A00%3A00Z");
+  const logo = rt.call("GET", "/api/steady/brand/logo");
+  assert.equal(logo.headers["Content-Type"], "image/png");
+  assert.equal(logo.file, path.join(brandDir, "logo.png"));
+  const page = rt.call("GET", "/join", { query: { invite: "abcd-2345" }, headers: android });
+  assert.match(page.html, /<img class="logo" src="\/api\/steady\/brand\/logo\?v=/);
+  assert.match(page.html, /Join VR Clinical Psychology on Steady/);
+
+  // bad values are dropped rather than passed on; a logo over 1 MB is ignored
+  fs.writeFileSync(path.join(brandDir, "brand.json"), JSON.stringify({ name: "  A\u0000B  Practice ", accent: "red;}", tagline: 7 }));
+  fs.writeFileSync(path.join(brandDir, "logo.png"), Buffer.alloc(1024 * 1024 + 1, 1));
+  cfg = rt.call("GET", "/api/steady/config").data;
+  assert.equal(cfg.practiceName, "A B Practice");
+  assert.deepEqual(cfg.brand, { tagline: "", accent: "", logo: "" });
+
+  // a broken file means plain Steady, never an error
+  fs.writeFileSync(path.join(brandDir, "brand.json"), "{not json");
+  assert.equal(rt.call("GET", "/api/steady/config").data.practiceName, "Old Env Name");
+});
+
 test("system: only server admins can check for or start updates, and only once set up", () => {
   const { pub, ctl } = distDirs();
   const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl }) });

@@ -20,8 +20,12 @@ routerAdd("GET", "/api/steady/config", (e) => {
   ];
   const custom = s.env("STEADY_CRISIS_LINES_JSON", "");
   if (custom) { try { crisis = JSON.parse(custom); } catch (_) { /* keep defaults */ } }
+  const brand = require(`${__hooks}/lib/brand.js`);
+  const b = brand.current();
   return e.json(200, {
-    practiceName: s.env("STEADY_PRACTICE_NAME", "Your practice"),
+    practiceName: b.name,
+    // the practice's own look, installed on this server by OpenWorks IT (deploy/brand.sh)
+    brand: brand.forConfig(b),
     crisisLines: crisis,
     crisisNotice: s.env("STEADY_CRISIS_NOTICE", "This app isn't monitored around the clock. If you need help now, call one of these numbers."),
     consentVersion: s.env("STEADY_CONSENT_VERSION", "draft-1"),
@@ -44,7 +48,19 @@ routerAdd("GET", "/join", (e) => {
   const ua = String(e.request.header.get("User-Agent") || "");
   if (!/Android/i.test(ua)) return e.redirect(302, "/" + (code ? "?invite=" + code : ""));
   e.response.header().set("Cache-Control", "no-store");
-  return e.html(200, d.joinPage({ practice: s.env("STEADY_PRACTICE_NAME", "Your practice"), code: code, app: d.appInfo(s.publicDir()) }));
+  const b = require(`${__hooks}/lib/brand.js`).current();
+  return e.html(200, d.joinPage({ practice: b.name, logo: b.logo ? "/api/steady/brand/logo?v=" + encodeURIComponent(b.version) : "", code: code, app: d.appInfo(s.publicDir()) }));
+});
+
+// The practice's logo, from the brand folder on this server (deploy/brand.sh installs it).
+routerAdd("GET", "/api/steady/brand/logo", (e) => {
+  const brand = require(`${__hooks}/lib/brand.js`);
+  const dir = $os.getenv("STEADY_BRAND_DIR") || "/pb/brand";
+  if (!brand.current().logo) throw new NotFoundError("This server has no practice logo.");
+  e.response.header().set("Content-Type", "image/png");
+  // the address carries a version, so a new logo gets a new address
+  e.response.header().set("Cache-Control", "public, max-age=86400");
+  return e.fileFS($os.dirFS(dir), "logo.png");
 });
 
 // The newest Android build, as an installable download.

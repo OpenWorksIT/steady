@@ -1,11 +1,13 @@
-# Practice branding
+# Steady's icons
 
-The practice's logo, used with its permission. It is the practice's own mark and is not covered by Steady's AGPL licence.
+Steady's own launcher and web icons. Every practice's app uses these: one app in the stores,
+named Steady, which takes on the practice's logo, name and tagline once it is linked to the
+practice's server. The practice's branding never lives in this repository; see
+[docs/BRAND.md](../../docs/BRAND.md).
 
-- `../assets/brand/mark.png`: the logo mark shown in the app (transparent background).
-- `android/`: launcher icons, copied into `android/app/src/main/res/` by `scripts/patch_android.py`.
+- `../assets/brand/steady-mark.png`: Steady's mark, shown in the app until a practice logo loads.
+- `android/`: launcher icons (adaptive on Android 8 and later), copied into
+  `android/app/src/main/res/` by `scripts/patch_android.py`.
 - `web/`: favicon and home-screen icons, copied into `web/` by `scripts/patch_web.py`.
 
-The tagline and accent colour are in `lib/ui/brand.dart`; the practice name comes from the server (`STEADY_PRACTICE_NAME`).
-
-To brand Steady for another practice, replace these files and the values in `brand.dart`.
+The sources are the SVGs in `docs/brand/`.

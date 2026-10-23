@@ -23,7 +23,7 @@ Edit `.env`:
 | Setting | What to put |
 |---|---|
 | `STEADY_DOMAIN`, `ACME_EMAIL` | Your domain and an email for Let's Encrypt |
-| `STEADY_PRACTICE_NAME` | Shown on the sign-in screen and consent text |
+| `STEADY_PRACTICE_NAME` | Only for servers without an installed brand (below); the practice's name now comes from `./brand.sh` |
 | `PUSHER_SECRET`, `STEADY_VAPID_PUBLIC_KEY` | From `gen-keys.sh` |
 | `VAPID_SUBJECT` | `mailto:` your IT contact |
 | `APNS_*` | See step 3 |
@@ -44,6 +44,16 @@ docker compose logs -f pocketbase pusher
 ```
 
 The PocketBase image downloads the pinned release from GitHub and checks it against the published checksums.
+
+## 4a. Practice branding
+
+The practice's name, tagline, accent colour and logo are installed by OpenWorks IT, outside
+the code, so updates never touch them ([BRAND.md](BRAND.md)):
+
+```sh
+deploy/brand.sh push <server> <brand folder>   # from your own computer
+sudo ./brand.sh install <brand folder>          # or on the server
+```
 
 ## 5. Accounts
 

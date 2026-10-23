@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Names the generated web app "Steady" and adds the practice icons. Safe to run more than once.
+"""Names the generated web app "Steady" and adds Steady's icons. Safe to run more than once.
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import json
@@ -20,7 +20,7 @@ if index.exists():
 if manifest.exists():
     m = json.loads(manifest.read_text())
     m.update({"name": "Steady", "short_name": "Steady", "description": "Between-session check-ins",
-              "background_color": "#FFFFFF", "theme_color": "#2C5F7C"})
+              "background_color": "#F4EEE4", "theme_color": "#2F7F86"})
     manifest.write_text(json.dumps(m, indent=4) + "\n")
     print("patched web/manifest.json")
 

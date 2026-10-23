@@ -138,7 +138,7 @@ routerAdd("POST", "/api/steady/me/two-step/start", (e) => {
   u.set("totpSecret", secret);
   u.set("totpEnabledAt", "");
   $app.save(u);
-  const issuer = "Steady (" + s.env("STEADY_PRACTICE_NAME", "Your practice") + ")";
+  const issuer = "Steady (" + require(`${__hooks}/lib/brand.js`).current().name + ")";
   return e.json(200, { secret: secret, uri: t.uri(secret, u.email(), issuer) });
 }, $apis.requireAuth());
 
@@ -390,7 +390,7 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
   const rec = r.patientRecord($app, p, span[0], span[1], { answers: true, radr: true });
   s.audit($app, e, "patient.export", "user:" + p.id + " " + rec.from.slice(0, 10) + ".." + rec.to.slice(0, 10), p.id);
   return e.json(200, {
-    practice: s.env("STEADY_PRACTICE_NAME", "Your practice"),
+    practice: require(`${__hooks}/lib/brand.js`).current().name,
     clinician: e.auth.getString("name"),
     generatedAt: r.iso(s.nowMs()),
     patients: [rec]
@@ -408,7 +408,7 @@ routerAdd("GET", "/api/steady/export", (e) => {
   const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true, radr: true }));
   s.audit($app, e, "patients.export", "count:" + out.length, "");
   return e.json(200, {
-    practice: s.env("STEADY_PRACTICE_NAME", "Your practice"),
+    practice: require(`${__hooks}/lib/brand.js`).current().name,
     clinician: e.auth.getString("name"),
     generatedAt: r.iso(s.nowMs()),
     patients: out

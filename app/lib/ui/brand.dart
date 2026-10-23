@@ -1,34 +1,70 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The practice's own branding. The logo is the practice's mark, not part of Steady's
-// licence; see branding/README.md. The practice name comes from the server.
+// Branding. The app ships with Steady's own look (assets/brand, docs/BRAND.md). Once it is linked
+// to a practice's server, it shows that practice's name, tagline, accent colour and logo, which
+// OpenWorks IT installs on the server (deploy/brand.sh). The practice's logo is the practice's
+// mark: it is never part of this repository or of Steady's licence.
 import 'package:flutter/material.dart';
 
+import '../app_state.dart';
 import 'theme.dart';
 
 class Brand {
-  static const mark = 'assets/brand/mark.png';
-  static const tagline = 'Scientific practice, authentic care.';
+  /// Steady's own mark, shown until a practice's logo is available.
+  static const steadyMark = 'assets/brand/steady-mark.png';
+  static const steadyTagline = 'Between sessions, steady.';
 
-  /// Tagline orange, darkened on light backgrounds so small text stays readable.
-  static Color accent(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? const Color(0xFFF0B060) : const Color(0xFFB0690C);
+  /// The practice's tagline, or Steady's.
+  static String tagline(BuildContext context) {
+    final t = AppScope.of(context).config.brandTagline;
+    return t.isNotEmpty ? t : steadyTagline;
+  }
+
+  /// The practice's accent colour (Steady's ember without one), adjusted so small text stays
+  /// readable on light and dark backgrounds.
+  static Color accent(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final c = parseHex(AppScope.of(context).config.brandAccent);
+    if (c == null) return dark ? const Color(0xFFE9A86F) : const Color(0xFFA85A22);
+    return dark ? Color.lerp(c, Colors.white, 0.35)! : c;
+  }
+
+  static Color? parseHex(String hex) {
+    if (!RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(hex)) return null;
+    return Color(0xFF000000 | int.parse(hex.substring(1), radix: 16));
+  }
 }
 
-/// The logo mark on its own.
+/// The practice's logo, or Steady's mark when the server has none (or can't be reached).
 class PracticeMark extends StatelessWidget {
-  final double size;
-  const PracticeMark({this.size = 28, super.key});
+  final double? size, width;
+  const PracticeMark({this.size = 28, this.width, super.key});
 
   @override
-  Widget build(BuildContext context) => Image.asset(
-        Brand.mark,
-        height: size,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.medium,
-        excludeFromSemantics: true,
-        errorBuilder: (_, _, _) => SizedBox(height: size),
-      );
+  Widget build(BuildContext context) {
+    final state = AppScope.of(context);
+    final logo = state.config.brandLogo;
+    final h = width == null ? size : null;
+    final steady = Image.asset(
+      Brand.steadyMark,
+      height: h,
+      width: width,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
+      excludeFromSemantics: true,
+      errorBuilder: (_, _, _) => SizedBox(height: h, width: width),
+    );
+    if (logo.isEmpty || !state.api.hasServer) return steady;
+    return Image.network(
+      state.api.serverAddress(logo),
+      height: h,
+      width: width,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
+      excludeFromSemantics: true,
+      errorBuilder: (_, _, _) => steady,
+    );
+  }
 }
 
 /// Logo, practice name and tagline, for the welcome and sign-in screens.
@@ -50,7 +86,7 @@ class PracticeHeader extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          Brand.tagline.toUpperCase(),
+          Brand.tagline(context).toUpperCase(),
           style: context.tt.labelSmall?.copyWith(
             color: Brand.accent(context),
             letterSpacing: 2.2,
@@ -75,10 +111,7 @@ class BrandBackdrop extends StatelessWidget {
         right: -70,
         bottom: -50,
         child: IgnorePointer(
-          child: Opacity(
-            opacity: dark ? 0.10 : 0.07,
-            child: Image.asset(Brand.mark, width: 340, excludeFromSemantics: true, errorBuilder: (_, _, _) => const SizedBox()),
-          ),
+          child: Opacity(opacity: dark ? 0.10 : 0.07, child: const PracticeMark(width: 340)),
         ),
       ),
       child,

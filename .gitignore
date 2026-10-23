@@ -21,6 +21,10 @@ pusher/pusher
 node_modules/
 __pycache__/
 
+# each server's practice branding (deploy/brand.sh), never in the repository
+deploy/brand/
+branding-*/
+
 # server web app copy (deploy/update.sh)
 deploy/web/
 deploy/web.new/

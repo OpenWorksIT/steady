@@ -181,12 +181,12 @@ def main():
 
 
 def copy_icons():
-    """Practice launcher icons from branding/android, if present."""
+    """Steady's launcher icons (adaptive on Android 8+) from branding/android."""
     src = ROOT / "branding" / "android"
     res = ROOT / "android" / "app" / "src" / "main" / "res"
     if not src.exists() or not res.exists():
         return
-    for f in src.rglob("*.png"):
+    for f in [*src.rglob("*.png"), *src.rglob("*.xml")]:
         dest = res / f.relative_to(src)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(f, dest)

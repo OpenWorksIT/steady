@@ -38,7 +38,9 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     environment:
-      STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME}
+      # only for servers set up before branding moved to deploy/brand (./brand.sh)
+      STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-}
+      STEADY_BRAND_DIR: /pb/brand
       STEADY_CONSENT_VERSION: ${STEADY_CONSENT_VERSION}
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
@@ -56,6 +58,8 @@ services:
       - pb_data:/pb/pb_data
       # the web app (iPhones, and invite QR codes opened in a browser); ./update.sh fills it
       - ./web:/pb/pb_public:ro
+      # the practice's name, tagline and logo, kept out of the code (./brand.sh installs them)
+      - ./brand:/pb/brand:ro
       # Settings > Server and updates: requests for deploy/ctl/steady-ctl.sh and its status
       # (set up by deploy/ctl/install.sh; without it the app just says so)
       - /var/lib/steady/ctl:/ctl

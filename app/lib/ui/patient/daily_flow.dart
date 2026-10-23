@@ -295,7 +295,7 @@ class _CalmBackdrop extends StatelessWidget {
           child: IgnorePointer(
             child: Opacity(
               opacity: dark ? 0.08 : 0.05,
-              child: Image.asset(Brand.mark, width: 320, excludeFromSemantics: true, errorBuilder: (_, _, _) => const SizedBox()),
+              child: const PracticeMark(width: 320),
             ),
           ),
         ),

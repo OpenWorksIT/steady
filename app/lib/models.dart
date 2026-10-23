@@ -42,6 +42,10 @@ class AppConfig {
   /// Whether that build installs over older copies (signed with the permanent key).
   final bool appUpdatable;
   final List<CrisisLine> crisisLines;
+
+  /// The practice's look, installed on its server by OpenWorks IT: a tagline, an accent
+  /// colour like '#B0690C' and the logo's address on the server ('' when not set: plain Steady).
+  final String brandTagline, brandAccent, brandLogo;
   AppConfig({
     required this.practiceName,
     required this.crisisNotice,
@@ -53,6 +57,9 @@ class AppConfig {
     this.appBuild = '',
     this.apkPath = '',
     this.appUpdatable = false,
+    this.brandTagline = '',
+    this.brandAccent = '',
+    this.brandLogo = '',
   });
 
   /// Used until the server answers, and if it can't be reached.
@@ -79,6 +86,9 @@ class AppConfig {
         appBuild: '${asMap(j['app'])['build'] ?? ''}',
         apkPath: '${asMap(j['app'])['apk'] ?? ''}',
         appUpdatable: asMap(j['app'])['updatable'] == true,
+        brandTagline: '${asMap(j['brand'])['tagline'] ?? ''}',
+        brandAccent: '${asMap(j['brand'])['accent'] ?? ''}',
+        brandLogo: '${asMap(j['brand'])['logo'] ?? ''}',
       );
 }
 

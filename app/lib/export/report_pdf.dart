@@ -45,12 +45,13 @@ PdfColor _severity(String s) => switch (s) {
 const _small = pw.TextStyle(fontSize: 8, color: _ink2);
 const _body = pw.TextStyle(fontSize: 9, color: _ink, lineSpacing: 1.5);
 
-Future<Uint8List> buildPdfReport(ExportBundle bundle, ExportPatient p) async {
+/// [practiceLogo]: the practice's logo from its server (PNG); without it, Steady's own mark.
+Future<Uint8List> buildPdfReport(ExportBundle bundle, ExportPatient p, {Uint8List? practiceLogo}) async {
   final base = pw.Font.ttf(await rootBundle.load('assets/fonts/DejaVuSans.ttf'));
   final bold = pw.Font.ttf(await rootBundle.load('assets/fonts/DejaVuSans-Bold.ttf'));
   pw.MemoryImage? logo;
   try {
-    logo = pw.MemoryImage((await rootBundle.load('assets/brand/mark.png')).buffer.asUint8List());
+    logo = pw.MemoryImage(practiceLogo ?? (await rootBundle.load('assets/brand/steady-mark.png')).buffer.asUint8List());
   } catch (_) {
     logo = null;
   }

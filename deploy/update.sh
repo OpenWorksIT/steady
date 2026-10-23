@@ -27,6 +27,8 @@ else
   mkdir -p web
 fi
 chmod 755 web
+# the practice's branding lives here and is never touched by updates (./brand.sh)
+mkdir -p brand && chmod 755 brand
 
 echo "Building and starting..."
 docker compose up -d --build
