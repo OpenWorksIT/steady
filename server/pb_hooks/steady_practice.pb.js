@@ -25,6 +25,10 @@ routerUse((e) => {
     const local = addr.indexOf("127.0.0.1:") === 0 || addr.indexOf("[::1]:") === 0;
     if (!local && $os.getenv("STEADY_SUPERUSER_API") !== "open") throw new NotFoundError("Not found.");
   }
+  // The web app's files keep the same names from one version to the next, so browsers must
+  // check for a newer copy each time (unchanged files come back as a quick "not modified").
+  // Without this a browser can keep running an old web app for hours after an update.
+  if (path.indexOf("/api/") !== 0) e.response.header().set("Cache-Control", "no-cache");
   return e.next();
 });
 

@@ -42,8 +42,22 @@ function empty() {
   return { n: 0, sum: 0, max: 0, err: 0, bins: bins, slow: {} };
 }
 
+/**
+ * Which requests say something about how quickly the server works. Left out: the web app's own
+ * files and downloads (their time is mostly the visitor's connection), live update connections
+ * (/api/realtime stays open for minutes by design), stored files and images, and /api/health.
+ */
+function tracked(path) {
+  var p = String(path || "");
+  if (p.indexOf("/api/") !== 0) return false;
+  if (p === "/api/realtime" || p === "/api/health" || p.indexOf("/api/files/") === 0) return false;
+  if (p.indexOf("/api/steady/brand/logo") === 0 || /\/screenshot$/.test(p)) return false;
+  return true;
+}
+
 /** Adds one request to its minute's bucket. Never throws. */
 function record(app, path, ms, status, nowMs) {
+  if (!tracked(path)) return;
   try {
     var key = PREFIX + minuteOf(nowMs);
     var st = app.store();
@@ -162,18 +176,22 @@ function windowOf(rows) {
 function verdict(w15, host) {
   var reasons = [];
   var level = 0;
-  // a heavy report now and then is normal; a slow typical request is not
-  if (w15.p50 !== null && w15.p50 > 1000) { level = 2; reasons.push("typical requests take over a second"); }
-  else if (w15.requests >= 20 && w15.p95 !== null && w15.p95 > 2500) { level = Math.max(level, 1); reasons.push("some requests are slow"); }
-  if (w15.probeMedian !== null && w15.probeMedian > 250) { level = Math.max(level, 2); reasons.push("the database is slow to answer"); }
-  else if (w15.probeMedian !== null && w15.probeMedian > 60) { level = Math.max(level, 1); reasons.push("the database is slower than usual"); }
-  if (w15.errors > 0) { level = Math.max(level, 1); reasons.push(w15.errors + " server errors"); }
+  // A quiet server can't be judged on a handful of requests: one export or report is normal.
+  // Judge typical speed only with 10 or more requests, and the slow tail with 30 or more.
+  if (w15.requests >= 10 && w15.p50 !== null && w15.p50 > 1000) { level = 2; reasons.push("typical requests take over a second"); }
+  else if (w15.requests >= 30 && w15.p95 !== null && w15.p95 > 2500) { level = Math.max(level, 1); reasons.push("some requests are slow"); }
+  // the database check runs every minute, so it judges a quiet server too; small VPSs share
+  // their CPU, so a little jitter is normal
+  if (w15.probeMedian !== null && w15.probeMedian > 500) { level = Math.max(level, 2); reasons.push("the database is slow to answer"); }
+  else if (w15.probeMedian !== null && w15.probeMedian > 150) { level = Math.max(level, 1); reasons.push("the database is slower than usual"); }
+  // a stray error is worth a look (./health.sh lists them) but isn't "slow"; many are
+  if (w15.errors >= 3 && w15.errors >= w15.requests * 0.05) { level = Math.max(level, 1); reasons.push(w15.errors + " server errors"); }
   if (host && host.disk && host.disk.total > 0) {
     var used = host.disk.used / host.disk.total;
     if (used > 0.9) { level = 2; reasons.push("the disk is over 90% full"); }
     else if (used > 0.8) { level = Math.max(level, 1); reasons.push("the disk is over 80% full"); }
   }
-  if (host && host.memory && host.memory.total > 0 && host.memory.available / host.memory.total < 0.1) {
+  if (host && host.memory && host.memory.total > 0 && host.memory.available / host.memory.total < 0.05) {
     level = Math.max(level, 1); reasons.push("memory is nearly full");
   }
   return { status: ["good", "slow", "struggling"][level], reasons: reasons };
@@ -229,6 +247,6 @@ function summary(app, nowMs, hours, ctlDir, startedMs) {
 }
 
 module.exports = {
-  record: record, flush: flush, summary: summary, minuteOf: minuteOf, routeOf: routeOf,
+  record: record, tracked: tracked, flush: flush, summary: summary, minuteOf: minuteOf, routeOf: routeOf,
   percentile: percentile, verdict: verdict, windowOf: windowOf, BINS: BINS
 };

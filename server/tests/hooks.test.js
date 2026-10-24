@@ -854,6 +854,27 @@ test("feedback: staff send love, dislikes and bugs with a trail; the master clin
   assert.equal(rt.call("POST", "/api/steady/feedback", { auth: doc, body: { kind: "love" } }).status, 429);
 });
 
+test("health: only real requests count, and a quiet server isn't judged on one slow export", () => {
+  const H = require(path.join(HOOKS, "lib", "health.js"));
+  for (const p of ["/api/steady/overview", "/api/collections/checkins/records", "/api/steady/patients/abcdefghij12345/radr"]) {
+    assert.equal(H.tracked(p), true, p);
+  }
+  for (const p of ["/", "/main.dart.js", "/assets/fonts/x.ttf", "/download/steady.apk", "/api/realtime", "/api/health",
+    "/api/files/users/abc/photo.png", "/api/steady/brand/logo", "/api/steady/feedback/abcdefghij12345/screenshot"]) {
+    assert.equal(H.tracked(p), false, p);
+  }
+  const quiet = (over) => Object.assign({ requests: 4, errors: 0, p50: 2500, p95: 5000, max: 4800, probeMedian: 12, slow: [] }, over);
+  assert.equal(H.verdict(quiet(), null).status, "good", "four requests, one of them a big export");
+  assert.equal(H.verdict(quiet({ requests: 12 }), null).status, "struggling", "most of a busier quarter-hour over a second");
+  assert.equal(H.verdict(quiet({ requests: 4, p50: 50, errors: 1 }), null).status, "good", "a stray error isn't slowness");
+  assert.equal(H.verdict(quiet({ requests: 40, p50: 50, p95: 100, errors: 6 }), null).status, "slow");
+  assert.equal(H.verdict(quiet({ p50: 50, probeMedian: 90 }), null).status, "good", "small-VPS jitter");
+  assert.equal(H.verdict(quiet({ p50: 50, probeMedian: 300 }), null).status, "slow");
+  assert.equal(H.verdict(quiet({ p50: 50, probeMedian: 800 }), null).status, "struggling");
+  assert.equal(H.verdict(quiet({ p50: 50 }), { memory: { total: 100, available: 8 } }).status, "good");
+  assert.equal(H.verdict(quiet({ p50: 50 }), { memory: { total: 100, available: 3 } }).status, "slow");
+});
+
 test("system: only server admins can check for or start updates, and only once set up", () => {
   const { pub, ctl } = distDirs();
   const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl }) });
@@ -882,11 +903,13 @@ test("system: only server admins can check for or start updates, and only once s
 /* ------------------------------------------------ the practice: dashboard, two-step sign-in */
 
 test("dashboard: /_/ is closed, and superuser sign-in works only from inside the container", () => {
+  let headers;
   const run = (env, path, remoteAddr) => {
     const rt = makeRuntime({ env });
+    headers = new Map();
     let passed = false;
     try {
-      rt.hooks.middleware.forEach((m) => m({ request: { url: { path }, remoteAddr }, next() { passed = true; } }));
+      rt.hooks.middleware.forEach((m) => m({ request: { url: { path }, remoteAddr }, response: { header: () => headers }, status: () => 200, next() { passed = true; } }));
     } catch (err) { return err.status; }
     return passed ? 200 : 0;
   };
@@ -900,6 +923,10 @@ test("dashboard: /_/ is closed, and superuser sign-in works only from inside the
   assert.equal(run({}, "/api/collections/_superusers/auth-with-password", "[::1]:5000"), 200);
   assert.equal(run({ STEADY_SUPERUSER_API: "open" }, "/api/collections/_superusers/auth-with-password", "172.18.0.5:5000"), 200);
   assert.equal(run({}, "/api/collections/users/auth-with-password", "172.18.0.5:5000"), 200);
+  assert.equal(headers.get("Cache-Control"), undefined, "API answers set their own caching");
+  // the web app's files must be re-checked after every update
+  assert.equal(run({}, "/main.dart.js", "172.18.0.5:5000"), 200);
+  assert.equal(headers.get("Cache-Control"), "no-cache");
 });
 
 test("two-step: RFC 6238 codes, drift, and no reuse", () => {
