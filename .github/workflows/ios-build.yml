@@ -1,0 +1,111 @@
+# Builds the iPhone app on one of GitHub's Mac machines. Run it by hand (Actions > iOS build >
+# Run workflow): Mac build time is billed for this private repository, so it doesn't run on
+# every change.
+#
+# With the App Store Connect secrets set, the build is signed and uploaded to TestFlight. Without
+# them it is a compile check only (unsigned), so the iOS side can be tested before Apple is set up.
+# Secrets (Settings > Secrets and variables > Actions), see docs/APP.md, "iPhone builds":
+#   APP_STORE_KEY_ID, APP_STORE_ISSUER_ID, APP_STORE_KEY (.p8 text), IOS_CERT_KEY (RSA key)
+# Optional variable IOS_BETA_GROUP: the TestFlight group each new build is given to.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: iOS build
+on:
+  workflow_dispatch:
+  push:
+    branches: [ios-build]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Xcode 26 / iOS 26 SDK: required for App Store Connect uploads since April 2026
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      HAS_KEYS: ${{ secrets.APP_STORE_KEY_ID != '' && secrets.APP_STORE_ISSUER_ID != '' && secrets.APP_STORE_KEY != '' && secrets.IOS_CERT_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: tools
+        run: |
+          xcodebuild -version
+          flutter --version
+
+      - name: generate the iOS project
+        working-directory: app
+        run: |
+          flutter create --org za.co.openworks --project-name steady --platforms ios . > ../create.txt 2>&1 || { cat ../create.txt; exit 1; }
+          rm -f test/widget_test.dart
+          python3 scripts/patch_ios.py
+
+      - name: build number
+        run: |
+          echo "STEADY_BUILD=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "STEADY_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          # every upload to Apple needs a higher build number than the last
+          echo "IOS_BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "IOS_VERSION=$(grep '^version:' app/pubspec.yaml | sed -E 's/version: *([0-9.]+).*/\1/')" >> "$GITHUB_ENV"
+
+      - name: compile check (no signing)
+        if: env.HAS_KEYS != 'true'
+        working-directory: app
+        run: |
+          set -o pipefail
+          echo "::notice title=iOS build::No App Store Connect secrets: compiling without signing. Nothing is uploaded."
+          flutter build ios --release --no-codesign \
+            --build-name=$IOS_VERSION --build-number=$IOS_BUILD_NUMBER \
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../ios.txt \
+            || { echo "::error title=flutter build ios::$(sed 's/%/%25/g' ../ios.txt | grep -iE 'error|failed' | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+
+      - name: signing
+        if: env.HAS_KEYS == 'true'
+        working-directory: app
+        env:
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_KEY }}
+          CERTIFICATE_PRIVATE_KEY: ${{ secrets.IOS_CERT_KEY }}
+        run: |
+          # Codemagic's CLI tools (GPL-3.0): makes or reuses the distribution certificate and the
+          # App Store profile through the App Store Connect API, and sets them on the project
+          pipx install codemagic-cli-tools > /dev/null
+          keychain initialize
+          app-store-connect fetch-signing-files za.co.openworks.steady --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: build and sign
+        if: env.HAS_KEYS == 'true'
+        working-directory: app
+        run: |
+          set -o pipefail
+          flutter build ipa --release --export-options-plist=$HOME/export_options.plist \
+            --build-name=$IOS_VERSION --build-number=$IOS_BUILD_NUMBER \
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../ipa.txt \
+            || { echo "::error title=flutter build ipa::$(sed 's/%/%25/g' ../ipa.txt | grep -iE 'error|failed' | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+
+      - name: upload to TestFlight
+        if: env.HAS_KEYS == 'true'
+        working-directory: app
+        env:
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_KEY }}
+          BETA_GROUP: ${{ vars.IOS_BETA_GROUP }}
+        run: |
+          ipa=$(find build/ios/ipa -name '*.ipa' | head -1)
+          if [ -n "$BETA_GROUP" ]; then
+            app-store-connect publish --path "$ipa" --testflight --beta-group "$BETA_GROUP" --whats-new "Steady build $STEADY_BUILD"
+          else
+            app-store-connect publish --path "$ipa"
+          fi
+          echo "::notice title=TestFlight::Uploaded build $IOS_VERSION ($IOS_BUILD_NUMBER) from $STEADY_BUILD. Apple takes 10-30 minutes to process it."
