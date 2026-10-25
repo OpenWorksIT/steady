@@ -66,6 +66,16 @@ jobs:
             --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../ios.txt \
             || { echo "::error title=flutter build ios::$(sed 's/%/%25/g' ../ios.txt | grep -iE 'error|failed' | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
+      - name: what was built
+        if: env.HAS_KEYS != 'true'
+        working-directory: app
+        run: |
+          app=build/ios/iphoneos/Runner.app
+          name=$(plutil -extract CFBundleDisplayName raw $app/Info.plist)
+          min=$(plutil -extract MinimumOSVersion raw $app/Info.plist)
+          ent=$(grep -c 'CODE_SIGN_ENTITLEMENTS' ios/Runner.xcodeproj/project.pbxproj)
+          echo "::notice title=iOS compile check::$name $IOS_VERSION ($IOS_BUILD_NUMBER), $(du -sh $app | cut -f1), iOS $min and up, entitlements on $ent configurations, $(xcodebuild -version | head -1)"
+
       - name: signing
         if: env.HAS_KEYS == 'true'
         working-directory: app

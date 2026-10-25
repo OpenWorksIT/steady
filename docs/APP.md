@@ -11,11 +11,32 @@ cd app
 
 This runs `flutter create` to generate the `ios/` and `android/` folders (your `lib/` code is left alone), applies the Android settings below, and fetches packages.
 
-Then in Xcode (`open ios/Runner.xcworkspace`), on the Runner target > Signing & Capabilities:
+`scripts/patch_ios.py` sets up iOS the way Xcode's Signing & Capabilities tab would: Push Notifications, HealthKit (read only), remote notifications, iOS 15, the permission texts and Steady's icon. To build on your own Mac, open `ios/Runner.xcworkspace` and set your Team under Runner > Signing & Capabilities. The bundle identifier is `za.co.openworks.steady`; it must match `APNS_TOPIC` on the server.
 
-1. Set your Team and the bundle identifier (`za.co.openworks.steady` by default, must match `APNS_TOPIC` on the server).
-2. **+ Capability > Push Notifications**
-3. **+ Capability > Background Modes**, tick **Remote notifications**
+## iPhone builds (no Mac needed)
+
+The **iOS build** workflow (Actions > iOS build > Run workflow) builds on one of GitHub's Mac machines. It runs only when started by hand, because Mac build time is billed for this private repository.
+
+Without the secrets below it is a compile check: unsigned, nothing uploaded. With them it signs the app and uploads it to TestFlight.
+
+One-off setup, all in the browser:
+
+1. **developer.apple.com > Identifiers**: register the App ID `za.co.openworks.steady` with **Push Notifications** and **HealthKit**.
+2. **developer.apple.com > Keys**: a key with **Apple Push Notifications service**, for the servers (docs/DEPLOY.md, step 3).
+3. **App Store Connect > Users and Access > Integrations**: request API access, then create a **Team key** with the **App Manager** role. Note its Key ID and the Issuer ID and download the `.p8`.
+4. **App Store Connect > Apps > New App** with that bundle ID.
+5. GitHub secrets (Settings > Secrets and variables > Actions):
+
+   | Secret | Value |
+   |---|---|
+   | `APP_STORE_KEY_ID` | the API key's Key ID |
+   | `APP_STORE_ISSUER_ID` | the Issuer ID |
+   | `APP_STORE_KEY` | the whole text of the API key's `.p8` |
+   | `IOS_CERT_KEY` | the output of `openssl genrsa 2048`, made once and kept: every build reuses the distribution certificate made from it |
+
+6. After the first upload, in TestFlight: create an external group, enable its **public link**, and fill in the beta review details (contact, a demo patient login on a test server, never a real patient). Then set the repository variable `IOS_BETA_GROUP` to the group's name so new builds go to it automatically, and put the public link in each server's `.env` as `STEADY_IOS_URL`. Invite QR codes then show iPhones the TestFlight steps.
+
+TestFlight builds stop working 90 days after upload; a new build resets that. Each build's number is the workflow's run number, so it always goes up.
 
 ## Running
 

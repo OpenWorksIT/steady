@@ -1,7 +1,8 @@
 /*
  * Steady - getting the app to testers before it is in the app stores: the newest Android
  * build is served from this server (/download/steady.apk), and invite QR codes open a small
- * page (/join) that offers it. Also reads the server-side update status (deploy/ctl).
+ * page (/join) that offers it. iPhones get the TestFlight or App Store link in STEADY_IOS_URL.
+ * Also reads the server-side update status (deploy/ctl).
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
@@ -48,13 +49,37 @@ function appInfo(publicDir) {
   };
 }
 
-/** The page an invite QR code opens on an Android phone. Plain HTML, no scripts (CSP). */
+var TESTFLIGHT_APP = "https://apps.apple.com/app/testflight/id899247664";
+
+/** The iPhone app's link (TestFlight public link, later the App Store), or "" when there's none. */
+function iosUrl(v) {
+  var u = String(v || "").trim();
+  return /^https:\/\/(testflight|apps)\.apple\.com\/[A-Za-z0-9\/._?=&-]+$/.test(u) ? u : "";
+}
+
+function iosSteps(url, code) {
+  var beta = url.indexOf("https://testflight.apple.com/") === 0;
+  var finish = '<li>Open Steady, tap <b>Scan invite QR code</b> and scan the code on your psychologist\'s screen again' +
+    (code ? ', or tap <b>I have an invite code</b> and type <b class="code">' + code + '</b>' : '') + '.</li>';
+  if (!beta) {
+    return '<a class="btn" href="' + esc(url) + '">Get Steady on the App Store</a>' +
+      '<ol class="after">' + finish + '</ol>';
+  }
+  return '<ol>' +
+    '<li>Install Apple\'s free <a href="' + TESTFLIGHT_APP + '">TestFlight app</a> from the App Store. Steady is in testing, and TestFlight is how Apple delivers apps in testing.</li>' +
+    '<li>Come back to this page and tap the button below, then tap <b>Accept</b> and <b>Install</b> in TestFlight.</li>' +
+    '</ol>' +
+    '<a class="btn" href="' + esc(url) + '">Get Steady for iPhone</a>' +
+    '<ol class="after" start="3">' + finish + '</ol>';
+}
+
+/** The page an invite QR code opens on a phone. Plain HTML, no scripts (CSP). */
 function joinPage(opts) {
   var practice = esc(opts.practice);
   var code = formatCode(opts.code);
   var web = "/" + (opts.code ? "?invite=" + opts.code : "");
   var app = opts.app;
-  var steps = app
+  var steps = opts.ios ? iosSteps(opts.ios, code) : app
     ? '<a class="btn" href="' + app.apk + '">Download Steady for Android</a>' +
       '<p class="small">' + app.sizeMB + ' MB &middot; version ' + esc(app.build) + '</p>' +
       '<ol>' +
@@ -72,7 +97,7 @@ function joinPage(opts) {
     'body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;padding:28px 22px;color:#17282a;background:#fff;line-height:1.5}' +
     'main{max-width:520px;margin:0 auto}h1{font-size:1.5rem;margin:0 0 4px}.sub{color:#4a5c5e;margin:0 0 24px}' +
     '.btn{display:block;text-align:center;background:#2c5f7c;color:#fff;text-decoration:none;font-weight:700;padding:16px;border-radius:14px;font-size:1.05rem}' +
-    '.small{color:#6e8081;font-size:.85rem;text-align:center;margin:8px 0 20px}ol{padding-left:1.2em}li{margin-bottom:12px}' +
+    '.small{color:#6e8081;font-size:.85rem;text-align:center;margin:8px 0 20px}ol{padding-left:1.2em}li{margin-bottom:12px}ol.after{margin-top:20px}' +
     '.logo{display:block;max-width:180px;max-height:96px;margin:0 0 16px}.code{letter-spacing:2px}.alt{margin-top:28px;padding-top:16px;border-top:1px solid #d5dedc;color:#4a5c5e}a{color:#2c5f7c}' +
     '@media (prefers-color-scheme:dark){body{background:#172224;color:#e4ecea}.sub,.alt{color:#aebdbc}.btn{background:#86b4d0;color:#0f1718}a{color:#86b4d0}}' +
     '</style></head><body><main>' +
@@ -106,6 +131,7 @@ module.exports = {
   cleanCode: cleanCode,
   formatCode: formatCode,
   appInfo: appInfo,
+  iosUrl: iosUrl,
   joinPage: joinPage,
   ctlStatus: ctlStatus,
   ctlPending: ctlPending,

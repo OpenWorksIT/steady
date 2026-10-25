@@ -694,6 +694,31 @@ test("dist: the invite page offers the Android app, and iPhones go to the web ap
   assert.match(dl.headers["Content-Disposition"], /steady\.apk/);
 });
 
+test("dist: with an iOS link set, iPhones get TestFlight steps; bad links are ignored", () => {
+  const { pub, ctl } = distDirs();
+  const iphone = { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)" };
+  const tf = "https://testflight.apple.com/join/AbC123xY";
+  let rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_IOS_URL: tf }) });
+  let page = rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: iphone });
+  assert.equal(page.status, 200);
+  assert.match(page.html, /TestFlight app/);
+  assert.ok(page.html.includes('href="' + tf + '"'));
+  assert.match(page.html, /ABCD-2345/);
+  assert.ok(!/<script/i.test(page.html));
+  // computers still go straight to the web app
+  assert.equal(rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: {} }).status, 302);
+
+  // once it's in the App Store: no TestFlight step
+  rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_IOS_URL: "https://apps.apple.com/za/app/steady/id123456789" }) });
+  page = rt.call("GET", "/join", { headers: iphone });
+  assert.match(page.html, /App Store/);
+  assert.ok(!/TestFlight/.test(page.html));
+
+  // anything that isn't an Apple link is ignored: back to the web app
+  rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_IOS_URL: "https://evil.example/x\"><script>" }) });
+  assert.equal(rt.call("GET", "/join", { headers: iphone }).status, 302);
+});
+
 test("brand: the practice's look comes from a folder on the server, not from the code", () => {
   const brandDir = fs.mkdtempSync(path.join(os.tmpdir(), "steady-brand-"));
   const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_BRAND_DIR: brandDir, STEADY_PRACTICE_NAME: "Old Env Name" }) });

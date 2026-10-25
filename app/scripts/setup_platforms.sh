@@ -17,17 +17,14 @@ flutter create --org za.co.openworks --project-name steady --platforms ios,andro
 if [ "$had_widget_test" = no ]; then rm -f test/widget_test.dart; fi
 python3 scripts/patch_android.py
 python3 scripts/patch_web.py
+python3 scripts/patch_ios.py
 flutter pub get
 
 cat <<'EOF'
 
-Android is ready.
-
-iOS needs two clicks in Xcode (they edit the signed project file, so they aren't scripted):
-  1. open ios/Runner.xcworkspace
-  2. Runner target > Signing & Capabilities > + Capability > Push Notifications
-  3. Same place > + Capability > Background Modes > tick "Remote notifications"
-Then set your Team and bundle identifier (za.co.openworks.steady by default; it must match APNS_TOPIC on the server).
+Android and iOS are ready (push, HealthKit, permissions and icon are set by scripts/patch_ios.py).
+For iOS, set your Team in Xcode (open ios/Runner.xcworkspace > Runner > Signing & Capabilities)
+or build in GitHub Actions (docs/APP.md, "iPhone builds").
 
 Run against your server:
   flutter run --dart-define=STEADY_SERVER=https://steady.example.co.za

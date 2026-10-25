@@ -39,17 +39,19 @@ routerAdd("GET", "/api/steady/config", (e) => {
   });
 });
 
-// Invite QR codes point here. Android: download the app, then scan again. Elsewhere
-// (iPhone, computer): straight on to the web app with the code filled in.
+// Invite QR codes point here. Android: download the app, then scan again. iPhone: TestFlight
+// or the App Store (STEADY_IOS_URL), then scan again. Elsewhere (computer, or an iPhone while
+// there's no iOS link): straight on to the web app with the code filled in.
 routerAdd("GET", "/join", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const d = require(`${__hooks}/lib/dist.js`);
   const code = d.cleanCode((e.requestInfo().query || {}).invite);
   const ua = String(e.request.header.get("User-Agent") || "");
-  if (!/Android/i.test(ua)) return e.redirect(302, "/" + (code ? "?invite=" + code : ""));
+  const ios = /iPhone|iPad|iPod/i.test(ua) ? d.iosUrl(s.env("STEADY_IOS_URL", "")) : "";
+  if (!/Android/i.test(ua) && !ios) return e.redirect(302, "/" + (code ? "?invite=" + code : ""));
   e.response.header().set("Cache-Control", "no-store");
   const b = require(`${__hooks}/lib/brand.js`).current();
-  return e.html(200, d.joinPage({ practice: b.name, logo: b.logo ? "/api/steady/brand/logo?v=" + encodeURIComponent(b.version) : "", code: code, app: d.appInfo(s.publicDir()) }));
+  return e.html(200, d.joinPage({ practice: b.name, logo: b.logo ? "/api/steady/brand/logo?v=" + encodeURIComponent(b.version) : "", code: code, app: d.appInfo(s.publicDir()), ios: ios }));
 });
 
 // The practice's logo, from the brand folder on this server (deploy/brand.sh installs it).

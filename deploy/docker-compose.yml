@@ -47,6 +47,8 @@ services:
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
       STEADY_VAPID_PUBLIC_KEY: ${STEADY_VAPID_PUBLIC_KEY}
+      # the iPhone app: TestFlight public link while in testing, later the App Store link
+      STEADY_IOS_URL: ${STEADY_IOS_URL:-}
       STEADY_CRISIS_LINES_JSON: ${STEADY_CRISIS_LINES_JSON:-}
       STEADY_NOTIFICATION_RETENTION_DAYS: ${STEADY_NOTIFICATION_RETENTION_DAYS:-90}
       # Caddy puts the visitor's address here; used for rate limits and the audit log
