@@ -11,8 +11,6 @@
 name: iOS build
 on:
   workflow_dispatch:
-  push:
-    branches: [ios-build]
 
 permissions:
   contents: read
