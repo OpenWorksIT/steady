@@ -85,11 +85,29 @@ jobs:
         run: |
           # Codemagic's CLI tools (GPL-3.0): makes or reuses the distribution certificate and the
           # App Store profile through the App Store Connect API, and sets them on the project
-          pipx install codemagic-cli-tools > /dev/null
-          keychain initialize
-          app-store-connect fetch-signing-files za.co.openworks.steady --type IOS_APP_STORE --create
-          keychain add-certificates
-          xcode-project use-profiles
+          # each command's own message goes into the run's summary if it fails
+          run() {
+            "$@" > ../step.txt 2>&1 && { cat ../step.txt; return 0; }
+            cat ../step.txt
+            echo "::error title=$1 $2::$(sed 's/%/%25/g' ../step.txt | tail -c 6000 | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          }
+          run pipx install codemagic-cli-tools
+          # the tools want a traditional "BEGIN RSA PRIVATE KEY" PEM; openssl genrsa on Linux
+          # writes the newer PKCS#8 form, so convert whichever we were given
+          key=$(mktemp)
+          printf '%s\n' "$CERTIFICATE_PRIVATE_KEY" > "$key"
+          if ! grep -q 'BEGIN RSA PRIVATE KEY' "$key"; then
+            /usr/bin/openssl rsa -in "$key" -out "$key.rsa" 2>/dev/null || openssl rsa -in "$key" -traditional -out "$key.rsa"
+            grep -q 'BEGIN RSA PRIVATE KEY' "$key.rsa" || { echo "::error title=IOS_CERT_KEY::Couldn't read IOS_CERT_KEY as an RSA private key. Paste the whole file, BEGIN and END lines included."; exit 1; }
+            CERTIFICATE_PRIVATE_KEY=$(cat "$key.rsa")
+          fi
+          rm -f "$key" "$key.rsa"
+          export CERTIFICATE_PRIVATE_KEY
+          run keychain initialize
+          run app-store-connect fetch-signing-files za.co.openworks.steady --type IOS_APP_STORE --create
+          run keychain add-certificates
+          run xcode-project use-profiles
 
       - name: build and sign
         if: env.HAS_KEYS == 'true'
