@@ -92,6 +92,14 @@ jobs:
             echo "::error title=$1 $2::$(sed 's/%/%25/g' ../step.txt | tail -c 6000 | awk '{printf "%s%%0A", $0}')"
             exit 1
           }
+          # the shape of each secret, without showing it: a typo is named rather than a bare 401
+          bad=""
+          printf '%s' "$APP_STORE_CONNECT_KEY_IDENTIFIER" | grep -Eq '^[A-Z0-9]{10}$' || bad="$bad APP_STORE_KEY_ID (10 letters/digits, no spaces);"
+          printf '%s' "$APP_STORE_CONNECT_ISSUER_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || bad="$bad APP_STORE_ISSUER_ID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx, no spaces);"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" | grep -q 'BEGIN PRIVATE KEY' && printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" | grep -q 'END PRIVATE KEY' || bad="$bad APP_STORE_KEY (the whole .p8, BEGIN and END lines included);"
+          [ "$APP_STORE_CONNECT_KEY_IDENTIFIER" != "AF3Y5N6XX9" ] || bad="$bad APP_STORE_KEY_ID is the push key's ID, not the API key's;"
+          [ -z "$bad" ] || { echo "::error title=App Store Connect secrets::Check:$bad"; exit 1; }
+          echo "::notice title=App Store Connect secrets::Key ID, Issuer ID and key all look the right shape (key ID ends ${APP_STORE_CONNECT_KEY_IDENTIFIER: -2})"
           run pipx install codemagic-cli-tools
           # the tools want a traditional "BEGIN RSA PRIVATE KEY" PEM; openssl genrsa on Linux
           # writes the newer PKCS#8 form, so convert whichever we were given
