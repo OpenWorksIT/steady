@@ -148,19 +148,20 @@ routerAdd("GET", "/api/steady/overview", (e) => {
   s.requireRole(e, "clinician");
   const tz = e.auth.getInt("tzOffset");
   // psychiatrists may have thousands; s.patientSummaries keeps it to a few queries per 400
-  const patients = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c} && active = true", "name", 20000, 0, { c: e.auth.id });
+  // archived patients (no longer being seen) aren't on the list at all
+  const patients = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c} && active = true && careStatus != 'archived'", "name", 20000, 0, { c: e.auth.id });
   const out = s.patientSummaries($app, patients, tz);
   // colleagues' patients shared with this psychologist (read only)
   const names = {};
-  const shared = $app.findRecordsByFilter("users", "role = 'patient' && active = true && sharedWith.id ?= {:c}", "name", 20000, 0, { c: e.auth.id });
+  const shared = $app.findRecordsByFilter("users", "role = 'patient' && active = true && careStatus != 'archived' && sharedWith.id ?= {:c}", "name", 20000, 0, { c: e.auth.id });
   s.patientSummaries($app, shared, tz).forEach((row, i) => {
     row.shared = true;
     row.owner = s.clinicianName($app, shared[i].getString("clinician"), names);
     out.push(row);
   });
-  const rank = { alert: 3, warn: 2, info: 1, none: 0 };
-  const top = (p) => (p.flags.length ? rank[p.flags[0].severity] || 0 : 0);
-  out.sort((a, b) => top(b) - top(a) || a.name.localeCompare(b.name));
+  // most in need of attention first: the most serious unreviewed flag or the RADR level, then
+  // the most recent, then the name; patients marked stable at the bottom (core.attention)
+  s.core.sortByAttention(out);
   s.audit($app, e, "patients.overview", "count:" + out.length, "");
   return e.json(200, { patients: out, generatedAt: s.nowMs() });
 }, $apis.requireAuth());
@@ -563,6 +564,12 @@ routerAdd("POST", "/api/steady/biometrics", (e) => {
     $app.save(rec);
     saved++;
   });
+  // the patient's latest RADR day, for the order of their psychologist's list
+  if (saved) {
+    try { require(`${__hooks}/lib/radr_data.js`).refreshLatest($app, $app.findRecordById("users", e.auth.id)); } catch (err) {
+      $app.logger().warn("steady: radr refresh failed", "error", String(err));
+    }
+  }
   return e.json(200, { saved: saved, errors: errors.slice(0, 10), dropped: dropped });
 }, $apis.requireAuth());
 
@@ -663,7 +670,10 @@ onRecordAfterCreateSuccess((e) => {
   if (patient && patient.getString("clinician")) {
     const recent = e.app.findRecordsByFilter("checkins", "patient = {:p}", "-created", 3, 0, { p: patient.id });
     const lowRun = recent.length === 3 && recent.every((c) => c.getInt("mood") <= 2);
+    // archived patients (no longer being seen) don't buzz their psychologist's phone
+    const archived = patient.getString("careStatus") === "archived";
     s.notify(e.app, {
+      push: !archived,
       recipient: patient.getString("clinician"),
       kind: "checkin",
       patient: patient.id,

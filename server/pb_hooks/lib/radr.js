@@ -193,8 +193,9 @@ function measures(s) {
   };
 }
 
-function dayRating(s, day, m) {
+function dayRating(s, day, m, exclude) {
   m = m || measures(s);
+  exclude = exclude || [];
   var f = {};
   Object.keys(m).forEach(function (k) { f[k] = compare(m[k], day, FLOOR[k]); });
 
@@ -213,6 +214,9 @@ function dayRating(s, day, m) {
     activity: clip(neg(z("steps"))),
     cardiac: clip(maxOf([pos(z("rhr")), neg(z("hrv"))]))
   };
+  // domains the psychologist switched off for this patient (e.g. sleep for a shift worker):
+  // still collected and shown, just not counted
+  exclude.forEach(function (k) { if (domains.hasOwnProperty(k)) domains[k] = null; });
   var present = DOMAINS.filter(function (k) { return domains[k] !== null; });
   var watch = present.length >= 2 ? mean(present.map(function (k) { return domains[k]; })) : null;
   var convergent = present.filter(function (k) { return domains[k] >= NOTABLE; }).length;
@@ -289,11 +293,13 @@ function concordance(rows) {
  * The rating for each day from `from` to `to` (YYYY-MM-DD). byDay and checkins must reach back
  * BASELINE_GAP + BASELINE_DAYS + 7 days before `from` for the first days to have a baseline.
  */
-function rate(byDay, checkins, from, to) {
+function rate(byDay, checkins, from, to, opts) {
+  opts = opts || {};
+  var exclude = (opts.exclude || []).filter(function (k) { return DOMAINS.indexOf(k) >= 0; });
   var s = rawSeries(byDay, checkins);
   var m = measures(s);
   var rows = [];
-  for (var d = from; d <= to; d = addDays(d, 1)) rows.push(dayRating(s, d, m));
+  for (var d = from; d <= to; d = addDays(d, 1)) rows.push(dayRating(s, d, m, exclude));
   var rated = rows.filter(function (r) { return r.watch !== null; });
   var last = rated.length ? rated[rated.length - 1] : null;
   return {
@@ -305,6 +311,7 @@ function rate(byDay, checkins, from, to) {
     concordance: concordance(rows),
     wearDays: Object.keys(byDay || {}).filter(function (d) { return d >= from && d <= to; }).length,
     checkinDays: Object.keys(checkins || {}).filter(function (d) { return d >= from && d <= to; }).length,
+    excluded: exclude,
     method: {
       baselineDays: BASELINE_DAYS, baselineGap: BASELINE_GAP, baselineMin: BASELINE_MIN,
       smoothDays: SMOOTH, notable: NOTABLE, cap: CAP, domains: DOMAINS, labels: LABELS
@@ -312,8 +319,22 @@ function rate(byDay, checkins, from, to) {
   };
 }
 
+/**
+ * How much a rated day asks for attention, used only to order the psychologist's patient list
+ * (never shown as a risk): how many domains are away from usual on the same day.
+ * A day older than 3 days counts for nothing.
+ */
+function level(latest, today) {
+  if (!latest || latest.watch === null || latest.watch === undefined) return "none";
+  if (today && addDays(latest.day, 3) < today) return "none";
+  var c = latest.convergent || 0;
+  return c >= 3 ? "alert" : c >= 2 ? "warn" : c >= 1 ? "info" : "none";
+}
+
 module.exports = {
   VERSION: VERSION,
+  FLOOR: FLOOR,
+  level: level,
   BASELINE_DAYS: BASELINE_DAYS,
   BASELINE_GAP: BASELINE_GAP,
   SMOOTH: SMOOTH,

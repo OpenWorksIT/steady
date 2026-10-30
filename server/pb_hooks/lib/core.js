@@ -360,18 +360,23 @@ function dailySeries(checkins, key, nowMs, days, tzOffsetMinutes) {
 function reviewFlags(checkins, assignments, nowMs) {
   var out = [];
   var cs = checkins.slice().sort(function (a, b) { return b.ts - a.ts; });
+  // each flag has a key (stable, so a psychologist can mark it as reviewed) and the time of
+  // what raised it (for ordering the patient list)
   assignments.forEach(function (a) {
     if (a.status !== "done" || !a.score || !a.completedAt) return;
     if (nowMs - a.completedAt > 14 * DAY) return;
-    (a.score.flags || []).forEach(function (f) { out.push({ label: a.name + ": " + f.label, severity: f.severity }); });
+    var base = "a:" + (a.id || (a.name + "@" + a.completedAt));
+    (a.score.flags || []).forEach(function (f, i) {
+      out.push({ key: base + ":f" + i, label: a.name + ": " + f.label, severity: f.severity, at: a.completedAt });
+    });
     var bs = a.score.bandSeverity || "none";
     if (a.score.band && rank(bs) >= rank("warn")) {
-      out.push({ label: a.name + " " + a.score.total + ": " + a.score.band, severity: bs });
+      out.push({ key: base + ":band", label: a.name + " " + a.score.total + ": " + a.score.band, severity: bs, at: a.completedAt });
     }
   });
   var last3 = cs.slice(0, 3);
   if (last3.length === 3 && last3.every(function (c) { return c.mood <= 2; })) {
-    out.push({ label: "Low mood in the last 3 check-ins", severity: "warn" });
+    out.push({ key: "lowmood:" + last3[0].ts, label: "Low mood in the last 3 check-ins", severity: "warn", at: last3[0].ts });
   }
   if (cs.length) {
     var gap = Math.floor((nowMs - cs[0].ts) / DAY);
@@ -381,8 +386,35 @@ function reviewFlags(checkins, assignments, nowMs) {
   }
   var waiting = assignments.filter(function (a) { return a.status === "pending" && (!a.availableFrom || a.availableFrom <= nowMs); }).length;
   if (waiting) out.push({ label: waiting + " waiting", severity: "none" });
-  out.sort(function (a, b) { return rank(b.severity) - rank(a.severity); });
+  out.sort(function (a, b) { return rank(b.severity) - rank(a.severity) || (b.at || 0) - (a.at || 0); });
   return out;
+}
+
+/**
+ * Where a patient goes in the psychologist's list: the most serious flag not yet marked as
+ * reviewed, or the RADR level, whichever is higher (0 none .. 3 alert). Patients marked
+ * "stable" sort below everyone (-1). Returns { rank, at } (at: when the deciding item happened).
+ */
+function attention(flags, radrLevel, radrAt, careStatus) {
+  if (careStatus === "stable") return { rank: -1, at: 0 };
+  var best = 0, at = 0;
+  (flags || []).forEach(function (f) {
+    if (f.reviewed) return;
+    var r = rank(f.severity);
+    if (r > best || (r === best && r > 0 && (f.at || 0) > at)) { best = r; at = f.at || 0; }
+  });
+  var rr = rank(radrLevel || "none");
+  if (rr > best || (rr === best && rr > 0 && (radrAt || 0) > at)) { best = rr; at = radrAt || 0; }
+  return { rank: best, at: at };
+}
+
+/** Sorts patient summaries (each with .attention and .name) for the list, in place. */
+function sortByAttention(list) {
+  list.sort(function (a, b) {
+    var x = a.attention || { rank: 0, at: 0 }, y = b.attention || { rank: 0, at: 0 };
+    return (y.rank - x.rank) || ((y.at || 0) - (x.at || 0)) || String(a.name).localeCompare(String(b.name));
+  });
+  return list;
 }
 
 /* ------------------------------------------------------------------ *
@@ -639,6 +671,9 @@ module.exports = {
   validateCheckin: validateCheckin,
   dailySeries: dailySeries,
   reviewFlags: reviewFlags,
+  attention: attention,
+  sortByAttention: sortByAttention,
+  rank: rank,
   nextAvailable: nextAvailable,
   normaliseCode: normaliseCode,
   formatCode: formatCode,

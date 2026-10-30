@@ -256,7 +256,7 @@ function ownPatient(app, clinicianId, patientId) {
 
 function sharedIds(p) {
   var ids = p.get("sharedWith");
-  try { ids = JSON.parse(JSON.stringify(ids)); } catch (e) { ids = []; }
+  try { ids = typeof ids === "string" ? JSON.parse(ids || "[]") : JSON.parse(JSON.stringify(ids)); } catch (e) { ids = []; }
   return Array.isArray(ids) ? ids : [];
 }
 
@@ -390,7 +390,18 @@ function patientSummary(app, patient, tzOffset) {
   var today = w.localDay(now, patient.getInt("tzOffset") || 120);
   var recent = app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:d}", "-day", 14, 0,
     { p: patient.id, d: w.addDays(today, -13) });
-  return summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, {});
+  var reviews = reviewsByKey(app.findRecordsByFilter("flagreviews", "patient = {:p}", "-created", 1000, 0, { p: patient.id }));
+  return summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, {}, reviews);
+}
+
+/** Flag reviews as { key: { by, at, note } }. */
+function reviewsByKey(recs) {
+  var out = {};
+  (recs || []).forEach(function (r) {
+    var k = r.getString("key");
+    if (!out[k]) out[k] = { by: r.getString("reviewerName"), at: toMs(r, "created"), note: r.getString("note") };
+  });
+  return out;
 }
 
 var BATCH = 400;
@@ -432,7 +443,7 @@ function patientSummaries(app, patients, tzOffset) {
     var d = w.addDays(w.localDay(now, p.getInt("tzOffset") || 120), -13);
     if (firstDay === null || d < firstDay) firstDay = d;
   });
-  var cks = {}, asg = {}, older = {}, bio = {};
+  var cks = {}, asg = {}, older = {}, bio = {}, rev = {};
   for (var i = 0; i < patients.length; i += BATCH) {
     var ids = patients.slice(i, i + BATCH).map(function (p) { return p.id; });
     var pa = {};
@@ -460,21 +471,37 @@ function patientSummaries(app, patients, tzOffset) {
     pd.d = firstDay;
     got = groupBy(query(app, "biometrics", "[[patient]] IN (" + list + ") AND [[day]] >= {:d}", pd, "[[day]] DESC"), "patient");
     Object.keys(got).forEach(function (k) { bio[k] = got[k]; });
+    var pr = {};
+    list = inList(ids, "p", pr);
+    got = groupBy(query(app, "flagreviews", "[[patient]] IN (" + list + ")", pr, "[[created]] DESC"), "patient");
+    Object.keys(got).forEach(function (k) { rev[k] = reviewsByKey(got[k]); });
   }
   var names = {};
   return patients.map(function (p) {
     var d = w.addDays(w.localDay(now, p.getInt("tzOffset") || 120), -13);
     var recent = (bio[p.id] || []).filter(function (r) { return r.getString("day") >= d; }).slice(0, 14);
-    return summaryOf(app, p, tzOffset, now, cks[p.id] || [], asg[p.id] || [], older[p.id] || [], recent, names);
+    return summaryOf(app, p, tzOffset, now, cks[p.id] || [], asg[p.id] || [], older[p.id] || [], recent, names, rev[p.id] || {});
   });
 }
 
-function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names) {
+function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names, reviews) {
   var rows = cks.map(checkinRow);
   var arows = asg.map(function (r) { return assignmentRow(app, r, names); });
   var allRows = rows.length ? rows : older.map(checkinRow);
   var last = allRows.length ? allRows[0] : null;
+  var flags = core.reviewFlags(allRows, arows, now);
+  flags.forEach(function (f) { if (f.key && reviews && reviews[f.key]) f.reviewed = reviews[f.key]; });
+  var R = require(__hooks + "/lib/radr.js");
+  var w = require(__hooks + "/lib/wearable.js");
+  var radr = readJson(patient, "radrLatest");
+  var radrLevel = R.level(radr, w.localDay(now, patient.getInt("tzOffset") || 120));
+  var careStatus = patient.getString("careStatus");
   return {
+    careStatus: careStatus,
+    radr: radr ? { day: radr.day, watch: radr.watch, convergent: radr.convergent, level: radrLevel } : null,
+    lastNote: readJson(patient, "lastNote"),
+    attention: core.attention(flags, radrLevel, radr ? Date.parse(radr.day + "T12:00:00Z") : 0, careStatus),
+    app: { build: patient.getString("appBuild"), platform: patient.getString("appPlatform"), seenAt: toMs(patient, "appSeenAt") },
     id: patient.id,
     name: displayName(patient),
     selfName: patient.getString("name"),
@@ -483,7 +510,7 @@ function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names) 
     lastCheckin: last,
     mood: core.dailySeries(rows, "mood", now, 14, tzOffset),
     anxiety: core.dailySeries(rows, "anxiety", now, 14, tzOffset),
-    flags: core.reviewFlags(allRows, arows, now),
+    flags: flags,
     pending: arows.filter(function (a) { return a.status === "pending"; }).length,
     wearable: wearableSummary(patient, recent)
   };
@@ -539,5 +566,6 @@ module.exports = {
   notify: notify,
   push: push,
   patientSummary: patientSummary,
-  patientSummaries: patientSummaries
+  patientSummaries: patientSummaries,
+  reviewsByKey: reviewsByKey
 };

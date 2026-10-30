@@ -33,7 +33,8 @@ function forPatient(app, p, from, to) {
     checkins[d] = { mood: o.mood / o.n, anxiety: o.anxiety / o.n, sleep: o.sleep / o.n, energy: o.energy / o.n };
   });
 
-  var out = R.rate(byDay, checkins, from, to);
+  var out = R.rate(byDay, checkins, from, to, { exclude: exclusions(p).map(function (x) { return x.domain; }) });
+  out.exclusions = exclusions(p);
 
   // questionnaire totals in the period, for the chart
   var names = {};
@@ -55,10 +56,38 @@ function forPatient(app, p, from, to) {
   return out;
 }
 
-/** The same, trimmed for exports: no per-measure detail. */
+/** Measures switched off for this patient: [{ domain, since, by, reason }]. */
+function exclusions(p) {
+  var v = s.readJson(p, "radrExclusions");
+  return Array.isArray(v) ? v.filter(function (x) { return x && R.DOMAINS.indexOf(x.domain) >= 0; }) : [];
+}
+
+/**
+ * Works out the patient's latest RADR day and keeps it on their account (radrLatest), so the
+ * patient list can be ordered without working RADR out for everyone each time. Called when watch
+ * data or a check-in arrives, when measures are switched off or on, and nightly.
+ */
+function refreshLatest(app, p) {
+  if (s.toMs(p, "wearableConsentAt") === 0) {
+    if (p.getString("radrLatest") && p.getString("radrLatest") !== "null") { p.set("radrLatest", null); app.unsafeWithoutHooks().save(p); }
+    return null;
+  }
+  var tz = p.getInt("tzOffset") || 120;
+  var to = w.localDay(s.nowMs(), tz);
+  var r = forPatient(app, p, R.addDays(to, -6), to);
+  var l = r.latest;
+  var keep = l ? { day: l.day, watch: l.watch, self: l.self, combined: l.combined, convergent: l.convergent, domains: l.domains, version: r.version } : null;
+  p.set("radrLatest", keep);
+  app.unsafeWithoutHooks().save(p);
+  return keep;
+}
+
+/** The trimmed version for exports: no per-measure detail. */
 function compact(r) {
   return {
     version: r.version,
+    method: r.method,
+    exclusions: r.exclusions || [],
     from: r.from,
     to: r.to,
     wearDays: r.wearDays,
@@ -71,4 +100,4 @@ function compact(r) {
   };
 }
 
-module.exports = { forPatient: forPatient, compact: compact };
+module.exports = { forPatient: forPatient, compact: compact, exclusions: exclusions, refreshLatest: refreshLatest };
