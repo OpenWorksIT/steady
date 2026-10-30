@@ -152,6 +152,8 @@ Do these on the VPS before real patient data arrives:
 - [ ] `chmod 600 deploy/.env` and keep `deploy/secrets/` readable only by root and the relay (uid 65532).
 - [ ] `sudo ./accounts.sh check` says the dashboard is closed; `accounts.sh list` shows two-step sign-in for every staff account.
 - [ ] Email set up (step 5a): staff sign in only from linked devices.
+- [ ] `sudo ./audit-server.sh` shows nothing to fix (SSH, firewall, updates, disk encryption, file
+      permissions, containers, backups, TLS and headers from outside). Run it again now and then.
 - [ ] Delete any permanent superuser left from before (`docker compose exec pocketbase /pb/pocketbase superuser delete <email> --dir=/pb/pb_data`).
 - [ ] Backups running and copied off the server (step 7), restore tested.
 - [ ] Uptime monitoring on `https://<domain>/api/health`.
