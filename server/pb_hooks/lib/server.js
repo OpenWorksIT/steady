@@ -527,6 +527,8 @@ function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names, 
     name: displayName(patient),
     selfName: patient.getString("name"),
     joinedAt: toMs(patient, "created"),
+    // the patient asked for their account to be deleted (lib/deletion.js)
+    deletionRequestedAt: toMs(patient, "deletionRequestedAt"),
     active: patient.getBool("active"),
     lastCheckin: last,
     mood: core.dailySeries(rows, "mood", now, 14, tzOffset),

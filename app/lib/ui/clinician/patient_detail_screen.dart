@@ -125,6 +125,32 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
     }, done: 'Access stopped');
   }
 
+  Future<void> _deleteAccount() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('Delete $_name\'s account?'),
+        content: const Text('Their check-ins, answers, notes, watch data and flags are deleted from Steady for good, and '
+            'they\'re emailed that it\'s done. Make sure you\'ve exported what you must keep in your clinical records. '
+            'The access log stays.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: c.cs.error, foregroundColor: c.cs.onError),
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Delete for good'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final nav = Navigator.of(context);
+    await guarded(context, () async {
+      await AppScope.api(context).deletePatientAccount(widget.patientId);
+      nav.pop();
+    }, done: 'Account deleted');
+  }
+
   Future<void> _share() async {
     final api = AppScope.api(context);
     await showModalBottomSheet<void>(
@@ -243,6 +269,35 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
                   leading: const Icon(Icons.visibility_outlined),
                   title: Text('Shared with you by ${widget.owner}'),
                   subtitle: const Text('Read only. Ask them to send questionnaires or make changes.'),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (d.summary.deletionRequestedAt != null) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(Icons.person_remove_outlined, color: context.sc.warn),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('Asked to delete their account', style: context.tt.titleSmall)),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text('On ${relTime(d.summary.deletionRequestedAt)}. Steady told them it will be done within 30 days. First '
+                        'export what belongs in your clinical records (you must keep those), then delete the account here.',
+                        style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
+                    if (!widget.shared)
+                      Wrap(spacing: 4, children: [
+                        TextButton(onPressed: () => exportPatientPdf(context, widget.patientId), child: const Text('PDF report')),
+                        TextButton(onPressed: () => exportExcel(context, patientId: widget.patientId), child: const Text('Excel')),
+                        TextButton(
+                          style: TextButton.styleFrom(foregroundColor: context.cs.error),
+                          onPressed: _deleteAccount,
+                          child: const Text('Delete account'),
+                        ),
+                      ]),
+                  ]),
                 ),
               ),
               const SizedBox(height: 10),

@@ -14,6 +14,7 @@ import 'auth/two_step_screen.dart';
 import 'clinician/server_updates_screen.dart';
 import 'update_notice.dart';
 import 'source_link.dart';
+import 'patient/delete_account_screen.dart';
 import 'calm.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -154,6 +155,21 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     nav.push(MaterialPageRoute(builder: (_) => const TwoStepSetupScreen()));
                   },
           ),
+          if (state.isPatient)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.person_remove_outlined),
+              title: const Text('Delete my account'),
+              subtitle: Text(state.api.deletionRequestedAt == null
+                  ? 'Ask your practice to delete your account and your Steady data'
+                  : 'You\'ve asked; your practice will email you when it\'s done'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const DeleteAccountScreen()));
+              },
+            ),
           if (state.api.isStaff)
             ListTile(
               contentPadding: EdgeInsets.zero,
