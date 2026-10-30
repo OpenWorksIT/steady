@@ -28,7 +28,7 @@ class FeedbackLayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final staff = state.signedIn && (state.isClinician || state.isAdmin) && !state.api.mustChangePassword;
+    final staff = state.signedIn && state.api.isStaff && !state.api.mustChangePassword;
     final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Stack(children: [
       RepaintBoundary(key: captureKey, child: TrailTaps(child: child)),

@@ -25,6 +25,11 @@ abstract class HealthStore {
 
   /// Asks the person for read access. Returns false if they declined.
   Future<bool> requestAccess();
+
+  /// Whether Steady may still read: true or false on Android (Health Connect can lose its
+  /// permissions, e.g. after an update), null where the phone won't say (Apple Health never
+  /// reveals whether read access was granted).
+  Future<bool?> hasAccess();
   /// Heart rate only; it can be dense, so read it in short spans.
   Future<List<HrSample>> heartRate(DateTime from, DateTime to);
 

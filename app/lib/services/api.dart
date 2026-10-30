@@ -73,13 +73,61 @@ class TwoStepNeeded implements Exception {
   const TwoStepNeeded();
 }
 
-/// Someone at the practice, with what an administrator may see: name and role only.
+/// A patient's connection and agreement status, as the practice admin sees it: dates and
+/// yes/no only, never what they shared.
+class PatientStatus {
+  final DateTime? consentAt, privacyAt, lastCheckinAt, watchPermissionSince;
+  final bool consentCurrent, watchSharing, watchLapsed;
+  final String consentVersion, watchPermission, watchLastDay, careStatus;
+  final List<String> notifications;
+  PatientStatus({
+    this.consentAt,
+    this.privacyAt,
+    this.lastCheckinAt,
+    this.watchPermissionSince,
+    this.consentCurrent = false,
+    this.watchSharing = false,
+    this.watchLapsed = false,
+    this.consentVersion = '',
+    this.watchPermission = '',
+    this.watchLastDay = '',
+    this.careStatus = '',
+    this.notifications = const [],
+  });
+  factory PatientStatus.fromJson(Map<String, dynamic> j) {
+    final c = asMap(j['consent']), w = asMap(j['watch']);
+    return PatientStatus(
+      consentAt: fromMs(c['at']),
+      consentVersion: '${c['version'] ?? ''}',
+      consentCurrent: c['current'] == true,
+      privacyAt: fromMs(j['privacyNoticeAt']),
+      lastCheckinAt: fromMs(j['lastCheckinAt']),
+      notifications: asList(j['notifications']).map((x) => '$x').toList(),
+      watchSharing: w['sharing'] == true,
+      watchPermission: '${w['permission'] ?? ''}',
+      watchPermissionSince: fromMs(w['permissionSince']),
+      watchLapsed: w['lapsed'] == true,
+      watchLastDay: '${w['lastDay'] ?? ''}',
+      careStatus: '${j['careStatus'] ?? ''}',
+    );
+  }
+}
+
+/// Someone at the practice, with what an administrator may see: name and role, and for
+/// patients their connection status.
 class Person {
   final String id, name, role, email;
   final bool active, master, serverAdmin, twoStep;
   final String clinicianId, clinicianName;
   final DateTime? joinedAt;
+  final String appBuild, appPlatform;
+  final DateTime? appSeenAt;
+  final PatientStatus? status;
   Person({
+    this.appBuild = '',
+    this.appPlatform = '',
+    this.appSeenAt,
+    this.status,
     required this.id,
     required this.name,
     required this.role,
@@ -106,8 +154,23 @@ class Person {
       clinicianId: '${c['id'] ?? ''}',
       clinicianName: '${c['name'] ?? ''}',
       joinedAt: fromMs(j['joinedAt']),
+      appBuild: '${asMap(j['app'])['build'] ?? ''}',
+      appPlatform: '${asMap(j['app'])['platform'] ?? ''}',
+      appSeenAt: fromMs(asMap(j['app'])['seenAt']),
+      status: j['status'] is Map ? PatientStatus.fromJson(asMap(j['status'])) : null,
     );
   }
+
+  bool get isSupport => role == 'support';
+}
+
+/// One line of the audit report.
+class AuditRow {
+  final DateTime? at;
+  final String actor, action, target, patient, ip;
+  AuditRow(this.at, this.actor, this.action, this.target, this.patient, this.ip);
+  factory AuditRow.fromJson(Map<String, dynamic> j) => AuditRow(fromMs(j['at']), '${j['actor'] ?? ''}', '${j['action'] ?? ''}',
+      '${j['target'] ?? ''}', '${j['patient'] ?? ''}', '${j['ip'] ?? ''}');
 }
 
 class Api {
@@ -217,7 +280,8 @@ class Api {
   bool get mustChangePassword => me?.getBoolValue('mustChangePassword') ?? false;
   bool get twoStepOn => (me?.getStringValue('totpEnabledAt') ?? '').isNotEmpty;
   bool get isMaster => role == 'clinician' && (me?.getBoolValue('master') ?? false);
-  bool get isStaff => role == 'clinician' || role == 'admin';
+  bool get isSupport => role == 'support';
+  bool get isStaff => role == 'clinician' || role == 'admin' || role == 'support';
 
   /// Choose a new password (also the way out of a temporary one).
   Future<void> changePassword(String current, String next) async {
@@ -469,7 +533,36 @@ class Api {
   bool get isServerAdmin => me?.getBoolValue('serverAdmin') ?? false;
 
   /// Who may check for and install server updates (the server checks the same).
-  bool get canUpdate => isServerAdmin || isMaster || role == 'admin';
+  bool get canUpdate => isServerAdmin || isMaster || isSupport;
+
+  /// Who sees the server's health: as above, plus the practice admin.
+  bool get canSeeHealth => canUpdate || role == 'admin';
+
+  /// The master clinician and the practice admin: the practice's people, the audit report.
+  bool get isManager => isMaster || role == 'admin';
+
+  /// This app's version (and, for patients, whether watch data can still be read).
+  Future<String> reportApp({required String build, required String platform, String health = ''}) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/app',
+        method: 'POST', body: {'build': build, 'platform': platform, if (health.isNotEmpty) 'health': health});
+    return '${res['serverBuild'] ?? ''}';
+  }
+
+  /// Asks a patient to reconnect their watch (their psychologist, the master clinician, reception).
+  Future<void> remindWatch(String patientId) => pb.send('/api/steady/patients/$patientId/remind-watch', method: 'POST');
+
+  /// OpenWorks support: the practice's staff (no patients), and the server's current build.
+  Future<({List<Person> staff, String serverBuild})> supportStaff() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/support/staff');
+    return (staff: asList(res['staff']).map((p) => Person.fromJson(asMap(p))).toList(), serverBuild: '${res['serverBuild'] ?? ''}');
+  }
+
+  /// The audit report: who opened or changed what (master clinician, practice admin).
+  Future<({List<AuditRow> rows, bool truncated})> audit({int days = 30, String? patientId, String? actorId}) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/audit',
+        query: {'days': '$days', 'patient': ?patientId, 'actor': ?actorId});
+    return (rows: asList(res['rows']).map((r) => AuditRow.fromJson(asMap(r))).toList(), truncated: res['truncated'] == true);
+  }
 
   /* ---------------- the practice (master clinician, administrator) ---------------- */
 
@@ -480,10 +573,15 @@ class Api {
     return '${res['temporaryPassword']}';
   }
 
-  Future<({List<Person> patients, List<Person> clinicians, List<Person> admins})> people() async {
+  Future<({List<Person> patients, List<Person> clinicians, List<Person> admins, String serverBuild})> people() async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/admin/people');
     List<Person> list(Object? v) => asList(v).map((p) => Person.fromJson(asMap(p))).toList();
-    return (patients: list(res['patients']), clinicians: list(res['clinicians']), admins: list(res['admins']));
+    return (
+      patients: list(res['patients']),
+      clinicians: list(res['clinicians']),
+      admins: list(res['admins']),
+      serverBuild: '${res['serverBuild'] ?? ''}',
+    );
   }
 
   /// Active psychologists (names only).
@@ -616,10 +714,14 @@ class Api {
         files: [if (screenshot != null) http.MultipartFile.fromBytes('screenshot', screenshot, filename: 'screenshot.png')],
       );
 
-  /// status: open, done or all (master psychologist and administrators).
-  Future<List<Map<String, dynamic>>> feedbackList(String status) async {
+  /// status: open, done or all. OpenWorks support gets the full reports ([full]); the
+  /// practice's staff get tickets (what, who, when, status).
+  Future<({List<Map<String, dynamic>> items, bool full})> feedbackList(String status) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/feedback', query: {'status': status});
-    return ((res['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return (
+      items: ((res['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+      full: res['full'] == true,
+    );
   }
 
   Future<Map<String, dynamic>> feedbackGet(String id) => pb.send<Map<String, dynamic>>('/api/steady/feedback/$id');

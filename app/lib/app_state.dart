@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pocketbase/pocketbase.dart' show ClientException;
 
+import 'build_info.dart';
 import 'content/privacy_notice.dart';
 import 'models.dart';
 import 'services/api.dart';
@@ -64,6 +65,18 @@ class AppState extends ChangeNotifier {
   bool get isClinician => api.role == 'clinician';
   bool get isPatient => api.role == 'patient';
   bool get isAdmin => api.role == 'admin';
+  bool get isSupport => api.role == 'support';
+
+  /// Tells the server which version of the app this is (and, for patients, whether the phone
+  /// still lets Steady read watch data), so the practice can see who needs to update or
+  /// reconnect. Best effort.
+  Future<void> reportApp({String health = ''}) async {
+    if (!api.signedIn) return;
+    final platform = kIsWeb ? 'web' : (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android');
+    try {
+      await api.reportApp(build: kAppBuild.isEmpty ? 'dev' : kAppBuild, platform: platform, health: health);
+    } catch (_) {}
+  }
 
   /// Staff must set up two-step sign-in before they can see anything (unless the server says off).
   bool get needsTwoStepSetup => api.isStaff && config.twoStep != 'off' && !api.twoStepOn;
@@ -89,6 +102,7 @@ class AppState extends ChangeNotifier {
     if (api.signedIn) {
       unawaited(enablePush());
       unawaited(_recordPrivacyOnServer());
+      unawaited(reportApp());
     }
   }
 
@@ -120,6 +134,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     unawaited(enablePush());
     unawaited(_recordPrivacyOnServer());
+    unawaited(reportApp());
   }
 
   Future<void> signOut() async {

@@ -17,6 +17,7 @@ import 'theme.dart';
 import 'widgets.dart';
 import 'clinician/feedback_inbox_screen.dart';
 import 'clinician/patient_care.dart';
+import 'practice/audit_screen.dart';
 
 Future<void> showSettingsSheet(BuildContext context) => showModalBottomSheet(
       context: context,
@@ -154,18 +155,21 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           if (state.api.canUpdate) ...[
             const SizedBox(height: 16),
             const UpdateControls(),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.feedback_outlined),
-              title: const Text('Feedback'),
-              subtitle: const Text('Love, dislikes and bugs sent from staff screens'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                final nav = Navigator.of(context);
-                nav.pop();
-                nav.push(MaterialPageRoute(builder: (_) => const FeedbackInboxScreen()));
-              },
-            ),
+          ],
+          if (state.api.isStaff) ...[
+            const SizedBox(height: 12),
+            Text('The practice', style: context.tt.titleMedium),
+            if (state.api.isManager)
+              _Link(icon: Icons.policy_outlined, title: 'Audit report', subtitle: 'Who opened or changed what', open: () => const AuditScreen()),
+            if (state.api.canSeeHealth && !state.api.canUpdate)
+              _Link(icon: Icons.monitor_heart_outlined, title: 'Server health', subtitle: 'How the practice\'s server is coping', open: () => const ServerHealthScreen()),
+            if (!state.api.isSupport)
+              _Link(
+                icon: Icons.feedback_outlined,
+                title: 'Feedback tickets',
+                subtitle: 'What the practice raised with the Feedback button, and where it stands',
+                open: () => const FeedbackInboxScreen(),
+              ),
           ],
           if (appUpdateAvailable(state)) ...[
             const SizedBox(height: 12),
@@ -242,4 +246,25 @@ class _CareTeam extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A row in Settings that closes the sheet and opens a screen.
+class _Link extends StatelessWidget {
+  final IconData icon;
+  final String title, subtitle;
+  final Widget Function() open;
+  const _Link({required this.icon, required this.title, required this.subtitle, required this.open});
+  @override
+  Widget build(BuildContext context) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          final nav = Navigator.of(context);
+          nav.pop();
+          nav.push(MaterialPageRoute(builder: (_) => open()));
+        },
+      );
 }

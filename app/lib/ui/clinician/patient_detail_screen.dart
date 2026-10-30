@@ -258,6 +258,33 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
               ),
               const SizedBox(height: 10),
             ],
+            if (d.summary.watchLapsedSince != null) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(Icons.watch_off_outlined, color: context.sc.warn),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('Watch permissions seem to have lapsed', style: context.tt.titleSmall)),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text('Since ${relTime(d.summary.watchLapsedSince)}, their phone hasn\'t let Steady read watch data. This often happens '
+                        'after an update. Their app asks them to allow it again; a reminder can help.',
+                        style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
+                    if (!widget.shared)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => guarded(context, () => AppScope.api(context).remindWatch(widget.patientId), done: 'Reminder sent'),
+                          child: const Text('Send them a reminder'),
+                        ),
+                      ),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             if (d.summary.flags.isNotEmpty) ...[
               Wrap(spacing: 6, runSpacing: 6, children: [
                 for (final f in d.summary.flags)

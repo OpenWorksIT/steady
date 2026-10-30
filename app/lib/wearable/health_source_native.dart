@@ -76,6 +76,17 @@ class _PluginStore implements HealthStore {
   }
 
   @override
+  Future<bool?> hasAccess() async {
+    if (!_android) return null;
+    try {
+      await _configure();
+      return await _h.hasPermissions(_types);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
   Future<List<HrSample>> heartRate(DateTime from, DateTime to) async {
     await _configure();
     final points = await _h.getHealthDataFromTypes(types: const [HealthDataType.HEART_RATE], startTime: from, endTime: to);

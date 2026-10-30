@@ -186,12 +186,13 @@ class _PatientRow extends StatelessWidget {
               ),
               Sparkline(p.mood),
             ]),
-            if (open.isNotEmpty || reviewed > 0 || showRadr) ...[
+            if (open.isNotEmpty || reviewed > 0 || showRadr || p.watchLapsedSince != null) ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
                 child: Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
                   if (showRadr) FlagChip('RADR: ${radr.convergent} of 4 away from usual', severityOf(radr.level)),
+                  if (p.watchLapsedSince != null) const FlagChip('Watch permissions lapsed', Severity.info),
                   // a stable patient's flags are still listed, but not highlighted
                   for (final f in open.take(3)) FlagChip(f.label, p.stable ? Severity.none : f.severity),
                   if (reviewed > 0)

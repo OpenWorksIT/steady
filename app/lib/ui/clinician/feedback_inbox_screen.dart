@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Settings > Feedback (master psychologist and administrators): everything sent with the Feedback
-// button, newest first, to read and mark as seen or done. OpenWorks IT reads the same with
-// deploy/feedback.sh on the server.
+// Feedback sent with the Feedback button, newest first. OpenWorks support sees full reports (the
+// steps before it, the device, the screenshot) and marks them seen or done; it's their first
+// screen. The practice's own staff see the same items as tickets: what was raised, by whom,
+// when, and where it stands, without the technical detail.
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
@@ -19,8 +20,17 @@ String _when(String iso) {
   return '${d.day}/${d.month}/${d.year} ${two(d.hour)}:${two(d.minute)}';
 }
 
+String _whenMs(Object? ms) {
+  if (ms is! num || ms <= 0) return '';
+  final d = DateTime.fromMillisecondsSinceEpoch(ms.toInt());
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${d.day}/${d.month}/${d.year} ${two(d.hour)}:${two(d.minute)}';
+}
+
 class FeedbackInboxScreen extends StatefulWidget {
-  const FeedbackInboxScreen({super.key});
+  /// OpenWorks support's first screen (no back button).
+  final bool home;
+  const FeedbackInboxScreen({this.home = false, super.key});
   @override
   State<FeedbackInboxScreen> createState() => _FeedbackInboxScreenState();
 }
@@ -28,6 +38,7 @@ class FeedbackInboxScreen extends StatefulWidget {
 class _FeedbackInboxScreenState extends State<FeedbackInboxScreen> {
   String _filter = 'open';
   List<Map<String, dynamic>>? _items;
+  bool _full = false;
   String? _error;
 
   @override
@@ -38,10 +49,11 @@ class _FeedbackInboxScreenState extends State<FeedbackInboxScreen> {
 
   Future<void> _load() async {
     try {
-      final items = await AppScope.api(context).feedbackList(_filter);
+      final res = await AppScope.api(context).feedbackList(_filter);
       if (mounted) {
         setState(() {
-          _items = items;
+          _items = res.items;
+          _full = res.full;
           _error = null;
         });
       }
@@ -54,11 +66,15 @@ class _FeedbackInboxScreenState extends State<FeedbackInboxScreen> {
   Widget build(BuildContext context) {
     final items = _items;
     return Scaffold(
-      appBar: AppBar(title: const Text('Feedback')),
+      appBar: AppBar(title: Text(widget.home ? 'To look at' : (_full ? 'Feedback' : 'Feedback tickets')), automaticallyImplyLeading: !widget.home),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-          Text('From the Feedback button on staff screens. OpenWorks IT sees these too.', style: TextStyle(color: context.sc.ink2)),
+          Text(
+              _full
+                  ? 'From the Feedback button on staff screens: open one to read the steps before it and mark it seen or done.'
+                  : 'What the practice raised with the Feedback button. OpenWorks IT looks at each one and marks it seen, then done.',
+              style: TextStyle(color: context.sc.ink2)),
           const SizedBox(height: 10),
           SegmentedButton<String>(
             segments: const [
@@ -80,6 +96,20 @@ class _FeedbackInboxScreenState extends State<FeedbackInboxScreen> {
           if (items == null && _error == null) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
           if (items != null && items.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Text('Nothing here.', style: TextStyle(color: context.sc.ink3))),
           for (final i in items ?? const <Map<String, dynamic>>[])
+            if (!_full)
+              Card(
+                child: ListTile(
+                  leading: Icon(_kindIcons[i['kind']] ?? Icons.feedback_outlined, color: context.sc.ink2),
+                  title: Text('${i['message']}'.isEmpty ? _kindNames[i['kind']] ?? '' : '${i['message']}', maxLines: 3, overflow: TextOverflow.ellipsis),
+                  subtitle: Text('${_kindNames[i['kind']]} · ${i['whoName']} · ${_whenMs(i['created'])}'
+                      '${'${i['note'] ?? ''}'.isEmpty ? '' : '\nOpenWorks: ${i['note']}'}'),
+                  trailing: Chip(
+                    label: Text(switch ('${i['status']}') { 'done' => 'Done', 'seen' => 'Looked at', _ => 'Raised' }),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              )
+            else
             Card(
               child: ListTile(
                 leading: Icon(_kindIcons[i['kind']] ?? Icons.feedback_outlined, color: i['kind'] == 'bug' ? context.sc.alert : context.cs.primary),

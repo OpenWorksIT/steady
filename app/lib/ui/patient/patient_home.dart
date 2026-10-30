@@ -69,13 +69,32 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
     }
   }
 
-  /// Quietly shares new watch data; failures are retried next time the app opens.
+  /// 'missing' when the phone stopped letting Steady read watch data (often after an update).
+  String _watchPerm = '';
+
+  /// Quietly shares new watch data; failures are retried next time the app opens. Also checks
+  /// the phone still lets Steady read it, and tells the practice (so they can help) if not.
   Future<void> _syncWatch() async {
-    final api = AppScope.api(context);
+    final state = AppScope.of(context);
+    final api = state.api;
     if (!api.wearableConnected) return;
     try {
       await WearableSync.instance.sync(api);
     } catch (_) {}
+    try {
+      final perm = await WearableSync.instance.permissionStatus(api);
+      if (mounted && perm != _watchPerm) setState(() => _watchPerm = perm);
+      await state.reportApp(health: perm);
+    } catch (_) {}
+  }
+
+  Future<void> _regrant() async {
+    final api = AppScope.api(context);
+    final ok = await WearableSync.instance.regrant(api);
+    if (!mounted) return;
+    showSnack(context, ok ? 'Thank you. Your watch data is shared again.' : 'Steady still can\'t read it. You can allow it in your phone\'s health settings.');
+    await _syncWatch();
+    _refresh();
   }
 
   void _refresh() {
@@ -169,6 +188,23 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
                   ),
                 ),
               const SizedBox(height: 10),
+              if (_watchPerm == 'missing') ...[
+                Card(
+                  color: context.sc.accentSoft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Steady can\'t read your watch at the moment', style: context.tt.titleMedium),
+                      const SizedBox(height: 4),
+                      Text('This can happen after an update. Nothing is lost: allow it again and Steady catches up.',
+                          style: context.tt.bodyMedium?.copyWith(color: context.sc.ink2)),
+                      const SizedBox(height: 10),
+                      FilledButton(onPressed: _regrant, child: const Text('Allow again')),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               WatchCard(onChanged: _refresh),
               const SizedBox(height: 12),
               SectionHeader('From your psychologist', trailing: d.pending.isEmpty ? null : '${d.pending.length} to do'),

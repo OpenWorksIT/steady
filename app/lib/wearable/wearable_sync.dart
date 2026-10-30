@@ -59,6 +59,24 @@ class WearableSync {
     return null;
   }
 
+  /// 'granted', 'missing' or 'unknown' while the patient shares watch data; '' otherwise.
+  Future<String> permissionStatus(Api api) async {
+    final s = store;
+    if (s == null || !api.wearableConnected) return '';
+    final ok = await s.hasAccess();
+    return ok == null ? 'unknown' : (ok ? 'granted' : 'missing');
+  }
+
+  /// Asks again after the phone dropped Steady's access (often after an update), then syncs.
+  /// Returns true when access is back.
+  Future<bool> regrant(Api api) async {
+    final s = store;
+    if (s == null) return false;
+    final ok = await s.requestAccess();
+    if (ok) await sync(api);
+    return ok;
+  }
+
   Future<void> disconnect(Api api) async {
     await api.setConsent('wearable', wearableConsentVersion, accepted: false);
     try {

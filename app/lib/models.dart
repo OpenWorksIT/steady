@@ -474,7 +474,14 @@ class PatientSummary {
   final String careStatus;
   final RadrBrief? radr;
   final Note? lastNote;
+
+  /// The phone stopped letting Steady read watch data, since [watchLapsedSince] (null: fine).
+  final DateTime? watchLapsedSince;
+  final String appBuild, appPlatform;
   PatientSummary({
+    this.watchLapsedSince,
+    this.appBuild = '',
+    this.appPlatform = '',
     this.careStatus = '',
     this.radr,
     this.lastNote,
@@ -513,6 +520,9 @@ class PatientSummary {
       careStatus: '${j['careStatus'] ?? ''}',
       radr: j['radr'] is Map ? RadrBrief.fromJson(asMap(j['radr'])) : null,
       lastNote: j['lastNote'] is Map ? Note.fromJson(asMap(j['lastNote'])) : null,
+      watchLapsedSince: asMap(j['watchPermission'])['lapsed'] == true ? fromMs(asMap(j['watchPermission'])['since']) : null,
+      appBuild: '${asMap(j['app'])['build'] ?? ''}',
+      appPlatform: '${asMap(j['app'])['platform'] ?? ''}',
     );
   }
 
