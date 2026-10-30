@@ -178,7 +178,7 @@ function compare(fn, day, floor) {
     var b = fn(addDays(day, -i));
     if (isNum(b)) base.push(b);
   }
-  return { value: x, z: robustZ(x, base, floor), n: base.length };
+  return { value: x, z: robustZ(x, base, floor), n: base.length, usual: base.length >= BASELINE_MIN ? median(base) : null };
 }
 
 /* ---------- the rating ---------- */
@@ -226,7 +226,10 @@ function dayRating(s, day, m, exclude) {
   var combined = watch !== null && self !== null ? (watch + self) / 2 : null;
 
   var features = {};
-  Object.keys(f).forEach(function (k) { features[k] = { value: f[k].value === null ? null : r2(f[k].value), z: r2(f[k].z) }; });
+  // value, the person's usual (baseline median) and how far from it: for the day breakdown
+  Object.keys(f).forEach(function (k) {
+    features[k] = { value: f[k].value === null ? null : r2(f[k].value), z: r2(f[k].z), usual: f[k].usual === null || f[k].usual === undefined ? null : r2(f[k].usual) };
+  });
   var dom = {};
   DOMAINS.forEach(function (k) { dom[k] = r2(domains[k]); });
   // the direction the circadian domain moved: + later (delay), - earlier (advance)

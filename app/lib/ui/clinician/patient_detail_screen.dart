@@ -12,6 +12,7 @@ import '../wearable/wearable_views.dart';
 import '../widgets.dart';
 import 'assign_screen.dart';
 import 'clinician_shell.dart';
+import 'patient_care.dart';
 import 'radr_tab.dart';
 import 'result_screen.dart';
 
@@ -35,7 +36,7 @@ class PatientDetailScreen extends StatefulWidget {
 
 class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTickerProviderStateMixin {
   Key _key = UniqueKey();
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 4, vsync: this);
   WearableMetric? _openMetric;
   late String _name = widget.name;
 
@@ -81,7 +82,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
 
   void _openWearable(WearableMetric m) {
     setState(() => _openMetric = m);
-    _tabs.animateTo(1);
+    _tabs.animateTo(2);
   }
 
   Future<_Detail> _load() async {
@@ -160,8 +161,22 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
     );
   }
 
+  Future<void> _settings() async {
+    final nav = Navigator.of(context);
+    final r = await nav.push<String>(MaterialPageRoute(builder: (_) => PatientSettingsScreen(patientId: widget.patientId, name: _name)));
+    if (!mounted) return;
+    // archived: off the list, so back to it
+    if (r == 'archived') {
+      nav.pop();
+    } else {
+      _reload();
+    }
+  }
+
   void _menu(String v) {
     switch (v) {
+      case 'settings':
+        _settings();
       case 'rename':
         _rename();
       case 'deactivate':
@@ -189,6 +204,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
             PopupMenuButton<String>(
               onSelected: _menu,
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'settings', child: ListTile(leading: Icon(Icons.tune), title: Text('Patient settings'), subtitle: Text('Stable, archive, RADR measures'))),
                 PopupMenuItem(value: 'pdf', child: ListTile(leading: Icon(Icons.picture_as_pdf_outlined), title: Text('PDF report'))),
                 PopupMenuItem(value: 'excel', child: ListTile(leading: Icon(Icons.table_chart_outlined), title: Text('Export to Excel'))),
                 PopupMenuItem(value: 'share', child: ListTile(leading: Icon(Icons.group_add_outlined), title: Text('Share with a colleague'))),
@@ -198,12 +214,13 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
               ],
             ),
         ],
-        bottom: TabBar(controller: _tabs, tabs: const [Tab(text: 'Overview'), Tab(text: 'Wearable'), Tab(text: 'RADR')]),
+        bottom: TabBar(controller: _tabs, tabs: const [Tab(text: 'Overview'), Tab(text: 'Notes'), Tab(text: 'Wearable'), Tab(text: 'RADR')]),
       ),
       body: TabBarView(
         controller: _tabs,
         children: [
           _overview(),
+          NotesTab(patientId: widget.patientId, canWrite: own),
           WearableTab(patientId: widget.patientId, initialMetric: _openMetric),
           RadrTab(patientId: widget.patientId),
         ],
@@ -231,8 +248,26 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
               Text('Calls themselves ${d.summary.selfName} in the app', style: TextStyle(color: context.sc.ink2)),
               const SizedBox(height: 10),
             ],
+            if (d.summary.stable) ...[
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.spa_outlined),
+                  title: const Text('Marked as stable'),
+                  subtitle: const Text('At the bottom of your list, nothing highlighted. Change it in Patient settings.'),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             if (d.summary.flags.isNotEmpty) ...[
-              Wrap(spacing: 6, runSpacing: 6, children: [for (final f in d.summary.flags) FlagChip(f.label, f.severity)]),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final f in d.summary.flags)
+                  ReviewableFlag(flag: f, patientId: widget.patientId, canReview: !widget.shared, onReviewed: reload),
+              ]),
+              if (!widget.shared && d.summary.flags.any((f) => f.reviewable && f.reviewed == null))
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('Tap a flag to mark it as reviewed.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+                ),
               const SizedBox(height: 12),
             ],
             Card(

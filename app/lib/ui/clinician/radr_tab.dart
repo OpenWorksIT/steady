@@ -79,6 +79,10 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
               ),
             )
           else ...[
+            if (asList(r['exclusions']).isNotEmpty) ...[
+              _Exclusions(asList(r['exclusions']).map(asMap).toList()),
+              const SizedBox(height: 12),
+            ],
             _Latest(latest),
             const SizedBox(height: 12),
             Card(
@@ -86,7 +90,15 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const SectionHeader('Over time', trailing: '0 = usual for them, 4 = far from usual'),
-                  SizedBox(height: 190, child: _RadrChart(days: days, questionnaires: asList(r['questionnaires']).map(asMap).toList())),
+                  SizedBox(
+                    height: 190,
+                    child: _RadrChart(
+                      days: days,
+                      questionnaires: asList(r['questionnaires']).map(asMap).toList(),
+                      onDay: (i) => showRadrDay(context, days[i], r),
+                    ),
+                  ),
+                  Text('Tap a day to see what\'s behind it.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
                   const SizedBox(height: 6),
                   Wrap(spacing: 14, runSpacing: 4, children: [
                     _Key(color: context.cs.primary, label: 'Watch index'),
@@ -106,7 +118,7 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
                   Text('Each square is a day. Darker means further from this person\'s own normal.',
                       style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
                   const SizedBox(height: 8),
-                  _Heatmap(days: days),
+                  _Heatmap(days: days, onDay: (i) => showRadrDay(context, days[i], r)),
                 ]),
               ),
             ),
@@ -255,9 +267,24 @@ class _Key extends StatelessWidget {
 class _RadrChart extends StatelessWidget {
   final List<Map<String, dynamic>> days;
   final List<Map<String, dynamic>> questionnaires;
-  const _RadrChart({required this.days, required this.questionnaires});
+  final void Function(int index) onDay;
+  const _RadrChart({required this.days, required this.questionnaires, required this.onDay});
   @override
-  Widget build(BuildContext context) => CustomPaint(
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, c) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (t) {
+            // the same layout as _ChartPainter: 22 px on the left, 26 on the right
+            if (days.isEmpty) return;
+            final w = c.maxWidth - 22 - 26;
+            final i = days.length == 1 ? 0 : (((t.localPosition.dx - 22) / w) * (days.length - 1)).round().clamp(0, days.length - 1);
+            onDay(i);
+          },
+          child: _paint(context),
+        ),
+      );
+
+  Widget _paint(BuildContext context) => CustomPaint(
         size: Size.infinite,
         painter: _ChartPainter(
           days: days,
@@ -365,7 +392,8 @@ class _ChartPainter extends CustomPainter {
 /// Four rows (domains) by days, shaded by distance from usual.
 class _Heatmap extends StatelessWidget {
   final List<Map<String, dynamic>> days;
-  const _Heatmap({required this.days});
+  final void Function(int index) onDay;
+  const _Heatmap({required this.days, required this.onDay});
   @override
   Widget build(BuildContext context) {
     final base = context.cs.primary;
@@ -379,7 +407,7 @@ class _Heatmap extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 3),
             child: Row(children: [
               SizedBox(width: labelW, child: Text(_domainNames[k]!, style: context.tt.bodySmall)),
-              for (final d in days)
+              for (final (i, d) in days.indexed)
                 Builder(builder: (context) {
                   final v = _d(asMap(d['domains'])[k]);
                   final color = v == null
@@ -387,9 +415,12 @@ class _Heatmap extends StatelessWidget {
                       : v >= 1.5
                           ? Color.lerp(hot.withValues(alpha: 0.45), hot, ((v - 1.5) / 2.5).clamp(0, 1))!
                           : base.withValues(alpha: 0.08 + 0.3 * (v / 1.5));
-                  return Tooltip(
-                    message: '${d['day']}: ${v == null ? 'no data' : v.toStringAsFixed(1)}',
-                    child: Container(width: cell - 1, height: 14, margin: const EdgeInsets.only(right: 1), color: color),
+                  return GestureDetector(
+                    onTap: () => onDay(i),
+                    child: Tooltip(
+                      message: '${d['day']}: ${v == null ? 'no data' : v.toStringAsFixed(1)}',
+                      child: Container(width: cell - 1, height: 14, margin: const EdgeInsets.only(right: 1), color: color),
+                    ),
                   );
                 }),
             ]),
@@ -479,3 +510,194 @@ class _Method extends StatelessWidget {
         ],
       );
 }
+
+/// Measures switched off for this patient, shown wherever RADR is.
+class _Exclusions extends StatelessWidget {
+  final List<Map<String, dynamic>> list;
+  const _Exclusions(this.list);
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const SectionHeader('Not counted for this patient'),
+            for (final x in list)
+              Text('${_domainNames['${x['domain']}'] ?? x['domain']}: since ${'${x['since'] ?? ''}'.split('T').first}, '
+                  'by ${x['by'] ?? ''}. ${x['reason'] ?? ''}', style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
+            const SizedBox(height: 4),
+            Text('Still collected and shown, just not in the watch index or the count of domains. Change it in Patient settings.',
+                style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+          ]),
+        ),
+      );
+}
+
+/* ---------------- one day, explained ---------------- */
+
+const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+String radrDayLabel(String day) {
+  final d = DateTime.tryParse(day);
+  if (d == null) return day;
+  return '${_weekdays[d.weekday - 1]} ${d.day} ${_months[d.month - 1]}';
+}
+
+String _hm(double min) {
+  final m = min.round();
+  return '${m ~/ 60} h ${(m % 60).toString().padLeft(2, '0')}';
+}
+
+String _clock(double min) {
+  final m = ((min.round() % 1440) + 1440) % 1440;
+  return '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
+}
+
+/// One measure on one day: its 3-day average, the person's usual and how far from it.
+class _Measure {
+  final String name;
+  final String Function(double) fmt;
+  final double? value, usual, z;
+  _Measure(this.name, this.fmt, Map<String, dynamic> f)
+      : value = _d(f['value']),
+        usual = _d(f['usual']),
+        z = _d(f['z']);
+  bool get has => value != null;
+  String get valueText => value == null ? 'no data' : fmt(value!);
+  String get usualText => usual == null ? 'not enough history' : fmt(usual!);
+  String get zText => z == null ? '-' : '${z! >= 0 ? '+' : ''}${z!.toStringAsFixed(1)}';
+}
+
+/// Plain words for what happened in each domain on a day, then the numbers.
+List<String> radrDayWords(Map<String, dynamic> day, Map<String, dynamic> r) {
+  final f = asMap(day['features']);
+  final dom = asMap(day['domains']);
+  final excluded = {for (final x in asList(r['exclusions']).map(asMap)) '${x['domain']}': x};
+  _Measure m(String k, String name, String Function(double) fmt) => _Measure(name, fmt, asMap(f[k]));
+  String dir(double? z, String up, String down) => z == null ? '' : (z >= 0 ? up : down);
+  final out = <String>[];
+  final conv = (day['convergent'] as num?)?.toInt() ?? 0;
+  final watch = _d(day['watch']);
+  if (watch == null) {
+    out.add('Not rated: RADR needs about three weeks of earlier nights to compare with, and at least two areas with data.');
+  } else {
+    final strong = _domains.where((k) => (_d(dom[k]) ?? 0) >= 1.5).map((k) => _domainNames[k]!.toLowerCase()).toList();
+    out.add('$conv of 4 areas were away from this person\'s usual (1.5 or more)${strong.isEmpty ? '' : ': ${strong.join(', ')}'}. '
+        'The watch index, the average of the areas, was ${watch.toStringAsFixed(1)} out of 4.');
+  }
+  for (final k in _domains) {
+    final score = _d(dom[k]);
+    final name = _domainNames[k]!;
+    if (excluded[k] != null) {
+      out.add('$name: not counted for this patient (${excluded[k]!['reason'] ?? 'switched off'}).');
+      continue;
+    }
+    switch (k) {
+      case 'sleep':
+        final a = m('sleep_min', 'Sleep', _hm), v = m('sleep_var', 'Variability', (x) => '${x.round()} min');
+        if (!a.has && !v.has) {
+          out.add('Sleep: no data.');
+          break;
+        }
+        final parts = <String>[];
+        if (a.has) parts.add('averaged ${a.valueText} over the last 3 nights (usually ${a.usualText})');
+        if (v.has) parts.add('falling asleep and waking varied by ${v.valueText} night to night (usually ${v.usualText})');
+        out.add('Sleep ${parts.join(', and ')}. Score ${score?.toStringAsFixed(1) ?? '-'}: the larger of how far '
+            'sleep length was from usual, either way, and how much more irregular it was.');
+      case 'circadian':
+        final mp = m('midpoint', 'Middle of sleep', _clock);
+        if (!mp.has) {
+          out.add('Body clock: no data.');
+          break;
+        }
+        final shift = mp.usual == null ? '' : ' (${_hm((mp.value! - mp.usual!).abs())} ${dir(mp.value! - mp.usual!, 'later', 'earlier')})';
+        out.add('Body clock: the middle of the night\'s sleep was at ${mp.valueText}, usually ${mp.usualText}$shift. '
+            'Score ${score?.toStringAsFixed(1) ?? '-'}: how far it moved, either way.');
+      case 'activity':
+        final st = m('steps', 'Steps', (x) => '${x.round()} steps');
+        if (!st.has) {
+          out.add('Activity: no data.');
+          break;
+        }
+        out.add('Activity: ${st.valueText} a day over the last 3 days, usually ${st.usualText}. '
+            'Score ${score?.toStringAsFixed(1) ?? '-'}: only fewer steps than usual count.');
+      case 'cardiac':
+        final h = m('rhr', 'Resting heart rate', (x) => '${x.toStringAsFixed(0)} bpm');
+        if (!h.has) {
+          out.add('Heart: no data.');
+          break;
+        }
+        out.add('Heart: resting heart rate ${h.valueText} over the last 3 days, usually ${h.usualText}. '
+            'Score ${score?.toStringAsFixed(1) ?? '-'}: only a higher resting heart rate than usual counts.');
+    }
+  }
+  final self = _d(day['self']);
+  final moods = [
+    m('mood', 'Mood', (x) => x.toStringAsFixed(1)),
+    m('anxiety', 'Anxiety', (x) => x.toStringAsFixed(1)),
+    m('energy', 'Energy', (x) => x.toStringAsFixed(1)),
+    m('sleepq', 'Sleep (their rating)', (x) => x.toStringAsFixed(1)),
+  ].where((x) => x.has).toList();
+  if (moods.isEmpty) {
+    out.add('Check-ins: none in the last 3 days.');
+  } else {
+    out.add('Check-ins (1 to 5, last 3 days): ${moods.map((x) => '${x.name.toLowerCase()} ${x.valueText} (usually ${x.usualText})').join(', ')}. '
+        'Check-in score ${self?.toStringAsFixed(1) ?? '-'}: lower mood, energy and sleep, and more anxiety than usual.');
+  }
+  return out;
+}
+
+Future<void> showRadrDay(BuildContext context, Map<String, dynamic> day, Map<String, dynamic> r) => showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (c) {
+        final f = asMap(day['features']);
+        final rows = [
+          _Measure('Sleep length', _hm, asMap(f['sleep_min'])),
+          _Measure('Sleep irregularity', (x) => '${x.round()} min', asMap(f['sleep_var'])),
+          _Measure('Middle of sleep', _clock, asMap(f['midpoint'])),
+          _Measure('Steps', (x) => '${x.round()}', asMap(f['steps'])),
+          _Measure('Resting heart rate', (x) => '${x.toStringAsFixed(0)} bpm', asMap(f['rhr'])),
+          _Measure('Mood', (x) => x.toStringAsFixed(1), asMap(f['mood'])),
+          _Measure('Anxiety', (x) => x.toStringAsFixed(1), asMap(f['anxiety'])),
+          _Measure('Energy', (x) => x.toStringAsFixed(1), asMap(f['energy'])),
+          _Measure('Sleep (rating)', (x) => x.toStringAsFixed(1), asMap(f['sleepq'])),
+        ].where((x) => x.has).toList();
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.75,
+            maxChildSize: 0.95,
+            builder: (c, scroll) => ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(20, 0, 20, 24), children: [
+              Text(radrDayLabel('${day['day']}'), style: c.tt.titleLarge),
+              Text('RADR ${r['version'] ?? ''} · research view, not a risk score', style: c.tt.bodySmall?.copyWith(color: c.sc.ink3)),
+              const SizedBox(height: 12),
+              for (final line in radrDayWords(day, r))
+                Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(line)),
+              const SizedBox(height: 8),
+              const SectionHeader('The numbers'),
+              Text('Each value is a 3-day average. "Usual" is the middle of this person\'s 4 weeks ending a week earlier. '
+                  'Distance is how many usual-sized steps away (a robust z-score); each area counts it in one direction only, up to 4.',
+                  style: c.tt.bodySmall?.copyWith(color: c.sc.ink3)),
+              const SizedBox(height: 8),
+              Table(
+                columnWidths: const {0: FlexColumnWidth(1.6), 1: FlexColumnWidth(1.2), 2: FlexColumnWidth(1.2), 3: FlexColumnWidth(0.8)},
+                children: [
+                  TableRow(children: [
+                    for (final h in ['Measure', 'This day', 'Usual', 'Distance']) Text(h, style: c.tt.labelMedium),
+                  ]),
+                  for (final x in rows)
+                    TableRow(children: [
+                      Padding(padding: const EdgeInsets.only(top: 6), child: Text(x.name)),
+                      Padding(padding: const EdgeInsets.only(top: 6), child: Text(x.valueText)),
+                      Padding(padding: const EdgeInsets.only(top: 6), child: Text(x.usualText)),
+                      Padding(padding: const EdgeInsets.only(top: 6), child: Text(x.zText)),
+                    ]),
+                ],
+              ),
+            ]),
+          ),
+        );
+      },
+    );

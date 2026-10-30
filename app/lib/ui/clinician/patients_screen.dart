@@ -122,7 +122,8 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
                   ),
                 ),
               const SizedBox(height: 6),
-              Text('Flags help you decide who to look at first. They are review aids, not a diagnosis or a risk score.',
+              Text('Patients needing attention come first: unreviewed flags and RADR, then the most recent. Flags and RADR '
+                  'are review aids, not a diagnosis or a risk score.',
                   style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
             ],
           );
@@ -139,6 +140,10 @@ class _PatientRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final last = p.lastCheckinAt == null ? 'No check-ins yet' : 'Last check-in ${relTime(p.lastCheckinAt)} · mood ${p.lastMood}/5';
+    final open = p.flags.where((f) => f.reviewed == null).toList();
+    final reviewed = p.flags.length - open.length;
+    final radr = p.radr;
+    final showRadr = radr != null && radr.level != 'none' && !p.stable;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -151,8 +156,20 @@ class _PatientRow extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(p.name, style: context.tt.titleMedium),
+                  Row(children: [
+                    Flexible(child: Text(p.name, style: context.tt.titleMedium, overflow: TextOverflow.ellipsis)),
+                    if (p.stable) ...[const SizedBox(width: 8), const FlagChip('Stable', Severity.none)],
+                  ]),
                   Text(last, style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
+                  if (p.lastNote != null)
+                    Row(children: [
+                      Icon(Icons.sticky_note_2_outlined, size: 13, color: context.sc.ink3),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(p.lastNote!.text,
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
+                      ),
+                    ]),
                   if (p.shared)
                     Row(children: [
                       Icon(Icons.visibility_outlined, size: 13, color: context.sc.ink3),
@@ -169,11 +186,21 @@ class _PatientRow extends StatelessWidget {
               ),
               Sparkline(p.mood),
             ]),
-            if (p.flags.isNotEmpty) ...[
+            if (open.isNotEmpty || reviewed > 0 || showRadr) ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
-                child: Wrap(spacing: 6, runSpacing: 6, children: [for (final f in p.flags.take(3)) FlagChip(f.label, f.severity)]),
+                child: Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  if (showRadr) FlagChip('RADR: ${radr.convergent} of 4 away from usual', severityOf(radr.level)),
+                  // a stable patient's flags are still listed, but not highlighted
+                  for (final f in open.take(3)) FlagChip(f.label, p.stable ? Severity.none : f.severity),
+                  if (reviewed > 0)
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.check_circle_outline, size: 14, color: context.sc.calm),
+                      const SizedBox(width: 3),
+                      Text('$reviewed reviewed', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+                    ]),
+                ]),
               ),
             ],
           ]),

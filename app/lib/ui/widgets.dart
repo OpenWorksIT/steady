@@ -232,26 +232,35 @@ class _LoaderState<T> extends State<Loader<T>> {
 }
 
 /// Mood/anxiety line chart over 14 days, 1-5 scale.
+/// Two daily series on the 1 to 5 scale (by default mood, and anxiety dashed), oldest first.
 class TrendChart extends StatelessWidget {
   final List<double?> mood, anxiety;
-  const TrendChart({required this.mood, required this.anxiety, super.key});
+  final String firstLabel, secondLabel, startLabel;
+  const TrendChart({
+    required this.mood,
+    required this.anxiety,
+    this.firstLabel = 'Mood',
+    this.secondLabel = 'Anxiety (higher = more anxious)',
+    this.startLabel = '14 days ago',
+    super.key,
+  });
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Semantics(
-        label: 'Mood and anxiety over the last 14 days',
+        label: '$firstLabel and $secondLabel from $startLabel to today',
         child: SizedBox(
           height: 150,
           width: double.infinity,
           child: CustomPaint(
-            painter: _TrendPainter(mood, anxiety, context.cs.primary, context.sc.warn, context.sc.line, context.sc.ink3),
+            painter: _TrendPainter(mood, anxiety, context.cs.primary, context.sc.warn, context.sc.line, context.sc.ink3, startLabel),
           ),
         ),
       ),
       const SizedBox(height: 6),
       Wrap(spacing: 14, children: [
-        _legend(context, context.cs.primary, 'Mood'),
-        _legend(context, context.sc.warn, 'Anxiety (higher = more anxious)'),
+        _legend(context, context.cs.primary, firstLabel),
+        _legend(context, context.sc.warn, secondLabel),
       ]),
     ]);
   }
@@ -266,7 +275,8 @@ class TrendChart extends StatelessWidget {
 class _TrendPainter extends CustomPainter {
   final List<double?> mood, anxiety;
   final Color moodC, anxC, grid, label;
-  _TrendPainter(this.mood, this.anxiety, this.moodC, this.anxC, this.grid, this.label);
+  final String startLabel;
+  _TrendPainter(this.mood, this.anxiety, this.moodC, this.anxC, this.grid, this.label, this.startLabel);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -282,7 +292,7 @@ class _TrendPainter extends CustomPainter {
       canvas.drawLine(Offset(left, y(v.toDouble())), Offset(size.width - right, y(v.toDouble())), gp);
       _text(canvas, '$v', Offset(left - 14, y(v.toDouble()) - 6));
     }
-    _text(canvas, '14 days ago', Offset(left, size.height - 14));
+    _text(canvas, startLabel, Offset(left, size.height - 14));
     _text(canvas, 'Today', Offset(size.width - right - 30, size.height - 14));
     _series(canvas, anxiety, anxC, x, y, dashed: true);
     _series(canvas, mood, moodC, x, y);
@@ -328,7 +338,8 @@ class _TrendPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _TrendPainter old) => old.mood != mood || old.anxiety != anxiety || old.moodC != moodC;
+  bool shouldRepaint(covariant _TrendPainter old) =>
+      old.mood != mood || old.anxiety != anxiety || old.moodC != moodC || old.startLabel != startLabel;
 }
 
 class Sparkline extends StatelessWidget {

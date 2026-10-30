@@ -16,6 +16,7 @@ import 'calm.dart';
 import 'theme.dart';
 import 'widgets.dart';
 import 'clinician/feedback_inbox_screen.dart';
+import 'clinician/patient_care.dart';
 
 Future<void> showSettingsSheet(BuildContext context) => showModalBottomSheet(
       context: context,
@@ -47,7 +48,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     final state = AppScope.of(context);
     final android = !kIsWeb && _isAndroid;
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(state.api.myName, style: context.tt.titleLarge),
@@ -105,6 +106,22 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             ),
           ],
           if (state.isPatient) const _CareTeam(),
+          if (state.isClinician) ...[
+            const SizedBox(height: 12),
+            Text('Your patients', style: context.tt.titleMedium),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: const Text('Archived patients'),
+              subtitle: const Text('People you\'re no longer seeing; bring someone back'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const ArchivedPatientsScreen()));
+              },
+            ),
+          ],
           const SizedBox(height: 12),
           Text('Your account', style: context.tt.titleMedium),
           ListTile(

@@ -5,6 +5,7 @@
 // This program is free software: you can redistribute it and/or modify it under the terms
 // of the GNU Affero General Public License as published by the Free Software Foundation,
 // either version 3 of the License, or (at your option) any later version.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
@@ -52,7 +53,7 @@ class SteadyApp extends StatelessWidget {
         navigatorKey: navigatorKey,
         // screens opened go into the feedback trail; staff get the Feedback button
         navigatorObservers: [TrailObserver()],
-        builder: (context, child) => FeedbackLayer(navigatorKey: navigatorKey, child: child ?? const SizedBox()),
+        builder: (context, child) => _SystemBarSpace(child: FeedbackLayer(navigatorKey: navigatorKey, child: child ?? const SizedBox())),
         home: const UpdateNudge(child: RootGate()),
       );
   }
@@ -74,5 +75,21 @@ class RootGate extends StatelessWidget {
     if (state.isAdmin) return const AdminShell();
     if (state.isPatient) return const PatientGate();
     return const SignInScreen(message: "This account can't use the app. Ask the practice to check its role.");
+  }
+}
+
+/// On Android the system's navigation buttons (or gesture bar) get their own strip at the bottom,
+/// so nothing in the app sits underneath them: on some phones (Samsung, three-button navigation)
+/// they covered the crisis numbers at the bottom of patient screens.
+class _SystemBarSpace extends StatelessWidget {
+  final Widget child;
+  const _SystemBarSpace({required this.child});
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return child;
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(top: false, left: false, right: false, child: child),
+    );
   }
 }

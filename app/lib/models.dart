@@ -245,11 +245,48 @@ class Instrument {
 
 /* ------------------------------------------------------------------ results */
 
+/// A review flag. [key] is stable, so the psychologist can mark it as reviewed; [reviewed] is
+/// who did and when (null if not yet).
 class Flag {
-  final String label;
+  final String label, key;
   final Severity severity;
-  Flag(this.label, this.severity);
-  factory Flag.fromJson(Map<String, dynamic> j) => Flag('${j['label']}', severityOf(j['severity']));
+  final DateTime? at;
+  final FlagReview? reviewed;
+  Flag(this.label, this.severity, {this.key = '', this.at, this.reviewed});
+  factory Flag.fromJson(Map<String, dynamic> j) => Flag(
+        '${j['label']}',
+        severityOf(j['severity']),
+        key: '${j['key'] ?? ''}',
+        at: fromMs(j['at']),
+        reviewed: j['reviewed'] is Map ? FlagReview.fromJson(asMap(j['reviewed'])) : null,
+      );
+
+  /// Flags that can be marked as reviewed (questionnaire results, a run of low check-ins).
+  bool get reviewable => key.startsWith('a:') || key.startsWith('lowmood:');
+}
+
+class FlagReview {
+  final String by, note;
+  final DateTime? at;
+  FlagReview(this.by, this.at, this.note);
+  factory FlagReview.fromJson(Map<String, dynamic> j) => FlagReview('${j['by'] ?? ''}', fromMs(j['at']), '${j['note'] ?? ''}');
+}
+
+/// A psychologist's short dated note on a patient (never shown to the patient).
+class Note {
+  final String id, text, by;
+  final DateTime? at;
+  Note(this.id, this.text, this.by, this.at);
+  factory Note.fromJson(Map<String, dynamic> j) => Note('${j['id'] ?? ''}', '${j['text'] ?? ''}', '${j['by'] ?? ''}', fromMs(j['at']));
+}
+
+/// The patient's latest RADR day, as kept for the list: [level] only orders the list.
+class RadrBrief {
+  final String day, level;
+  final int convergent;
+  RadrBrief(this.day, this.level, this.convergent);
+  factory RadrBrief.fromJson(Map<String, dynamic> j) =>
+      RadrBrief('${j['day'] ?? ''}', '${j['level'] ?? 'none'}', (j['convergent'] as num?)?.toInt() ?? 0);
 }
 
 class Subscale {
@@ -432,7 +469,15 @@ class PatientSummary {
   /// A colleague's patient, shared with this psychologist to read; [owner] is that colleague.
   final bool shared;
   final String owner;
+
+  /// '' (seeing them), 'stable' (doing well) or 'archived' (no longer seeing them).
+  final String careStatus;
+  final RadrBrief? radr;
+  final Note? lastNote;
   PatientSummary({
+    this.careStatus = '',
+    this.radr,
+    this.lastNote,
     required this.id,
     required this.name,
     this.selfName = '',
@@ -465,8 +510,13 @@ class PatientSummary {
       wearable: WearableSummary.fromJson(asMap(j['wearable'])),
       shared: j['shared'] == true,
       owner: '${j['owner'] ?? ''}',
+      careStatus: '${j['careStatus'] ?? ''}',
+      radr: j['radr'] is Map ? RadrBrief.fromJson(asMap(j['radr'])) : null,
+      lastNote: j['lastNote'] is Map ? Note.fromJson(asMap(j['lastNote'])) : null,
     );
   }
+
+  bool get stable => careStatus == 'stable';
 
   String get initials {
     final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();

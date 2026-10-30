@@ -527,6 +527,36 @@ class Api {
   Future<void> share(String patientId, String clinicianId, bool shared) =>
       pb.send('/api/steady/patients/$patientId/share', method: 'POST', body: {'clinician': clinicianId, 'shared': shared});
 
+  /* ---------------- looking after a patient ---------------- */
+
+  Future<List<Note>> patientNotes(String patientId) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/notes');
+    return asList(res['notes']).map((n) => Note.fromJson(asMap(n))).toList();
+  }
+
+  Future<void> addNote(String patientId, String text) =>
+      pb.send('/api/steady/patients/$patientId/notes', method: 'POST', body: {'text': text});
+
+  /// status: '' (seeing them), 'stable' or 'archived'.
+  Future<void> setCareStatus(String patientId, String status) =>
+      pb.send('/api/steady/patients/$patientId/care', method: 'POST', body: {'status': status});
+
+  Future<List<({String id, String name, DateTime? archivedAt})>> archivedPatients() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/patients-archived');
+    return asList(res['patients']).map((raw) {
+      final j = asMap(raw);
+      return (id: '${j['id']}', name: '${j['name'] ?? ''}', archivedAt: fromMs(j['archivedAt']));
+    }).toList();
+  }
+
+  /// Switch a RADR domain (sleep, circadian, activity, cardiac) off or on for one patient.
+  Future<void> setRadrExclusion(String patientId, String domain, bool excluded, {String reason = ''}) =>
+      pb.send('/api/steady/patients/$patientId/radr-exclusions',
+          method: 'POST', body: {'domain': domain, 'excluded': excluded, 'reason': reason});
+
+  Future<void> reviewFlag(String patientId, Flag flag, String note) => pb.send('/api/steady/patients/$patientId/flags/review',
+      method: 'POST', body: {'key': flag.key, 'label': flag.label, 'note': note});
+
   /// RADR, the research view: daily domain scores against the patient's own normal (radr_tab.dart).
   Future<Map<String, dynamic>> radr(String patientId, {int days = 56}) =>
       pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/radr', query: {'days': '$days'});
