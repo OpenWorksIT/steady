@@ -197,7 +197,9 @@ token or a compromised build can't reach it:
    From then on `update.sh` and the app's "Check for updates" consider only release tags
    (`v1.0.0`, ...) signed by that key, with the matching signed web app (`web-v1.0.0`), and refuse
    a web app holding links or special files. Without the file, a server follows the `main` and
-   `web-dist` branches unsigned (test servers only; `audit-server.sh` flags it).
+   `web-dist` branches unsigned (test servers only; `audit-server.sh` flags it), or, with
+   `STEADY_TRACK=v1` in `.env`, the `v1` branch and the web app CI built from it (`web-dist-v1`),
+   to try a release on a test server before it's signed.
 2. To release, on OpenWorks' own computer, once CI's "Test builds" has run for that commit:
    `deploy/release.sh 1.0.0`. It checks the web app was built from the same commit, shows what
    changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >

@@ -138,8 +138,8 @@ testers uninstall once, install it, and sign in again. After that, updates insta
 
 ## Updates for testers
 
-Each test build is published to the `web-dist` branch with the web app, and `deploy/update.sh`
-puts it on the server: `https://<server>/download/steady.apk`. Invite QR codes open
+Each test build is published to the `web-dist` branch with the web app (builds from `v1` go to
+`web-dist-v1`, for servers with `STEADY_TRACK=v1`), and `deploy/update.sh` puts it on the server: `https://<server>/download/steady.apk`. Invite QR codes open
 `/join?invite=<code>`: on an Android phone without the app, that page offers the download and
 the steps; on an iPhone it opens the web app with the code filled in. A copy of the app that is
 older than the server's build (and signed with the same permanent key) offers the download

@@ -113,8 +113,14 @@ check() {
     latest="$(git -C "$REPO" rev-parse "refs/tags/$tag^{commit}" 2>/dev/null || echo "$cur")"
     webref="refs/tags/web-$tag"
   else
-    git -C "$REPO" fetch -q origin main web-dist 2>"$WORK/.fetch.err" || err="$(tail -c 400 "$WORK/.fetch.err")"
-    latest="$(git -C "$REPO" rev-parse origin/main 2>/dev/null || echo "$cur")"
+    # the branch update.sh follows (STEADY_TRACK in .env, default main)
+    local track
+    track="$(sed -n 's/^STEADY_TRACK=//p' "$DEPLOY/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' \r')"
+    track="${track:-main}"
+    [[ "$track" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || track=main
+    if [ "$track" = main ]; then webref=origin/web-dist; else webref="origin/web-dist-$track"; fi
+    git -C "$REPO" fetch -q origin "+refs/heads/$track:refs/remotes/origin/$track" "+refs/heads/${webref#origin/}:refs/remotes/$webref" 2>"$WORK/.fetch.err" || err="$(tail -c 400 "$WORK/.fetch.err")"
+    latest="$(git -C "$REPO" rev-parse "origin/$track" 2>/dev/null || echo "$cur")"
   fi
   jq -n \
     --arg at "$(now)" --arg err "$err" \

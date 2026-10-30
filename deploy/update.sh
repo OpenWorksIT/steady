@@ -7,7 +7,8 @@
 # app only from the matching signed web-v1.0.0 tag. A push to GitHub, a stolen token or a
 # compromised CI run can then not reach a practice's server. OpenWorks signs releases with
 # deploy/release.sh. Without the file it follows the main and web-dist branches, as test
-# servers do.
+# servers do (STEADY_TRACK=v1 in .env: the v1 and web-dist-v1 branches instead, for a server
+# trying a release before it's signed).
 #
 # The web app's files are checked before use: no links, nothing outside its folder.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -36,14 +37,22 @@ main() {
     git -C "$repo" checkout -q --detach "refs/tags/$code"
     [ -d web.new ] && swap_web
   else
-    echo "Pulling the latest code (unsigned: test servers only; see the top of this file)..."
-    git -C "$repo" checkout -q main 2>/dev/null || true
-    git -C "$repo" pull -q --ff-only
-    if git -C "$repo" fetch -q origin web-dist 2>/dev/null; then
-      unpack_web origin/web-dist
+    local track webbr
+    track="$(track_branch)" || exit 1
+    webbr="$(web_branch "$track")"
+    echo "Pulling the latest code from $track (unsigned: test servers only; see the top of this file)..."
+    git -C "$repo" fetch -q origin "+refs/heads/$track:refs/remotes/origin/$track"
+    if git -C "$repo" show-ref -q --verify "refs/heads/$track"; then
+      git -C "$repo" checkout -q "$track"
+    else
+      git -C "$repo" checkout -q -b "$track" "origin/$track"
+    fi
+    git -C "$repo" merge -q --ff-only "origin/$track"
+    if git -C "$repo" fetch -q origin "+refs/heads/$webbr:refs/remotes/origin/$webbr" 2>/dev/null; then
+      unpack_web "origin/$webbr"
       swap_web
     else
-      echo "  No web-dist branch yet; keeping the current web app." >&2
+      echo "  No $webbr branch yet; keeping the current web app." >&2
     fi
   fi
   mkdir -p web && chmod 755 web
@@ -72,6 +81,20 @@ main() {
   done
   echo "The server didn't come up. Check: docker compose logs pocketbase" >&2
   exit 1
+}
+
+# Unsigned servers: the branch to follow, STEADY_TRACK in .env (default main).
+track_branch() {
+  local t
+  t="$(sed -n 's/^STEADY_TRACK=//p' .env | tail -1 | tr -d '"'"'"' \r')"
+  t="${t:-main}"
+  [[ "$t" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "STEADY_TRACK in .env isn't a branch name: $t" >&2; return 1; }
+  echo "$t"
+}
+
+# The web app CI built from that branch: web-dist for main, web-dist-<branch> otherwise.
+web_branch() {
+  if [ "$1" = main ]; then echo web-dist; else echo "web-dist-$1"; fi
 }
 
 # git verify-tag against the allowed signers (SSH signatures).

@@ -1,10 +1,12 @@
 # Builds an installable Android APK and the web app, publishes both to the web-dist branch
 # (servers serve them; see deploy/update.sh) and to the "test-build" pre-release.
+# From the v1 branch: to web-dist-v1 only (servers with STEADY_TRACK=v1), so the beta's web-dist,
+# the pre-release and the previews stay as main built them.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: Test builds
 on:
   push:
-    branches: [main]
+    branches: [main, v1]
     paths: ["app/**", ".github/workflows/test-builds.yml"]
   workflow_dispatch:
 
@@ -12,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: test-builds
+  group: test-builds-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -86,7 +88,10 @@ jobs:
       - name: publish the web app and the APK to the web-dist branch
         # servers fetch it with their read-only deploy key (deploy/update.sh) and offer the APK
         # at /download/steady.apk and on the invite page (/join)
+        env:
+          REF: ${{ github.ref_name }}
         run: |
+          if [ "$REF" = main ]; then dist=web-dist; else dist="web-dist-$REF"; fi
           mkdir -p app/build/web/download
           cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/download/steady.apk
           printf '{"build":"%s","date":"%s","signing":"%s"}\n' "$STEADY_BUILD" "$STEADY_BUILD_DATE" "$STEADY_SIGNING" > app/build/web/download/version.json
@@ -94,10 +99,11 @@ jobs:
           git init -q -b web-dist
           git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" add -A
           git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" commit -qm "Web app built from ${GITHUB_SHA::7}"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" web-dist
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$dist"
           rm -rf .git
 
       - name: report previews
+        if: github.ref_name == 'main'
         # a PDF report and an Excel export for a fictional demo patient, on the previews branch,
         # so the layout can be checked without a phone
         run: |
@@ -110,6 +116,7 @@ jobs:
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" previews
 
       - name: publish pre-release
+        if: github.ref_name == 'main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
