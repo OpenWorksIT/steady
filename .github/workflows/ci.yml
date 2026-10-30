@@ -47,6 +47,13 @@ jobs:
           set -o pipefail
           python3 deploy/test/security.py 2>&1 | tee security.txt || { echo "::error title=security tests::$(grep -A1 '^FAIL' security.txt | sed 's/%/%25/g' | tail -c 30000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
           tail -1 security.txt
+      - name: penetration tests
+        # every route as every kind of account, PocketBase's own API (batch, realtime, filters,
+        # expand), forged tokens, oversized and malformed input, account enumeration
+        run: |
+          set -o pipefail
+          python3 deploy/test/pentest.py 2>&1 | tee pentest.txt || { echo "::error title=penetration tests::$(grep -A1 '^FAIL' pentest.txt | sed 's/%/%25/g' | tail -c 30000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          tail -1 pentest.txt
       - name: smoke test
         run: |
           set -o pipefail
