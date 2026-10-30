@@ -841,7 +841,11 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("POST", f"/api/steady/patients/{a}/remind-watch", sup)
     check(O, "OpenWorks can't message patients", s in (403, 404), r)
     s, r = call("POST", f"/api/steady/people/{S4.id}/reset-password", sup, {"twoStep": True})
-    check(O, "OpenWorks does a full reset after a lost phone", s == 200 and r.get("temporaryPassword"), r)
+    s2, cfg = call("GET", "/api/steady/config")
+    if cfg.get("deviceLink"):
+        check(O, "OpenWorks does a full reset after a lost phone", s == 200 and r.get("temporaryPassword"), r)
+    else:
+        check(O, "without email for device codes, a full reset is refused (it would hand over the account)", s == 400, r)
     s, r = call("POST", f"/api/steady/admin/people/{S4.id}/active", sup, {"active": True})
     check(O, "OpenWorks restores a stopped account", s == 200 and r.get("active") is True, r)
     s, r = call("POST", f"/api/steady/admin/people/{MX.id}/active", sup, {"active": True})

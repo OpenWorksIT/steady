@@ -116,8 +116,12 @@ sign in only from devices they've linked: the first sign-in on a new phone or br
 staff, exports, the audit report, removing devices) ask them to confirm it's them first: the
 phone's screen lock, or an authenticator code on the web. A staff member whose phone is lost
 locks their own account from the sign-in screen on any device ("Lost your phone? Lock your
-account"); OpenWorks support unlocks it with `accounts.sh set <email> active on` or in the app,
-after checking it's really them.
+account"). After checking it's really them (for example by phoning the number on file),
+OpenWorks support brings them back with a **full reset** in the app (Staff > Reset password,
+"also reset two-step sign-in"): it unlocks the account, clears the authenticator from the lost
+phone and gives a temporary password, and the new phone is linked with a code to their email.
+Just restoring access ("Restore access", or `accounts.sh set <email> active on`) is for an
+account stopped by mistake: whoever has the lost phone may also know the password.
 
 ### 5a. Email for staff sign-in
 
@@ -177,11 +181,30 @@ age -d -i backup-key.txt steady-<stamp>.tar.age | tar -x -C /tmp/restore
 ## 8. Updating
 
 ```bash
-cd /opt/steady && git pull
-cd deploy && docker compose up -d --build
+sudo /opt/steady/deploy/update.sh
 ```
 
-Migrations run automatically on start. Take a backup first.
+Migrations run automatically on start; the app's "Update now" (below) takes a copy of the data
+first.
+
+### Signed releases (live servers)
+
+A practice's server installs only releases OpenWorks has signed, so a push to GitHub, a stolen
+token or a compromised build can't reach it:
+
+1. Once, on each live server: put OpenWorks' signing key in `deploy/secrets/allowed_signers`,
+   one line: `tiaan@tedvdm.com namespaces="git" ssh-ed25519 AAAA...` (the `.pub` file's contents).
+   From then on `update.sh` and the app's "Check for updates" consider only release tags
+   (`v1.0.0`, ...) signed by that key, with the matching signed web app (`web-v1.0.0`), and refuse
+   a web app holding links or special files. Without the file, a server follows the `main` and
+   `web-dist` branches unsigned (test servers only; `audit-server.sh` flags it).
+2. To release, on OpenWorks' own computer, once CI's "Test builds" has run for that commit:
+   `deploy/release.sh 1.0.0`. It checks the web app was built from the same commit, shows what
+   changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >
+   Server and updates and install it at the next "Update now" (or `update.sh`).
+
+One-time setup for signing: `git config --global gpg.format ssh` and
+`git config --global user.signingkey ~/.ssh/id_ed25519.pub`.
 
 ## Sharing a server (e.g. vps1 with Shap)
 
@@ -245,8 +268,13 @@ sudo /opt/steady/deploy/ctl/install.sh
 
 The master clinician and OpenWorks support can use it straight away (the practice admin sees server health only); for another psychologist, `sudo ./accounts.sh set <email> server-admin on`. The app
 only leaves a request; `deploy/ctl/steady-ctl.sh` does the work as root (outside the app), saves a
-copy of the data to `/var/backups/steady/` first (the last 5 are kept, root only) and then runs
-`update.sh`.
+copy of the data to `/var/backups/steady/` first (the last 5 are kept, root only, encrypted for
+the backup key when `secrets/backup.age.pub` exists) and then runs `update.sh`.
+
+The PocketBase container can write only `/var/lib/steady/ctl/in` (its request) and reads
+`/var/lib/steady/ctl/out` read-only; root keeps its logs in `/var/lib/steady/ctl/work`. Root
+never opens anything the container could have planted. `update.sh` and `ctl/install.sh` set
+these folders up (a server from before 1.0 is moved over by its next update).
 
 ## Troubleshooting
 
