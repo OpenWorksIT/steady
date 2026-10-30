@@ -48,6 +48,12 @@ Without `STEADY_SERVER` the app points at `http://10.0.2.2:8090`, which is a loc
 
 ## Release builds
 
+The store app is one app for every practice, so it's built **without** `STEADY_SERVER`: on first
+launch it asks for the practice's address, or takes it from the invite QR code, and then shows that
+practice's name and logo. Leave the repository variable `STEADY_SERVER` unset for the Store builds
+and iOS build workflows. Only a practice that wants its own app, locked to its own server, builds
+with it:
+
 ```bash
 flutter build ipa --dart-define=STEADY_SERVER=https://steady.yourpractice.co.za
 flutter build appbundle --dart-define=STEADY_SERVER=https://steady.yourpractice.co.za

@@ -208,6 +208,10 @@ token or a compromised build can't reach it:
 One-time setup for signing: `git config --global gpg.format ssh` and
 `git config --global user.signingkey ~/.ssh/id_ed25519.pub`.
 
+`release.sh` then keeps a copy of each release on that computer (`deploy/backup-repo.sh`: the
+code and the web app as zips, and the whole repository with its history, in `~/Backups/steady`).
+`deploy/backup-repo.sh --install-timer` also checks GitHub every hour for anything new.
+
 ## Sharing a server (e.g. vps1 with Shap)
 
 When another app's Caddy already owns ports 80 and 443, Steady runs without its own Caddy and
