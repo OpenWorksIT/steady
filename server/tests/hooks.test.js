@@ -1266,7 +1266,7 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
   assert.equal(rt.call("GET", "/api/steady/export", { auth: doc }).status, 403);
 
   // your devices; removing one signs out everywhere but keeps you signed in here
-  const list = rt.call("POST", "/api/steady/me/devices", { auth: doc, body: { device: { key: phone.key } } }).data;
+  const list = rt.call("GET", "/api/steady/me/devices", { auth: doc, headers: { "X-Steady-Device": phone.key } }).data;
   assert.equal(list.devices.length, 1);
   assert.equal(list.devices[0].current, true);
   assert.equal(list.devices[0].keyHash, undefined);

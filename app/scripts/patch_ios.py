@@ -36,6 +36,8 @@ INFO = {
         "Steady shares a daily summary of your watch data with your psychologist, only if you choose to connect it.",
     "NSHealthUpdateUsageDescription":
         "Steady never writes anything to Apple Health. It only reads the daily summary you choose to share.",
+    "NSFaceIDUsageDescription":
+        "Practice staff unlock Steady with Face ID or the phone's passcode, so patient information stays private if the phone is lost.",
     "NSCameraUsageDescription":
         "Steady uses the camera only to scan the invite QR code from your psychologist.",
     "NSMicrophoneUsageDescription":

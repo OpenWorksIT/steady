@@ -8,6 +8,7 @@ import '../services/push.dart';
 import '../wearable/wearable_sync.dart';
 import '../build_info.dart';
 import 'auth/change_password_screen.dart';
+import 'auth/devices_screen.dart';
 import 'auth/server_screen.dart';
 import 'auth/two_step_screen.dart';
 import 'clinician/server_updates_screen.dart';
@@ -152,6 +153,19 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     nav.push(MaterialPageRoute(builder: (_) => const TwoStepSetupScreen()));
                   },
           ),
+          if (state.api.isStaff)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.devices_outlined),
+              title: const Text('Your devices'),
+              subtitle: const Text('Where you can sign in; lock your account if a phone is lost'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const DevicesScreen()));
+              },
+            ),
           if (state.api.canUpdate) ...[
             const SizedBox(height: 16),
             const UpdateControls(),

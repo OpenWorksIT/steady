@@ -16,6 +16,8 @@ dependencies:
   http: ^1.2.2
   # Keychain / Keystore storage for the session token (BSD-3)
   flutter_secure_storage: ^11.2.0
+  # practice staff unlock the phone app with its screen lock (fingerprint, face, PIN)
+  local_auth: ^3.0.0
   # Android push without Google services (Apache-2.0). iOS uses APNs via a small platform channel.
   unifiedpush: ^6.0.2
   # Shows UnifiedPush messages as notifications on Android (BSD-3)

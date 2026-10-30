@@ -47,8 +47,8 @@ results = []
 CONFIRMERS = {}
 
 
-def call(method, path, token=None, body=None, query=None, raw=False, confirm=True):
-    s, r = _call(method, path, token, body, query, raw)
+def call(method, path, token=None, body=None, query=None, raw=False, confirm=True, headers=None):
+    s, r = _call(method, path, token, body, query, raw, headers)
     if (confirm and s == 403 and token in CONFIRMERS and isinstance(r, dict)
             and r.get("data", {}).get("confirm", {}).get("code") == "confirm_needed"):
         st = CONFIRMERS[token]
@@ -60,17 +60,19 @@ def call(method, path, token=None, body=None, query=None, raw=False, confirm=Tru
                 break
             cs, cr = _call("POST", "/api/steady/me/confirm", token, st.confirm_body(phone=False), None, False)
         if cs == 200:
-            s, r = _call(method, path, token, body, query, raw)
+            s, r = _call(method, path, token, body, query, raw, headers)
     return s, r
 
 
-def _call(method, path, token=None, body=None, query=None, raw=False):
+def _call(method, path, token=None, body=None, query=None, raw=False, headers=None):
     url = BASE + path + ("?" + urllib.parse.urlencode(query) if query else "")
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", token)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             payload = r.read()
@@ -617,7 +619,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
             call("POST", "/api/steady/auth/link-device", body={"ticket": t2, "code": "111111"})
         s, r = call("POST", "/api/steady/auth/link-device", body={"ticket": t2, "code": devicelink.emailed_code(ENV, S5.email)})
         check(L, "five wrong tries end an emailed code", s == 400 and not r.get("token"), r)
-        s, r = call("POST", "/api/steady/me/devices", web, {"device": laptop})
+        s, r = call("GET", "/api/steady/me/devices", web, headers={"X-Steady-Device": laptop["key"]})
         devs = r.get("devices", [])
         check(L, "staff see their linked devices, this one marked", s == 200 and any(d.get("current") and d.get("name") == "Laptop" for d in devs), r)
         check(L, "device keys are never returned", "keyHash" not in json.dumps(r) and laptop["key"] not in json.dumps(r), r)
@@ -647,7 +649,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
         s, r = call("GET", "/api/steady/export", web, confirm=False)
         check(C, "after confirming, the export works", s == 200, r)
         S6 = staff(su, f"m6-{tag}@sec.test", "Dr Six", master=True)
-        s, r = call("POST", "/api/steady/me/devices", S6.token, {"device": S6.device})
+        s, r = call("GET", "/api/steady/me/devices", S6.token)
         six_phone = (r.get("devices") or [{}])[0].get("id", "x")
         for path, method, body in ((f"/api/steady/people/{S3.id}/reset-password", "POST", {}),
                                    (f"/api/steady/admin/people/{S3.id}/active", "POST", {"active": False}),

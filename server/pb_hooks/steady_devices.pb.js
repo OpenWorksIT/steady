@@ -5,14 +5,14 @@
 //
 // Same rules as steady.pb.js: require() inside handlers, ES2015 only.
 
-// Your linked devices. POST so the app can send its own key (never in a URL) to mark "this one".
-// body: { device: { key } }
-routerAdd("POST", "/api/steady/me/devices", (e) => {
+// Your linked devices. The app sends its own key in a header (never in a URL) to mark "this one".
+// header: X-Steady-Device: <key>
+routerAdd("GET", "/api/steady/me/devices", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const D = require(`${__hooks}/lib/devices.js`);
   s.requireSignedIn(e);
   const u = $app.findRecordById("users", e.auth.id);
-  const mine = D.find($app, u, D.parse(s.body(e).device));
+  const mine = D.find($app, u, D.parse({ key: String(e.request.header.get("X-Steady-Device") || "") }));
   const list = D.list($app, u).map((d) => Object.assign(d, { current: !!mine && mine.id === d.id }));
   return e.json(200, { devices: list, required: D.required() });
 }, $apis.requireAuth());

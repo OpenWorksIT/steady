@@ -6,6 +6,8 @@
 - one copy of Google Tink (two plugins bring 'tink' and 'tink-android'; keep the Android one)
 - Health Connect: minSdk 26, FlutterFragmentActivity, read permissions, permission rationale
 - POST_NOTIFICATIONS permission (Android 13+)
+- the phone's screen lock for staff (local_auth): USE_BIOMETRIC, and an AppCompat launch theme
+  (the fingerprint dialog crashes on Android 8 without one)
 - no cloud backup of app data
 - plain HTTP allowed in debug builds only, for a local development server
 
@@ -33,6 +35,8 @@ HEALTH_PERMISSIONS = [
 ]
 
 DESUGAR_VERSION = "2.1.4"
+APPCOMPAT = "androidx.appcompat:appcompat:1.7.0"
+styles = [ROOT / "android" / "app" / "src" / "main" / "res" / d / "styles.xml" for d in ("values", "values-night")]
 
 
 def fail(msg):
@@ -52,6 +56,8 @@ def patch_kts(text):
             text = re.sub(r"^dependencies\s*\{", 'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:%s")' % DESUGAR_VERSION, text, count=1, flags=re.M)
         else:
             text += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:%s")\n}\n' % DESUGAR_VERSION
+    if "androidx.appcompat:appcompat" not in text:
+        text = re.sub(r"^dependencies\s*\{", 'dependencies {\n    implementation("%s")' % APPCOMPAT, text, count=1, flags=re.M)
     text = re.sub(r"compileSdk\s*=\s*flutter\.compileSdkVersion", "compileSdk = maxOf(flutter.compileSdkVersion, 36)", text)
     text = re.sub(r"minSdk\s*=\s*flutter\.minSdkVersion", "minSdk = maxOf(flutter.minSdkVersion, 26)", text)
     if 'module = "tink"' not in text:
@@ -91,6 +97,8 @@ def patch_groovy(text):
             text = re.sub(r"^dependencies\s*\{", "dependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:%s'" % DESUGAR_VERSION, text, count=1, flags=re.M)
         else:
             text += "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:%s'\n}\n" % DESUGAR_VERSION
+    if "androidx.appcompat:appcompat" not in text:
+        text = re.sub(r"^dependencies\s*\{", "dependencies {\n    implementation '%s'" % APPCOMPAT, text, count=1, flags=re.M)
     text = re.sub(r"compileSdk\s*=?\s*flutter\.compileSdkVersion", "compileSdk Math.max(flutter.compileSdkVersion, 36)", text)
     text = re.sub(r"minSdk(Version)?\s*=?\s*flutter\.minSdkVersion", "minSdkVersion Math.max(flutter.minSdkVersion, 26)", text)
     if "module: 'tink'" not in text:
@@ -105,6 +113,8 @@ def patch_manifest(text):
         if n != 1:
             fail("couldn't find <manifest> in AndroidManifest.xml")
     text = text.replace('android:label="steady"', 'android:label="Steady"')
+    if "USE_BIOMETRIC" not in text:
+        text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>', text, count=1)
     for p in HEALTH_PERMISSIONS:
         if p not in text:
             text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="%s"/>' % p, text, count=1)
@@ -172,6 +182,14 @@ def main():
         if new != src:
             kt.write_text(new)
             print("patched", kt.relative_to(ROOT))
+    # the screen-lock dialog needs an AppCompat theme behind it (light and dark)
+    for st in styles:
+        if st.exists():
+            src = st.read_text()
+            new = re.sub(r'(<style\s+name="LaunchTheme"\s+parent=")[^"]*(")', r"\1Theme.AppCompat.DayNight.NoActionBar\2", src)
+            if new != src:
+                st.write_text(new)
+                print("patched", st.relative_to(ROOT))
     if debug_manifest.exists():
         text = debug_manifest.read_text()
         if "usesCleartextTraffic" not in text:

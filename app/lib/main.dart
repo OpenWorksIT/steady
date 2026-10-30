@@ -15,6 +15,7 @@ import 'services/api.dart';
 import 'services/push.dart';
 import 'ui/auth/change_password_screen.dart';
 import 'ui/auth/privacy_notice_screen.dart';
+import 'ui/auth/screen_lock.dart';
 import 'ui/auth/server_screen.dart';
 import 'ui/auth/sign_in_screen.dart';
 import 'ui/auth/two_step_screen.dart';
@@ -33,6 +34,11 @@ Future<void> main() async {
   // Must run before runApp: UnifiedPush delivers background messages by starting main().
   await PushService.instance.init(api);
   final state = AppState(api);
+  // "confirm it's you" before sensitive actions: asked over whatever screen is open
+  api.onConfirmNeeded = () async {
+    final c = SteadyApp.navigatorKey.currentContext;
+    return c != null && c.mounted && await confirmItsYou(c, api);
+  };
   await state.loadLocal();
   runApp(AppScope(state: state, child: const SteadyApp()));
   await state.start();
@@ -54,7 +60,9 @@ class SteadyApp extends StatelessWidget {
         navigatorKey: navigatorKey,
         // screens opened go into the feedback trail; staff get the Feedback button
         navigatorObservers: [TrailObserver()],
-        builder: (context, child) => _SystemBarSpace(child: FeedbackLayer(navigatorKey: navigatorKey, child: child ?? const SizedBox())),
+        // staff phones: the screen lock covers every screen, not only the first
+        builder: (context, child) =>
+            _SystemBarSpace(child: StaffLock(child: FeedbackLayer(navigatorKey: navigatorKey, child: child ?? const SizedBox()))),
         home: const UpdateNudge(child: RootGate()),
       );
   }

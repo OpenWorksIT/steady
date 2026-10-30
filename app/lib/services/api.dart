@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -52,6 +53,7 @@ String inviteLink(String serverUrl, String code) =>
 /// Turns any error into a sentence a person can act on.
 String errorText(Object error) {
   if (error is FormatException) return error.message;
+  if (error is NotConfirmed) return 'Not confirmed, so nothing was changed.';
   if (error is ClientException) {
     if (error.statusCode == 0) return "Can't reach the server. Check your connection and try again.";
     final r = error.response;
@@ -71,6 +73,41 @@ String errorText(Object error) {
 /// Password accepted; the account uses two-step sign-in, so ask for the 6-digit code.
 class TwoStepNeeded implements Exception {
   const TwoStepNeeded();
+}
+
+/// Password and code accepted on a device that isn't linked yet: the server emailed a 6-digit
+/// code to [email] (masked). Finish with [Api.linkDevice].
+class DeviceLinkNeeded implements Exception {
+  final String ticket, email;
+  const DeviceLinkNeeded(this.ticket, this.email);
+}
+
+/// The server wanted "confirm it's you" and it wasn't confirmed (cancelled, or no way to).
+class NotConfirmed implements Exception {
+  const NotConfirmed();
+  @override
+  String toString() => 'Not confirmed: nothing was changed.';
+}
+
+/// True when the server asks to confirm it's you before this.
+bool isConfirmNeeded(Object e) =>
+    e is ClientException && e.statusCode == 403 && '${asMap(asMap(e.response['data'])['confirm'])['code']}' == 'confirm_needed';
+
+/// One of a staff member's linked phones or browsers.
+class LinkedDevice {
+  final String id, name, platform, lastIp;
+  final DateTime? linkedAt, lastUsedAt;
+  final bool current;
+  const LinkedDevice({required this.id, required this.name, required this.platform, required this.lastIp, this.linkedAt, this.lastUsedAt, this.current = false});
+  factory LinkedDevice.fromJson(Map<String, dynamic> j) => LinkedDevice(
+        id: '${j['id']}',
+        name: '${j['name'] ?? ''}',
+        platform: '${j['platform'] ?? ''}',
+        lastIp: '${j['lastIp'] ?? ''}',
+        linkedAt: fromMs(j['linkedAt']),
+        lastUsedAt: fromMs(j['lastUsedAt']),
+        current: j['current'] == true,
+      );
 }
 
 /// A patient's connection and agreement status, as the practice admin sees it: dates and
@@ -258,19 +295,120 @@ class Api {
     }
   }
 
-  /// Throws [TwoStepNeeded] when the password is right but a code is needed.
-  Future<void> signIn(String email, String password, {String? code}) async {
-    if (code == null) {
-      try {
-        await pb.collection('users').authWithPassword(email.trim(), password);
-      } on ClientException catch (e) {
-        if (e.statusCode == 400 && '${asMap(asMap(e.response['data'])['twoStep'])['code']}' == 'two_step') throw const TwoStepNeeded();
-        rethrow;
-      }
-      return;
+  /* ---------------- this device ---------------- */
+
+  /// android | ios | web
+  String get platformName {
+    if (kIsWeb) return 'web';
+    return switch (defaultTargetPlatform) { TargetPlatform.android => 'android', TargetPlatform.iOS => 'ios', _ => 'web' };
+  }
+
+  /// A phone with a screen lock to confirm with (not the web app).
+  bool get isPhone => platformName != 'web';
+
+  String get defaultDeviceName => switch (platformName) { 'android' => 'Android phone', 'ios' => 'iPhone', _ => 'Web browser' };
+
+  /// This device's own random key for this server, kept in secure storage (the keychain on
+  /// iPhones, encrypted storage on Android). The server keeps only its hash. Signing out keeps
+  /// it, so the device stays linked.
+  Future<String> deviceKey() async {
+    final k = 'steady.devicekey.${Uri.tryParse(pb.baseURL)?.host ?? ''}';
+    String? v;
+    try {
+      v = await _storage.read(key: k);
+    } catch (_) {
+      v = null;
     }
-    final res = await pb.send<Map<String, dynamic>>('/api/steady/auth/sign-in',
-        method: 'POST', body: {'email': email.trim(), 'password': password, 'code': code.trim()});
+    if (v == null || v.length < 32) {
+      final r = Random.secure();
+      v = base64Url.encode(List<int>.generate(32, (_) => r.nextInt(256))).replaceAll('=', '');
+      try {
+        await _storage.write(key: k, value: v);
+      } catch (_) {/* this session only */}
+    }
+    return v;
+  }
+
+  Future<Map<String, dynamic>> _device() async => {'key': await deviceKey(), 'platform': platformName, 'name': defaultDeviceName};
+
+  /* ---------------- signing in ---------------- */
+
+  /// Throws [TwoStepNeeded] when the password is right but a code is needed, and
+  /// [DeviceLinkNeeded] when a staff member signs in on a new device.
+  Future<void> signIn(String email, String password, {String? code}) async {
+    final Map<String, dynamic> res;
+    try {
+      res = await pb.send<Map<String, dynamic>>('/api/steady/auth/sign-in', method: 'POST', body: {
+        'email': email.trim(),
+        'password': password,
+        if (code != null) 'code': code.trim(),
+        'device': await _device(),
+      });
+    } on ClientException catch (e) {
+      if (e.statusCode == 400 && '${asMap(asMap(e.response['data'])['twoStep'])['code']}' == 'two_step') throw const TwoStepNeeded();
+      rethrow;
+    }
+    if (res['linkDevice'] == true) throw DeviceLinkNeeded('${res['ticket']}', '${res['email']}');
+    _saveAuth(res);
+  }
+
+  /// Links this device with the code from the email, and signs in.
+  Future<void> linkDevice(String ticket, String code) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/auth/link-device',
+        method: 'POST', body: {'ticket': ticket, 'code': code.replaceAll(RegExp(r'[^0-9]'), '')});
+    _saveAuth(res);
+  }
+
+  /// Lost or stolen phone: locks a staff account (signed out everywhere, no linked devices).
+  /// Works without being signed in. Only OpenWorks IT support restores it.
+  Future<void> lockAccount(String email, String password) =>
+      pb.send('/api/steady/auth/lock', method: 'POST', body: {'email': email.trim(), 'password': password});
+
+  /* ---------------- confirm it's you ---------------- */
+
+  /// Set by the app: asks the person to confirm it's them (the phone's screen lock, or a code
+  /// on the web) and calls [confirmWithDevice] or [confirmWithCode]. True when confirmed.
+  Future<bool> Function()? onConfirmNeeded;
+
+  /// A linked phone, after its screen lock. False when the server doesn't accept it (this phone
+  /// isn't linked, e.g. on a server without email), so ask for a code instead.
+  Future<bool> confirmWithDevice() async {
+    try {
+      await pb.send('/api/steady/me/confirm', method: 'POST', body: {'device': {'key': await deviceKey(), 'platform': platformName}});
+      return true;
+    } on ClientException catch (e) {
+      if (e.statusCode == 400) return false;
+      rethrow;
+    }
+  }
+
+  /// An authenticator code (the web app, or a phone that isn't linked). Throws when it's wrong.
+  Future<void> confirmWithCode(String code) => pb.send('/api/steady/me/confirm', method: 'POST', body: {'code': code.trim()});
+
+  /// Where two-step sign-in is off: the password.
+  Future<void> confirmWithPassword(String password) => pb.send('/api/steady/me/confirm', method: 'POST', body: {'password': password});
+
+  /// Runs a sensitive call; if the server asks to confirm it's you, asks, then tries once more.
+  Future<T> confirmed<T>(Future<T> Function() call) async {
+    try {
+      return await call();
+    } on ClientException catch (e) {
+      if (!isConfirmNeeded(e)) rethrow;
+      final ask = onConfirmNeeded;
+      if (ask == null || !await ask()) throw const NotConfirmed();
+      return await call();
+    }
+  }
+
+  /// Your linked devices, this one marked.
+  Future<({List<LinkedDevice> devices, bool required})> myDevices() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/devices', headers: {'X-Steady-Device': await deviceKey()});
+    return (devices: asList(res['devices']).map((d) => LinkedDevice.fromJson(asMap(d))).toList(), required: res['required'] == true);
+  }
+
+  /// Unlinks one of your devices; every other session ends, this one stays signed in.
+  Future<void> removeDevice(String id) async {
+    final res = await confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/me/devices/$id/remove', method: 'POST'));
     _saveAuth(res);
   }
 
@@ -559,8 +697,8 @@ class Api {
 
   /// The audit report: who opened or changed what (master clinician, practice admin).
   Future<({List<AuditRow> rows, bool truncated})> audit({int days = 30, String? patientId, String? actorId}) async {
-    final res = await pb.send<Map<String, dynamic>>('/api/steady/audit',
-        query: {'days': '$days', 'patient': ?patientId, 'actor': ?actorId});
+    final res = await confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/audit',
+        query: {'days': '$days', 'patient': ?patientId, 'actor': ?actorId}));
     return (rows: asList(res['rows']).map((r) => AuditRow.fromJson(asMap(r))).toList(), truncated: res['truncated'] == true);
   }
 
@@ -568,8 +706,8 @@ class Api {
 
   /// A temporary password for someone; they must choose their own at next sign-in.
   Future<String> resetPassword(String userId, {bool twoStep = false}) async {
-    final res = await pb.send<Map<String, dynamic>>('/api/steady/people/$userId/reset-password',
-        method: 'POST', body: {'twoStep': twoStep});
+    final res = await confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/people/$userId/reset-password',
+        method: 'POST', body: {'twoStep': twoStep}));
     return '${res['temporaryPassword']}';
   }
 
@@ -603,12 +741,12 @@ class Api {
       pb.send('/api/steady/admin/patients/$patientId/reassign', method: 'POST', body: {'clinician': clinicianId});
 
   Future<void> setActive(String userId, bool active) =>
-      pb.send('/api/steady/admin/people/$userId/active', method: 'POST', body: {'active': active});
+      confirmed(() => pb.send('/api/steady/admin/people/$userId/active', method: 'POST', body: {'active': active}));
 
   /// role: clinician | admin. Returns the temporary password.
   Future<String> createStaff({required String role, required String name, required String email}) async {
-    final res = await pb.send<Map<String, dynamic>>('/api/steady/admin/people',
-        method: 'POST', body: {'role': role, 'name': name, 'email': email});
+    final res = await confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/admin/people',
+        method: 'POST', body: {'role': role, 'name': name, 'email': email}));
     return '${res['temporaryPassword']}';
   }
 
@@ -678,10 +816,10 @@ class Api {
 
   /// One patient's whole record (or a date range), for a PDF or Excel export.
   Future<Map<String, dynamic>> exportPatient(String patientId, {String? from, String? to}) =>
-      pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/export', query: {'from': ?from, 'to': ?to});
+      confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/export', query: {'from': ?from, 'to': ?to}));
 
   /// All of this psychologist's own patients.
-  Future<Map<String, dynamic>> exportAll() => pb.send<Map<String, dynamic>>('/api/steady/export');
+  Future<Map<String, dynamic>> exportAll() => confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/export'));
 
   /// Server and updates (server admins): status from deploy/ctl/steady-ctl.sh.
   Future<Map<String, dynamic>> systemStatus() => pb.send<Map<String, dynamic>>('/api/steady/system');
