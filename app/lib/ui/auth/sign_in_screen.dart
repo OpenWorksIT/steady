@@ -9,6 +9,7 @@ import 'invite_flow.dart';
 import 'join_screen.dart';
 import 'server_screen.dart';
 import '../brand.dart';
+import '../source_link.dart';
 
 class SignInScreen extends StatefulWidget {
   final String? message;
@@ -259,6 +260,8 @@ class _SignInScreenState extends State<SignInScreen> {
                 ),
               ]),
             ],
+            const SizedBox(height: 12),
+            const SourceLink(),
           ],
         ),
       ),

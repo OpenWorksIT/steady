@@ -80,8 +80,8 @@ from anywhere but inside the server container. Accounts are managed in two place
 **On the server, by OpenWorks** (`deploy/accounts.sh`, run with sudo in `/opt/steady/deploy`):
 
 ```bash
-sudo ./accounts.sh add-clinician "Kempie van Rooyen" kempie@vrpsych.co.za --master   # the master clinician
-sudo ./accounts.sh add-admin "Front desk" reception@vrpsych.co.za                     # practice admin
+sudo ./accounts.sh add-clinician "Dr Thandi Example" thandi@yourpractice.co.za --master   # the master clinician
+sudo ./accounts.sh add-admin "Front desk" reception@yourpractice.co.za                    # practice admin
 sudo ./accounts.sh add-support "OpenWorks support" support@openworks.co.za           # OpenWorks: no patients
 sudo ./accounts.sh list                         # who has which role, and who still lacks two-step sign-in
 sudo ./accounts.sh reset <email> [--full]       # a temporary password (--full: also the authenticator)
