@@ -82,7 +82,7 @@ services:
 
   # Named tunnel: a fixed address on your own domain. Needs TUNNEL_TOKEN.
   tunnel:
-    image: cloudflare/cloudflared:2026.9.3
+    image: cloudflare/cloudflared:2026.10.5
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
@@ -93,7 +93,7 @@ services:
   # Quick tunnel: random trycloudflare.com address, no account. No live updates in the app
   # (Cloudflare doesn't pass Server-Sent Events through quick tunnels) and a new address each start.
   quicktunnel:
-    image: cloudflare/cloudflared:2026.9.3
+    image: cloudflare/cloudflared:2026.10.5
     restart: unless-stopped
     command: tunnel --no-autoupdate --url http://caddy:80
     depends_on: [caddy]
