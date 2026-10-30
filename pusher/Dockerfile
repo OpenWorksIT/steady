@@ -1,6 +1,6 @@
 # Steady push relay. Standard library only, so the build needs no module downloads.
 # SPDX-License-Identifier: AGPL-3.0-or-later
-FROM golang:1.24-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod ./
 COPY *.go ./

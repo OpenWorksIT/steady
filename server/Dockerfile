@@ -1,6 +1,6 @@
 # Steady server: PocketBase with Steady's migrations and hooks.
 # SPDX-License-Identifier: AGPL-3.0-or-later
-FROM alpine:3.22
+FROM alpine:3.24
 
 ARG PB_VERSION=0.40.5
 ARG TARGETARCH=amd64
