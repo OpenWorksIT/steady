@@ -478,7 +478,11 @@ class PatientSummary {
   /// The phone stopped letting Steady read watch data, since [watchLapsedSince] (null: fine).
   final DateTime? watchLapsedSince;
   final String appBuild, appPlatform;
+
+  /// When the patient asked, in the app, for their account to be deleted (null: they haven't).
+  final DateTime? deletionRequestedAt;
   PatientSummary({
+    this.deletionRequestedAt,
     this.watchLapsedSince,
     this.appBuild = '',
     this.appPlatform = '',
@@ -523,6 +527,7 @@ class PatientSummary {
       watchLapsedSince: asMap(j['watchPermission'])['lapsed'] == true ? fromMs(asMap(j['watchPermission'])['since']) : null,
       appBuild: '${asMap(j['app'])['build'] ?? ''}',
       appPlatform: '${asMap(j['app'])['platform'] ?? ''}',
+      deletionRequestedAt: fromMs(j['deletionRequestedAt']),
     );
   }
 

@@ -31,6 +31,7 @@ These are engineering notes to help the practice and its advisers. They are not 
 | Security at rest | Encrypt the server's disk. Backups are encrypted with `age` before they're written. |
 | Push notifications | No names, scores or text ever go to Apple, Google or UnifiedPush servers. |
 | Retention | In-app notifications are deleted after 90 days (configurable). Clinical records (check-ins, results) are kept as part of the patient file; the practice decides the period under its record-keeping obligations. |
+| Deleting an account | A patient asks in the app (Settings > Delete my account, with their password). Their psychologist is told in the app and has 30 days: export what belongs in the clinical record (HPCSA Booklet 9: at least six years after the record becomes dormant, until a minor's 21st birthday, for life for a patient who is mentally incompetent), then delete the account on the patient's page. Everything Steady holds about the patient goes; the access log stays. The patient is emailed when they ask and when it's done. |
 | Stopping | A psychologist can stop a patient's access; the account can't sign in and waiting activities are cancelled. Records stay for the file. |
 | Location | Host in South Africa. Section 72 limits sending personal information abroad. |
 | Phones | The session token and the device key are stored in the iOS Keychain / Android Keystore. Android backups of app data are disabled. |

@@ -1,7 +1,7 @@
 name: steady
 description: "Steady: between-session check-ins, questionnaires and exercises for a psychology practice."
 publish_to: "none"
-version: 1.0.1+101
+version: 1.0.2+102
 
 environment:
   sdk: ">=3.10.0 <4.0.0"

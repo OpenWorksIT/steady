@@ -924,6 +924,22 @@ class Api {
 
   Future<void> deactivatePatient(String id) => pb.send('/api/steady/patients/$id/deactivate', method: 'POST');
 
+  /// The patient's own request to delete their account (the practice carries it out).
+  String _deletionAskedBy = '';
+  DateTime? _deletionAskedAt;
+  DateTime? get deletionRequestedAt =>
+      (_deletionAskedBy == myId ? _deletionAskedAt : null) ?? DateTime.tryParse(me?.getStringValue('deletionRequestedAt') ?? '')?.toLocal();
+  Future<({DateTime requestedAt, int days})> requestAccountDeletion(String password) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/delete-request', method: 'POST', body: {'password': password});
+    final at = fromMs(res['requestedAt']) ?? DateTime.now();
+    _deletionAskedBy = myId;
+    _deletionAskedAt = at;
+    return (requestedAt: at, days: (res['days'] as num?)?.toInt() ?? 30);
+  }
+
+  /// Deletes a patient's account and everything Steady holds about them (after they asked).
+  Future<void> deletePatientAccount(String id) => confirmed(() => pb.send('/api/steady/patients/$id/delete-account', method: 'POST'));
+
   Future<String> createInstrument(Map<String, dynamic> definition) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/instruments', method: 'POST', body: {'definition': definition});
     return '${res['id']}';

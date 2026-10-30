@@ -3,7 +3,7 @@
 
 What Xcode's Signing & Capabilities tab would otherwise do by hand:
 - entitlements: Push Notifications (APNs) and HealthKit (read only)
-- iOS 15 minimum (the health plugin needs it)
+- iOS 15 minimum (the health plugin needs it), iPhone only
 
 And in Info.plist:
 - the name under the icon ("Steady")
@@ -108,8 +108,11 @@ def patch_project():
     if runner[0] != 3:
         fail("expected 3 build configurations for %s, found %d" % (BUNDLE_ID, runner[0]))
     text = re.sub(r"IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;", "IPHONEOS_DEPLOYMENT_TARGET = %s;" % MIN_IOS, text)
+    # iPhone only: iPads run it as an iPhone app, and the App Store then asks for iPhone
+    # screenshots only (an iPad app needs its own set)
+    text = re.sub(r'TARGETED_DEVICE_FAMILY = "?[0-9,]+"?;', "TARGETED_DEVICE_FAMILY = 1;", text)
     path.write_text(text)
-    print("project: entitlements on 3 configurations, iOS %s" % MIN_IOS)
+    print("project: entitlements on 3 configurations, iOS %s, iPhone only" % MIN_IOS)
 
 
 def patch_podfile():

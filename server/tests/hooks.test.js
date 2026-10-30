@@ -248,6 +248,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_roles.pb.js"));
   run(path.join(HOOKS, "steady_devices.pb.js"));
   run(path.join(HOOKS, "steady_privacy.pb.js"));
+  run(path.join(HOOKS, "steady_deletion.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -1434,4 +1435,75 @@ test("patient resets by the practice admin or master clinician finish only with 
   const p2 = plain.makeUser({ name: "P", role: "patient", clinician: d2.id, active: true, email: "p@example.org" });
   assert.equal(plain.call("POST", `/api/steady/people/${p2.id}/reset-password`, { auth: a2 }).status, 400);
   assert.equal(plain.call("POST", `/api/steady/people/${p2.id}/reset-password`, { auth: d2 }).status, 200);
+});
+
+test("a patient asks to delete their account; their psychologist deletes it after keeping the records", () => {
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_SMTP_HOST: "mail.test" }) });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const other = rt.makeUser({ name: "Dr Other", role: "clinician", active: true, email: "o@example.org" });
+  const master = rt.makeUser({ name: "Dr Master", role: "clinician", master: true, active: true, email: "m@example.org" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "pat@example.org" });
+  pat.setPassword("patient-password");
+  const keep = rt.makeUser({ name: "Kept", role: "patient", clinician: doc.id, active: true, email: "kept@example.org" });
+  rt.makeRecord("checkins", { patient: pat.id, mood: 3, anxiety: 2, sleep: 3, energy: 3, note: "a private note" });
+  rt.makeRecord("checkins", { patient: keep.id, mood: 4, anxiety: 2, sleep: 3, energy: 3 });
+  rt.makeRecord("biometrics", { patient: pat.id, day: "2026-10-01" });
+  rt.makeRecord("notes", { patient: pat.id, author: doc.id, text: "clinician note" });
+  // staff confirm it's them on a linked phone (email is set up, so devices are linked)
+  const linked = (u, k) => {
+    rt.makeRecord("staffdevices", { user: u.id, keyHash: require("crypto").createHash("sha256").update(k.repeat(40)).digest("hex"), platform: "android", confirmedAt: "2099-01-01 00:00:00.000Z" });
+    return { "X-Steady-Device": k.repeat(40) };
+  };
+  const H = { doc: linked(doc, "d"), other: linked(other, "o"), master: linked(master, "m") };
+  const del = (who, headers) => rt.call("POST", `/api/steady/patients/${pat.id}/delete-account`, { auth: who, headers: headers || {} });
+
+  // the practice can't delete an active patient who hasn't asked
+  assert.equal(del(doc, H.doc).status, 400);
+
+  // the patient asks, with their password
+  const ask = (pw) => rt.call("POST", "/api/steady/me/delete-request", { auth: pat, body: { password: pw } });
+  assert.equal(ask("wrong").status, 400);
+  const r = ask("patient-password");
+  assert.equal(r.status, 200);
+  assert.equal(r.data.days, 30);
+  assert.ok(r.data.requestedAt > 0);
+  assert.ok(pat.getDateTime("deletionRequestedAt").unix() > 0);
+  const note = rt.store.notifications.find((n) => n.getString("recipient") === doc.id && n.getString("title") === "Account deletion request");
+  assert.ok(note, "their psychologist is told in the app");
+  assert.ok(!rt.store.notifications.some((n) => n.getString("recipient") === master.id), "the master clinician isn't, while the psychologist is active");
+  const mail = rt.mails.find((m) => m.to[0].address === "pat@example.org");
+  assert.ok(mail && /HPCSA/.test(mail.text) && /30 days/.test(mail.text), "the patient is emailed what happens and why");
+  // asking again changes nothing and sends nothing more
+  const mailsBefore = rt.mails.length;
+  assert.equal(ask("patient-password").data.requestedAt, r.data.requestedAt);
+  assert.equal(rt.mails.length, mailsBefore);
+  // staff and other patients can't ask on someone's behalf
+  assert.equal(rt.call("POST", "/api/steady/me/delete-request", { auth: doc, body: { password: "x" } }).status, 403);
+
+  // their psychologist sees the request on the patient's summary
+  const sum = rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc, headers: H.doc });
+  assert.equal(sum.status, 200);
+  assert.ok(sum.data.deletionRequestedAt > 0);
+
+  // another psychologist can't delete it; the patient's own can, after confirming it's them
+  assert.equal(del(other, H.other).status, 404);
+  assert.equal(del(doc).status, 403, "not without confirming it's them");
+  const done = del(doc, H.doc);
+  assert.equal(done.status, 200);
+  assert.equal(done.data.deleted, true);
+  assert.ok(!rt.store.users.some((u) => u.id === pat.id), "the account is gone");
+  assert.ok(!rt.store.checkins.some((c) => c.getString("patient") === pat.id), "with the check-ins");
+  assert.ok(!rt.store.biometrics.some((c) => c.getString("patient") === pat.id), "the watch data");
+  assert.ok(!rt.store.notes.some((c) => c.getString("patient") === pat.id), "and the notes");
+  assert.ok(!rt.store.notifications.some((n) => n.getString("patient") === pat.id), "and notifications about them");
+  assert.equal(rt.store.checkins.filter((c) => c.getString("patient") === keep.id).length, 1, "other patients are untouched");
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "patient.delete" && a.getString("target") === "user:" + pat.id), "the access log keeps a record");
+  const gone = rt.mails.find((m) => m.to[0].address === "pat@example.org" && /has been deleted/.test(m.subject));
+  assert.ok(gone, "the patient is told it's done");
+
+  // the master clinician can delete a colleague's patient once they've asked
+  const p2 = rt.makeUser({ name: "P2", role: "patient", clinician: other.id, active: true, email: "p2@example.org" });
+  p2.setPassword("pw-two-1234");
+  assert.equal(rt.call("POST", "/api/steady/me/delete-request", { auth: p2, body: { password: "pw-two-1234" } }).status, 200);
+  assert.equal(rt.call("POST", `/api/steady/patients/${p2.id}/delete-account`, { auth: master, headers: H.master }).status, 200);
 });
