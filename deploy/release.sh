@@ -55,3 +55,5 @@ git -c gpg.ssh.allowedSignersFile="$signers" verify-tag "$tag"
 git -c gpg.ssh.allowedSignersFile="$signers" verify-tag "$web"
 git push -q origin "$tag" "$web"
 echo "Published. Servers offer $tag under Settings > Server and updates (and check every night)."
+# a copy of the release on this computer (see backup-repo.sh); a failure here changes nothing above
+deploy/backup-repo.sh || echo "  (The local backup didn't run; try deploy/backup-repo.sh by hand.)" >&2

@@ -19,6 +19,9 @@ concurrency:
 jobs:
   android:
     runs-on: ubuntu-latest
+    # the signing keys live in the "signing" environment, which only main and v1 may use
+    # (Settings > Environments); a workflow on any other branch can't reach them
+    environment: signing
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
