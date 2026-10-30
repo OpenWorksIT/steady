@@ -40,21 +40,29 @@ routerAdd("POST", "/api/steady/feedback", (e) => {
   return e.json(200, { id: rec.id });
 }, $apis.requireAuth());
 
+// OpenWorks support and the monitor key get the full picture. The practice's own staff see
+// what was raised as tickets (what, who, when, status), without the technical detail.
 routerAdd("GET", "/api/steady/feedback", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const f = require(`${__hooks}/lib/feedback.js`);
-  s.requireUpdaterOrMonitor(e, "feedback");
   const status = String((e.requestInfo().query || {}).status || "open");
   const filter = status === "done" ? "status = 'done'" : status === "all" ? "" : "status != 'done'";
+  let full = s.monitorKeyOk(e);
+  if (!full) {
+    if (!e.auth) throw new UnauthorizedError("Sign in first.");
+    s.requireSignedIn(e);
+    if (!s.isStaff(e.auth)) throw new ForbiddenError("Feedback is for the practice's staff.");
+    full = s.isSupport(e.auth);
+  }
   const list = $app.findRecordsByFilter("feedback", filter, "-created", 500, 0)
-    .map((r) => f.summary(r, s.toMs, s.readJson));
-  return e.json(200, { items: list });
+    .map((r) => (full ? f.summary(r, s.toMs, s.readJson) : f.ticket(r, s.toMs)));
+  return e.json(200, { items: list, full: full });
 });
 
 routerAdd("GET", "/api/steady/feedback/{id}", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const f = require(`${__hooks}/lib/feedback.js`);
-  s.requireUpdaterOrMonitor(e, "feedback");
+  s.requireSupportOrMonitor(e, "feedback detail");
   let r;
   try { r = $app.findRecordById("feedback", e.request.pathValue("id")); } catch (_) { throw new NotFoundError("No such feedback."); }
   return e.json(200, f.full(r, s.toMs, s.readJson));
@@ -62,7 +70,7 @@ routerAdd("GET", "/api/steady/feedback/{id}", (e) => {
 
 routerAdd("GET", "/api/steady/feedback/{id}/screenshot", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
-  s.requireUpdaterOrMonitor(e, "feedback");
+  s.requireSupportOrMonitor(e, "screenshots");
   let r;
   try { r = $app.findRecordById("feedback", e.request.pathValue("id")); } catch (_) { throw new NotFoundError("No such feedback."); }
   const name = r.getString("screenshot");
@@ -74,7 +82,8 @@ routerAdd("GET", "/api/steady/feedback/{id}/screenshot", (e) => {
 routerAdd("PATCH", "/api/steady/feedback/{id}", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   if (!e.auth) throw new UnauthorizedError("Sign in first.");
-  if (!s.canUpdate(e.auth)) throw new ForbiddenError("Only the master psychologist and administrators can mark feedback.");
+  s.requireSignedIn(e);
+  if (!s.isSupport(e.auth)) throw new ForbiddenError("Only OpenWorks support marks feedback as seen or done.");
   let r;
   try { r = $app.findRecordById("feedback", e.request.pathValue("id")); } catch (_) { throw new NotFoundError("No such feedback."); }
   const body = s.body(e);

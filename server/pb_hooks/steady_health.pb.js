@@ -32,7 +32,7 @@ cronAdd("steady_health", "* * * * *", () => {
 // the server's STEADY_MONITOR_KEY in X-Steady-Monitor instead of signing in.
 routerAdd("GET", "/api/steady/health", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
-  s.requireUpdaterOrMonitor(e, "server health");
+  s.requireUpdaterOrMonitor(e, "server health", { practiceAdmin: true });
   e.response.header().set("Cache-Control", "no-store");
   const hours = Number((e.requestInfo().query || {}).hours) || 24;
   let started = 0;

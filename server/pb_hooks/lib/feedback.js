@@ -78,4 +78,19 @@ function full(r, toMs, readJson) {
   return out;
 }
 
-module.exports = { cleanInput: cleanInput, cleanTrail: cleanTrail, summary: summary, full: full, KINDS: KINDS };
+/** What the practice's own staff see: the ticket, without the trail, device or screenshot. */
+function ticket(r, toMs) {
+  return {
+    id: r.id,
+    kind: r.getString("kind"),
+    message: r.getString("message"),
+    screen: r.getString("screen"),
+    whoName: r.getString("whoName"),
+    created: toMs(r, "created"),
+    status: r.getString("status") || "new",
+    statusAt: toMs(r, "statusAt"),
+    note: r.getString("note")
+  };
+}
+
+module.exports = { cleanInput: cleanInput, cleanTrail: cleanTrail, summary: summary, full: full, ticket: ticket, KINDS: KINDS };

@@ -202,26 +202,28 @@ routerAdd("GET", "/api/steady/me/care-team", (e) => {
  * Password resets
  * ===================================================================== */
 
-// Patients: by their psychologist, the master clinician or an administrator.
-// Psychologists and administrators: by the master clinician. Master clinicians: only on the
-// server (deploy/accounts.sh). The person gets a temporary password and must choose a new one.
+// Who may reset whom (the person gets a temporary password and must choose a new one):
+//   patient           their psychologist, the master clinician, the practice admin
+//   psychologist      the master clinician, the practice admin, OpenWorks support
+//   practice admin    the master clinician, OpenWorks support
+//   master clinician  OpenWorks support
+//   OpenWorks support only on the server (deploy/accounts.sh)
+// twoStep: also clears the authenticator (it was on a lost phone). For staff, only OpenWorks
+// support does that (a full reset), so a stolen phone can't be used to take over colleagues.
 routerAdd("POST", "/api/steady/people/{id}/reset-password", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
-  s.requireRole(e, ["clinician", "admin"]);
+  const x = require(`${__hooks}/lib/practice.js`);
+  s.requireRole(e, ["clinician", "admin", "support"]);
   const u = s.findUser($app, e.request.pathValue("id"));
   if (!u) throw new NotFoundError("Not found.");
   const target = u.getString("role");
-  const manager = s.role(e) === "admin" || s.isMaster(e.auth);
-  let allowed = false;
-  if (target === "patient") allowed = manager || u.getString("clinician") === e.auth.id;
-  else if (s.isMaster(u)) allowed = false;
-  else allowed = s.isMaster(e.auth) && u.id !== e.auth.id;
-  if (!allowed) {
-    if (target === "patient") throw new NotFoundError("Not found.");
-    throw new ForbiddenError(s.isMaster(u) ? "A master clinician's password is reset on the server. Ask OpenWorks." : "Only the master clinician can reset staff passwords.");
-  }
   const b = s.body(e);
-  if (b.twoStep === true && (s.isMaster(e.auth) || target === "patient")) {
+  const check = x.mayReset(s, e.auth, u, b.twoStep === true);
+  if (!check.ok) {
+    if (target === "patient") throw new NotFoundError("Not found.");
+    throw new ForbiddenError(check.why);
+  }
+  if (b.twoStep === true) {
     u.set("totpSecret", "");
     u.set("totpEnabledAt", "");
     u.set("recoveryCodes", []);
@@ -243,18 +245,31 @@ routerAdd("POST", "/api/steady/people/{id}/reset-password", (e) => {
  * Names only: nothing here returns check-ins, scores, notes or watch data.
  * ===================================================================== */
 
+// The practice's people for the master clinician and the practice admin: names, and for each
+// patient whether they're set up and connected (agreements, app version, notifications, watch
+// sharing and permissions, last check-in and upload dates). Never what they shared.
 routerAdd("GET", "/api/steady/admin/people", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
+  const P = require(`${__hooks}/lib/people.js`);
   s.requireManager(e);
   const names = {};
-  const all = $app.findRecordsByFilter("users", "role != ''", "name", 5000, 0);
+  const all = $app.findRecordsByFilter("users", "role != ''", "name", 50000, 0);
   const out = { patients: [], clinicians: [], admins: [] };
-  all.forEach((u) => {
+  const patients = all.filter((u) => u.getString("role") === "patient");
+  const status = P.statusRows($app, patients);
+  patients.forEach((u, i) => {
     const row = s.personRow($app, u, names);
-    if (row.role === "patient") out.patients.push(row);
-    else if (row.role === "clinician") out.clinicians.push(row);
+    row.status = status[i];
+    out.patients.push(row);
+  });
+  all.forEach((u) => {
+    if (u.getString("role") === "patient") return;
+    const row = s.personRow($app, u, names);
+    if (row.role === "clinician") out.clinicians.push(row);
     else out.admins.push(row);
   });
+  const d = require(`${__hooks}/lib/dist.js`).appInfo(s.publicDir());
+  out.serverBuild = d ? d.build : "";
   out.patients.sort((a, b) => a.name.localeCompare(b.name));
   s.audit($app, e, "people.list", "count:" + all.length, "");
   return e.json(200, out);
@@ -307,19 +322,28 @@ routerAdd("POST", "/api/steady/admin/patients/{id}/reassign", (e) => {
   return e.json(200, { id: p.id, clinician: { id: c.id, name: c.getString("name") } });
 }, $apis.requireAuth());
 
-// Stop or restore an account. Patients: their psychologist or a manager. Staff: the master
-// clinician (not themselves, not another master clinician).
+// Stop or restore an account. Patients: their psychologist, the master clinician or the
+// practice admin. Staff: easy to lock down, hard to restore. Stopping a staff account (signed out
+// everywhere at once) is open to the master clinician, the practice admin and OpenWorks support;
+// restoring one only to OpenWorks support. OpenWorks accounts are managed on the server.
 routerAdd("POST", "/api/steady/admin/people/{id}/active", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
-  s.requireRole(e, ["clinician", "admin"]);
+  s.requireRole(e, ["clinician", "admin", "support"]);
   const u = s.findUser($app, e.request.pathValue("id"));
   if (!u) throw new NotFoundError("Not found.");
+  const active = s.body(e).active === true;
   const manager = s.role(e) === "admin" || s.isMaster(e.auth);
   const isPatient = u.getString("role") === "patient";
-  const allowed = isPatient ? (manager || u.getString("clinician") === e.auth.id)
-    : (s.isMaster(e.auth) && u.id !== e.auth.id && !s.isMaster(u));
-  if (!allowed) throw (isPatient ? new NotFoundError("Not found.") : new ForbiddenError("Only the master clinician can stop or restore staff accounts."));
-  const active = s.body(e).active === true;
+  let allowed;
+  if (isPatient) allowed = manager || u.getString("clinician") === e.auth.id;
+  else if (s.isSupport(u) || u.id === e.auth.id) allowed = false;
+  else if (active) allowed = s.isSupport(e.auth);
+  else allowed = s.isSupport(e.auth) || manager;
+  if (!allowed) {
+    if (isPatient) throw new NotFoundError("Not found.");
+    throw new ForbiddenError(active ? "Only OpenWorks support restores a staff account (they check it's really them first)."
+      : "Only the master clinician, the practice admin or OpenWorks support can stop a staff account.");
+  }
   u.set("active", active);
   $app.save(u);
   if (!active && isPatient) {

@@ -41,4 +41,22 @@ function opsGuard(e) {
   if (!local && $os.getenv("STEADY_SUPERUSER_API") !== "open") throw new NotFoundError("Not found.");
 }
 
-module.exports = { newStaff: newStaff, integrationClinician: integrationClinician, opsGuard: opsGuard };
+/**
+ * Whether actor may reset target's password (twoStep: and clear their authenticator).
+ * Returns { ok, why }. See the table in steady_practice.pb.js.
+ */
+function mayReset(s, actor, target, twoStep) {
+  var a = actor.getString("role"), t = target.getString("role");
+  var master = s.isMaster(actor), support = s.isSupport(actor), padmin = a === "admin";
+  if (target.id === actor.id) return { ok: false, why: "Change your own password in Settings." };
+  if (t === "patient") {
+    return { ok: !support && (master || padmin || target.getString("clinician") === actor.id), why: "Not found." };
+  }
+  if (twoStep && !support) return { ok: false, why: "Only OpenWorks support can clear a staff member's authenticator (a full reset)." };
+  if (t === "support") return { ok: false, why: "OpenWorks accounts are reset on the server." };
+  if (s.isMaster(target)) return { ok: support, why: "Only OpenWorks support can reset the master clinician's password." };
+  if (t === "admin") return { ok: support || master, why: "Only the master clinician or OpenWorks support can reset the practice admin's password." };
+  return { ok: support || master || padmin, why: "Only the master clinician, the practice admin or OpenWorks support can reset a psychologist's password." };
+}
+
+module.exports = { newStaff: newStaff, integrationClinician: integrationClinician, opsGuard: opsGuard, mayReset: mayReset };

@@ -55,9 +55,15 @@ function requireRole(e, wanted) {
   requireSignedIn(e);
 }
 
+/** Psychologists, the practice admin and OpenWorks support. */
 function isStaff(rec) {
   var r = rec.getString("role");
-  return r === "clinician" || r === "admin";
+  return r === "clinician" || r === "admin" || r === "support";
+}
+
+/** OpenWorks support: psychologists and the system, never patients. */
+function isSupport(rec) {
+  return rec.getString("role") === "support";
 }
 
 function isMaster(rec) {
@@ -91,15 +97,15 @@ function needsTwoStep(rec) {
   return twoStepRequired(rec) && !twoStepOn(rec);
 }
 
-/** Who may check for and install server updates: the master clinician, administrators and
- *  OpenWorks support, and any psychologist marked "serverAdmin". */
+/** Who may check for and install server updates: the master clinician, OpenWorks support, and
+ *  any psychologist marked "serverAdmin". The practice admin sees the server's health only. */
 function canUpdate(rec) {
-  return rec.getBool("serverAdmin") || isMaster(rec) || rec.getString("role") === "admin";
+  return rec.getBool("serverAdmin") || isMaster(rec) || isSupport(rec);
 }
 
 function requireServerAdmin(e) {
-  requireRole(e, ["clinician", "admin"]);
-  if (!canUpdate(e.auth)) throw new ForbiddenError("Only the master clinician or an administrator can do this.");
+  requireRole(e, ["clinician", "admin", "support"]);
+  if (!canUpdate(e.auth)) throw new ForbiddenError("Only the master clinician or OpenWorks support can do this.");
 }
 
 /* ---------- accounts ---------- */
@@ -140,6 +146,7 @@ function personRow(app, u, names) {
     row.serverAdmin = u.getBool("serverAdmin");
     row.twoStep = twoStepOn(u);
   }
+  row.app = { build: u.getString("appBuild"), platform: u.getString("appPlatform"), seenAt: toMs(u, "appSeenAt") };
   return row;
 }
 
@@ -171,11 +178,23 @@ function monitorKeyOk(e) {
   return key.length >= 24 && given.length > 0 && $security.equal(given, key);
 }
 
-/** The master psychologist, administrators and server admins, or the monitor key. */
-function requireUpdaterOrMonitor(e, what) {
+/** The master psychologist, OpenWorks support and server admins, or the monitor key.
+ *  opts.practiceAdmin: the practice admin may see it too (server health). */
+function requireUpdaterOrMonitor(e, what, opts) {
   if (monitorKeyOk(e)) return;
   if (!e.auth) throw new UnauthorizedError("Sign in first.");
-  if (!canUpdate(e.auth)) throw new ForbiddenError("Only the master psychologist and administrators can see " + what + ".");
+  requireSignedIn(e);
+  if (canUpdate(e.auth)) return;
+  if (opts && opts.practiceAdmin && e.auth.getString("role") === "admin") return;
+  throw new ForbiddenError("Only the master psychologist and OpenWorks support can see " + what + ".");
+}
+
+/** OpenWorks support, or the monitor key (a central dashboard). */
+function requireSupportOrMonitor(e, what) {
+  if (monitorKeyOk(e)) return;
+  if (!e.auth) throw new UnauthorizedError("Sign in first.");
+  requireSignedIn(e);
+  if (!isSupport(e.auth)) throw new ForbiddenError("Only OpenWorks support can see " + what + ".");
 }
 
 function ctlDir() {
@@ -502,6 +521,8 @@ function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names, 
     lastNote: readJson(patient, "lastNote"),
     attention: core.attention(flags, radrLevel, radr ? Date.parse(radr.day + "T12:00:00Z") : 0, careStatus),
     app: { build: patient.getString("appBuild"), platform: patient.getString("appPlatform"), seenAt: toMs(patient, "appSeenAt") },
+    // the phone stopped letting Steady read watch data (often after an update)
+    watchPermission: watchPermission(patient),
     id: patient.id,
     name: displayName(patient),
     selfName: patient.getString("name"),
@@ -514,6 +535,12 @@ function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names, 
     pending: arows.filter(function (a) { return a.status === "pending"; }).length,
     wearable: wearableSummary(patient, recent)
   };
+}
+
+function watchPermission(p) {
+  var h = readJson(p, "healthPerm");
+  if (!h || typeof h !== "object") return null;
+  return { status: h.status, since: h.since || h.at || 0, lapsed: toMs(p, "wearableConsentAt") > 0 && h.status === "missing" };
 }
 
 function wearableSummary(patient, recent) {
@@ -540,7 +567,12 @@ module.exports = {
   canUpdate: canUpdate,
   monitorKeyOk: monitorKeyOk,
   requireUpdaterOrMonitor: requireUpdaterOrMonitor,
+  requireSupportOrMonitor: requireSupportOrMonitor,
+  query: query,
+  inList: inList,
+  groupBy: groupBy,
   isStaff: isStaff,
+  isSupport: isSupport,
   isMaster: isMaster,
   twoStepRequired: twoStepRequired,
   twoStepOn: twoStepOn,

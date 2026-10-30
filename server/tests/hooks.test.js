@@ -239,6 +239,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_health.pb.js"));
   run(path.join(HOOKS, "steady_feedback.pb.js"));
   run(path.join(HOOKS, "steady_care.pb.js"));
+  run(path.join(HOOKS, "steady_roles.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -854,10 +855,17 @@ test("feedback: staff send love, dislikes and bugs with a trail; the master clin
   } });
   assert.equal(bug.status, 200);
 
-  // who may read
-  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: doc }).status, 403);
+  // who may read: the practice's staff see tickets; OpenWorks support sees everything
+  const sup = rt.makeUser({ name: "OpenWorks", role: "support", active: true, email: "s@openworks.test" });
   assert.equal(rt.call("GET", "/api/steady/feedback").status, 401);
-  const list = rt.call("GET", "/api/steady/feedback", { auth: master }).data.items;
+  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: pat }).status, 403);
+  const tickets = rt.call("GET", "/api/steady/feedback", { auth: doc }).data;
+  assert.equal(tickets.full, false);
+  assert.equal(tickets.items.length, 2);
+  assert.equal(tickets.items[0].whoName, "Front desk");
+  assert.ok(!("hasScreenshot" in tickets.items[0]) && !("trail" in tickets.items[0]), "no technical detail for practice staff");
+  assert.equal(rt.call("GET", "/api/steady/feedback/" + bug.data.id, { auth: master }).status, 403);
+  const list = rt.call("GET", "/api/steady/feedback", { auth: sup }).data.items;
   assert.equal(list.length, 2);
   assert.equal(list[0].kind, "bug", "newest first");
   assert.match(list[0].who, /Front desk \(admin\)/);
@@ -866,14 +874,17 @@ test("feedback: staff send love, dislikes and bugs with a trail; the master clin
   assert.equal(viaKey.data.trail.length, 70, "the last steps, with unknown kinds dropped");
   assert.ok(viaKey.data.trail.every((x) => x.kind !== "keystroke"));
   assert.equal(viaKey.data.client.build, "abc1234");
-  assert.equal(rt.call("GET", "/api/steady/feedback/" + love.data.id, { auth: master }).data.trail.length, 10, "love and dislikes keep only the last ten steps");
-  assert.equal(rt.call("GET", "/api/steady/feedback/" + bug.data.id + "/screenshot", { auth: master }).status, 404, "no screenshot was attached");
+  assert.equal(rt.call("GET", "/api/steady/feedback/" + love.data.id, { auth: sup }).data.trail.length, 10, "love and dislikes keep only the last ten steps");
+  assert.equal(rt.call("GET", "/api/steady/feedback/" + bug.data.id + "/screenshot", { auth: sup }).status, 404, "no screenshot was attached");
+  assert.equal(rt.call("GET", "/api/steady/feedback/" + bug.data.id + "/screenshot", { auth: master }).status, 403);
 
-  // marking it done
+  // only OpenWorks support marks it seen or done
   assert.equal(rt.call("PATCH", "/api/steady/feedback/" + bug.data.id, { auth: doc, body: { status: "done" } }).status, 403);
-  assert.equal(rt.call("PATCH", "/api/steady/feedback/" + bug.data.id, { auth: master, body: { status: "done", note: "Fixed in 0.4" } }).status, 200);
-  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: master }).data.items.length, 1, "done ones leave the open list");
-  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: master, query: { status: "done" } }).data.items[0].note, "Fixed in 0.4");
+  assert.equal(rt.call("PATCH", "/api/steady/feedback/" + bug.data.id, { auth: master, body: { status: "done" } }).status, 403);
+  assert.equal(rt.call("PATCH", "/api/steady/feedback/" + bug.data.id, { auth: sup, body: { status: "done", note: "Fixed in 0.4" } }).status, 200);
+  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: sup }).data.items.length, 1, "done ones leave the open list");
+  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: sup, query: { status: "done" } }).data.items[0].note, "Fixed in 0.4");
+  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: doc, query: { status: "done" } }).data.items[0].status, "done", "staff see their ticket's status");
 
   // twenty in ten minutes, then a pause
   for (let i = 0; i < 19; i++) rt.call("POST", "/api/steady/feedback", { auth: doc, body: { kind: "love" } });
@@ -995,7 +1006,9 @@ test("roles: an administrator sees names only and can't open patient data", () =
   assert.equal(people.status, 200);
   const row = people.data.patients.find((p) => p.id === pat.id);
   assert.equal(row.name, "Pat (clinic)");
-  assert.deepEqual(Object.keys(row).sort(), ["active", "clinician", "id", "joinedAt", "name", "role"]);
+  assert.deepEqual(Object.keys(row).sort(), ["active", "app", "clinician", "id", "joinedAt", "name", "role", "status"]);
+  assert.deepEqual(Object.keys(row.status).sort(), ["careStatus", "consent", "lastCheckinAt", "notifications", "privacyNoticeAt", "watch"]);
+  assert.ok(!JSON.stringify(row).match(/mood|anxiety|score|note/i), "status, never data");
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: adm }).status, 403);
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/export`, { auth: adm }).status, 403);
   assert.equal(rt.call("POST", "/api/steady/admin/people", { auth: adm, body: { role: "clinician", name: "X", email: "x@x.test" } }).status, 403);
@@ -1097,4 +1110,95 @@ test("care: notes are the psychologist's own, shared colleagues read them, patie
   assert.equal(rt.call("POST", "/api/steady/patients/" + pat.id + "/notes", { auth: col, body: { text: "mine" } }).status, 404);
   // reads are logged
   assert.ok(rt.store.auditlog.some((r) => r.getString("action") === "patient.notes" && /shared/.test(r.getString("target"))));
+});
+
+test("roles 1.0: who resets whom, easy to lock down and hard to restore, OpenWorks sees no patients", () => {
+  const rt = makeRuntime({ env: ENV });
+  const master = rt.makeUser({ role: "clinician", master: true, name: "Dr Master", email: "m@x.test", active: true });
+  const doc = rt.makeUser({ role: "clinician", name: "Dr Doc", email: "d@x.test", active: true });
+  const doc2 = rt.makeUser({ role: "clinician", name: "Dr Two", email: "d2@x.test", active: true });
+  const adm = rt.makeUser({ role: "admin", name: "Reception", email: "r@x.test", active: true });
+  const sup = rt.makeUser({ role: "support", name: "OpenWorks", email: "s@x.test", active: true });
+  const pat = rt.makeUser({ role: "patient", name: "Pat", clinician: doc.id, email: "p@x.test", active: true });
+  const reset = (who, target, twoStep) => rt.call("POST", `/api/steady/people/${target.id}/reset-password`, { auth: who, body: { twoStep: !!twoStep } }).status;
+  // patients: their psychologist, the master clinician, the practice admin; not OpenWorks
+  assert.equal(reset(doc, pat), 200);
+  assert.equal(reset(master, pat), 200);
+  assert.equal(reset(adm, pat), 200);
+  assert.equal(reset(sup, pat), 404);
+  assert.equal(reset(doc2, pat), 404);
+  // psychologists: the master clinician, the practice admin, OpenWorks; not a colleague
+  assert.equal(reset(doc2, doc), 403);
+  assert.equal(reset(adm, doc), 200);
+  assert.equal(reset(master, doc), 200);
+  assert.equal(reset(sup, doc), 200);
+  // the practice admin: the master clinician and OpenWorks
+  assert.equal(reset(doc, adm), 403);
+  assert.equal(reset(master, adm), 200);
+  assert.equal(reset(sup, adm), 200);
+  // the master clinician: OpenWorks only; OpenWorks accounts: on the server only
+  assert.equal(reset(adm, master), 403);
+  assert.equal(reset(sup, master), 200);
+  assert.equal(reset(master, sup), 403);
+  // clearing a staff member's authenticator (a full reset): OpenWorks only
+  assert.equal(reset(master, doc, true), 403);
+  assert.equal(reset(sup, doc, true), 200);
+
+  // (the resets above left temporary passwords; as if each had chosen a new one)
+  for (const u of [master, doc, adm, sup]) { u.set("mustChangePassword", false); rt.app.save(u); }
+  // stopping a staff account: master, practice admin, OpenWorks; restoring: OpenWorks only
+  const active = (who, target, a) => rt.call("POST", `/api/steady/admin/people/${target.id}/active`, { auth: who, body: { active: a } }).status;
+  assert.equal(active(doc2, doc, false), 403);
+  assert.equal(active(adm, doc, false), 200);
+  assert.equal(rt.app.findRecordById("users", doc.id).getBool("active"), false);
+  assert.equal(active(master, doc, true), 403, "the master clinician can't restore");
+  assert.equal(active(adm, doc, true), 403);
+  assert.equal(active(sup, doc, true), 200);
+  assert.equal(active(adm, master, false), 200, "a stolen master phone can be locked down by reception");
+  assert.equal(active(sup, master, true), 200);
+  assert.equal(active(master, sup, false), 403, "OpenWorks accounts are managed on the server");
+
+  // OpenWorks support: staff and system, no patients
+  const staff = rt.call("GET", "/api/steady/support/staff", { auth: sup });
+  assert.equal(staff.status, 200);
+  assert.ok(!staff.data.staff.some((x) => x.role === "patient"));
+  assert.equal(rt.call("GET", "/api/steady/admin/people", { auth: sup }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/overview", { auth: sup }).status, 403);
+  assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: sup }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/audit", { auth: sup }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/support/staff", { auth: adm }).status, 403);
+
+  // the audit report: master clinician and practice admin, with names; reading it is logged too
+  const audit = rt.call("GET", "/api/steady/audit", { auth: adm, query: { days: 7 } });
+  assert.equal(audit.status, 200);
+  assert.ok(audit.data.rows.some((r) => r.action === "account.reset-password" && r.actor === "Dr Doc"));
+  assert.ok(rt.store.auditlog.some((r) => r.getString("action") === "audit.read"));
+  assert.equal(rt.call("GET", "/api/steady/audit", { auth: doc }).status, 403);
+});
+
+test("app version and watch permissions: reported by the app, seen by the psychologist and reception", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ role: "clinician", name: "Dr Doc", email: "d@x.test", active: true });
+  const adm = rt.makeUser({ role: "admin", name: "Reception", email: "r@x.test", active: true });
+  const pat = rt.makeUser({ role: "patient", name: "Pat", clinician: doc.id, email: "p@x.test", active: true, wearableConsentAt: "2026-10-01 00:00:00.000Z" });
+  assert.equal(rt.call("POST", "/api/steady/me/app", { auth: pat, body: { build: "abc1234", platform: "android", health: "granted" } }).status, 200);
+  rt.tick(86400e3);
+  assert.equal(rt.call("POST", "/api/steady/me/app", { auth: pat, body: { build: "abc1234<script>", platform: "toaster", health: "missing" } }).status, 200);
+  const u = rt.app.findRecordById("users", pat.id);
+  assert.equal(u.getString("appBuild"), "abc1234script");
+  assert.equal(u.getString("appPlatform"), "");
+  assert.ok(rt.store.auditlog.some((r) => r.getString("action") === "watch.permission.lapsed"));
+  const sum = rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc }).data;
+  assert.equal(sum.watchPermission.lapsed, true);
+  assert.equal(sum.app.build, "abc1234script");
+  const row = rt.call("GET", "/api/steady/admin/people", { auth: adm }).data.patients[0];
+  assert.equal(row.status.watch.lapsed, true);
+  assert.equal(row.status.watch.permission, "missing");
+  // a reminder: their psychologist or reception, at most once in 12 hours
+  assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/remind-watch`, { auth: adm }).status, 200);
+  assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/remind-watch`, { auth: doc }).status, 400);
+  assert.ok(rt.store.notifications.some((n) => n.getString("recipient") === pat.id && n.getString("title") === "Reconnect your watch"));
+  // granted again: no longer lapsed
+  rt.call("POST", "/api/steady/me/app", { auth: pat, body: { build: "abc1234", platform: "android", health: "granted" } });
+  assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc }).data.watchPermission.lapsed, false);
 });
