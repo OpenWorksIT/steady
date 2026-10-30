@@ -174,3 +174,28 @@ jobs:
         run: |
           set -o pipefail
           flutter test 2>&1 | tee ../test.txt || { echo "::error title=flutter test::$(sed 's/%/%25/g' ../test.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+
+  android:
+    # Builds the Android app (unsigned debug, nothing published) so a plugin or Android setting
+    # that doesn't compile shows up on every push, not only when a release is built.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: build apk
+        working-directory: app
+        timeout-minutes: 30
+        run: |
+          set -o pipefail
+          flutter create --org za.co.openworks --project-name steady --platforms android . > ../create.txt 2>&1
+          rm -f test/widget_test.dart
+          python3 scripts/patch_android.py 2>&1 | tee ../patch.txt
+          grep -q 'Theme.AppCompat' android/app/src/main/res/values/styles.xml || { echo "::error title=patch_android::LaunchTheme isn't AppCompat"; exit 1; }
+          flutter build apk --debug --target-platform android-arm64 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
