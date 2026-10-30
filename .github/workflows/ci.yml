@@ -171,6 +171,7 @@ jobs:
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          flutter-version: 3.47.9
       # Each step reports its full output as one annotation, so it can be read with
       # `gh run view` even where log downloads aren't available.
       - name: pub get
@@ -183,7 +184,9 @@ jobs:
         working-directory: app
         run: |
           echo "::notice title=flutter version::$(flutter --version --machine | tr -d '\n')"
-          [ -f pubspec.lock ] && echo "::notice title=pubspec.lock gz-b64::$(gzip -9c pubspec.lock | base64 -w0)"
+          if [ -f pubspec.lock ]; then
+            gzip -9c pubspec.lock | base64 -w0 | fold -w 3800 | nl -ba -w2 -s' ' | while read -r n part; do echo "::notice title=pubspec.lock part $n::$part"; done
+          fi
       - name: analyze
         working-directory: app
         run: |
@@ -213,6 +216,7 @@ jobs:
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          flutter-version: 3.47.9
           cache: true
       - name: build apk
         working-directory: app
