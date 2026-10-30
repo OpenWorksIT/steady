@@ -19,6 +19,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _current = TextEditingController();
   final _next = TextEditingController();
   final _again = TextEditingController();
+  final _code = TextEditingController();
   String? _error;
 
   @override
@@ -26,6 +27,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     _current.dispose();
     _next.dispose();
     _again.dispose();
+    _code.dispose();
     super.dispose();
   }
 
@@ -35,7 +37,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     if (_next.text != _again.text) return setState(() => _error = "The two new passwords aren't the same.");
     final state = AppScope.of(context);
     try {
-      await state.api.changePassword(_current.text, _next.text);
+      await state.api.changePassword(_current.text, _next.text, emailCode: state.api.emailCodeNeeded ? _code.text : null);
       if (!mounted) return;
       if (!widget.forced) {
         Navigator.of(context).pop();
@@ -63,6 +65,11 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               const SizedBox(height: 6),
               Text('You signed in with a temporary password. Choose a new one that only you know before you carry on.',
                   style: TextStyle(color: context.sc.ink2)),
+              if (state.api.emailCodeNeeded) ...[
+                const SizedBox(height: 8),
+                Text('We also emailed you a 6-digit code. Only you can see it, so only you can finish the reset.',
+                    style: TextStyle(color: context.sc.ink2)),
+              ],
               const SizedBox(height: 18),
             ],
             AutofillGroup(
@@ -73,6 +80,15 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   autofillHints: const [AutofillHints.password],
                   decoration: InputDecoration(labelText: widget.forced ? 'Temporary password' : 'Current password'),
                 ),
+                if (state.api.emailCodeNeeded) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _code,
+                    keyboardType: TextInputType.number,
+                    autofillHints: const [AutofillHints.oneTimeCode],
+                    decoration: const InputDecoration(labelText: 'Code from the email', helperText: 'Check spam too. It works for 24 hours.'),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextField(
                   controller: _next,

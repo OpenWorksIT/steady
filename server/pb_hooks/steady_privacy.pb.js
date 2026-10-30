@@ -20,7 +20,7 @@ onRecordEnrich((e) => {
   if (auth && !auth.isSuperuser() && auth.getString("role") === "patient" && e.record.id !== auth.id) {
     e.record.hide("email", "emailVisibility", "verified", "role", "clinician", "active", "master", "serverAdmin", "mustChangePassword",
       "sharedWith", "totpEnabledAt", "demo", "appBuild", "appPlatform", "appSeenAt", "healthPerm", "consentAt", "consentVersion",
-      "privacyNoticeAt", "privacyNoticeVersion", "wearableConsentAt", "wearableConsentVersion", "tzOffset", "created", "updated", "avatar");
+      "privacyNoticeAt", "privacyNoticeVersion", "wearableConsentAt", "wearableConsentVersion", "tzOffset", "created", "updated", "avatar", "emailCodeNeeded");
   }
   e.next();
 }, "users");

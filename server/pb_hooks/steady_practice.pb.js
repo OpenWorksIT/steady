@@ -212,6 +212,20 @@ routerAdd("POST", "/api/steady/me/password", (e) => {
   const next = typeof b.newPassword === "string" ? b.newPassword : "";
   const u = $app.findRecordById("users", e.auth.id);
   if (!u.validatePassword(old)) throw s.badRequest("Your current password isn't right.");
+  if (u.getBool("emailCodeNeeded")) {
+    const rc = s.readJson(u, "resetCode") || {};
+    const given = String(b.emailCode || "").replace(/[^0-9]/g, "");
+    if (!rc.hash || !rc.expires || rc.expires < s.nowMs() || (rc.tries || 0) >= 5) {
+      throw s.badRequest("The emailed code has expired. Please ask the practice to reset your password again.", { emailCode: new ValidationError("expired", "Expired.") });
+    }
+    if (!given || !$security.equal($security.sha256(u.id + ":" + given), rc.hash)) {
+      u.set("resetCode", { hash: rc.hash, expires: rc.expires, tries: (rc.tries || 0) + 1 });
+      $app.unsafeWithoutHooks().save(u);
+      throw s.badRequest(given ? "That code didn't work. Check the newest email from Steady." : "Enter the code we emailed you.", { emailCode: new ValidationError(given ? "wrong" : "needed", "Code needed.") });
+    }
+    u.set("resetCode", null);
+    u.set("emailCodeNeeded", false);
+  }
   if (next.length < 10) throw s.badRequest("Choose a password of at least 10 characters.");
   if (next === old) throw s.badRequest("Choose a different password from the old one.");
   u.setPassword(next);
@@ -330,7 +344,31 @@ routerAdd("POST", "/api/steady/people/{id}/reset-password", (e) => {
   if (b.twoStep === true && target !== "patient" && !D.required()) {
     throw s.badRequest("This server can't email device codes yet, so a full reset would let whoever does it sign in as them. Set up email first (docs/DEPLOY.md, 5a), or reset on the server with accounts.sh.");
   }
+  // A patient's reset by anyone but their own psychologist is finished only with a code emailed to
+  // the patient: whoever reset it then can't choose the new password and read the patient's data.
+  const M = require(`${__hooks}/lib/mail.js`);
+  const byOther = target === "patient" && u.getString("clinician") !== e.auth.id;
+  if (byOther && !M.ready()) {
+    throw s.badRequest("This server can't email patients a code yet, so only their own psychologist can reset their password.");
+  }
   D.requireConfirmed(e, "a password reset");
+  let emailed = "";
+  if (byOther) {
+    let code = "";
+    for (let i = 0; i < 6; i++) code += String($security.randomStringWithAlphabet(1, "0123456789"));
+    // the wording says nothing about a practice or psychology: inboxes can be shared
+    const sent = M.send($app, u.email(), "Steady: your code to finish a password reset",
+      "Hello,\n\nYour code to finish resetting your Steady password is:\n\n    " + code + "\n\n" +
+      "You'll be asked for it after signing in with the temporary password you were given. It works for 24 hours.\n\n" +
+      "If you didn't ask for a new password, you can ignore this email: nobody can finish the reset without this code.");
+    if (!sent) throw s.badRequest("Steady couldn't email the patient their code, so nothing was changed. Please try again later.");
+    u.set("resetCode", { hash: $security.sha256(u.id + ":" + code), expires: s.nowMs() + 24 * 3600000, tries: 0 });
+    u.set("emailCodeNeeded", true);
+    emailed = require(`${__hooks}/lib/devices.js`).mask(u.email());
+  } else {
+    u.set("resetCode", null);
+    u.set("emailCodeNeeded", false);
+  }
   if (b.twoStep === true) {
     u.set("totpSecret", "");
     u.set("totpEnabledAt", "");
@@ -355,7 +393,7 @@ routerAdd("POST", "/api/steady/people/{id}/reset-password", (e) => {
       body: e.auth.getString("name") + " gave them a temporary password.", severity: "info", push: false
     });
   }
-  return e.json(200, { id: u.id, name: target === "patient" ? s.displayName(u) : u.getString("name"), temporaryPassword: pw });
+  return e.json(200, { id: u.id, name: target === "patient" ? s.displayName(u) : u.getString("name"), temporaryPassword: pw, emailed: emailed });
 }, $apis.requireAuth());
 
 /* =====================================================================
@@ -703,6 +741,8 @@ routerAdd("POST", "/api/steady/ops/accounts/reset", (e) => {
     u.set("totpEnabledAt", "");
     u.set("recoveryCodes", []);
   }
+  u.set("resetCode", null);
+  u.set("emailCodeNeeded", false);
   const pw = s.resetPassword($app, u);
   const unlinked = u.getString("role") === "patient" ? 0 : require(`${__hooks}/lib/devices.js`).unlinkAll($app, u);
   s.audit($app, null, "ops.account.reset-password", "user:" + u.id + (b.twoStep === true ? " two-step" : "") + (unlinked ? " devices:" + unlinked : ""), u.getString("role") === "patient" ? u.id : "");

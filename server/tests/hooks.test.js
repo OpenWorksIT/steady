@@ -1026,7 +1026,9 @@ test("roles: an administrator sees names only and can't open patient data", () =
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: adm }).status, 403);
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/export`, { auth: adm }).status, 403);
   assert.equal(rt.call("POST", "/api/steady/admin/people", { auth: adm, body: { role: "clinician", name: "X", email: "x@x.test" } }).status, 403);
-  const reset = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: adm });
+  // without email for the patient's code, the admin can't reset a patient (their psychologist can)
+  assert.equal(rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: adm }).status, 400);
+  const reset = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc });
   assert.equal(reset.status, 200);
   assert.match(reset.data.temporaryPassword, /^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/);
   assert.equal(rt.app.findRecordById("users", pat.id).getBool("mustChangePassword"), true);
@@ -1153,8 +1155,9 @@ test("roles 1.0: who resets whom, easy to lock down and hard to restore, OpenWor
   const reset = (who, target, twoStep) => rt.call("POST", `/api/steady/people/${target.id}/reset-password`, { auth: who, body: { twoStep: !!twoStep } }).status;
   // patients: their psychologist, the master clinician, the practice admin; not OpenWorks
   assert.equal(reset(doc, pat), 200);
-  assert.equal(reset(master, pat), 200);
-  assert.equal(reset(adm, pat), 200);
+  // (the master clinician and practice admin need email for the patient's code: tested on its own)
+  assert.equal(reset(master, pat), 400);
+  assert.equal(reset(adm, pat), 400);
   assert.equal(reset(sup, pat), 404);
   assert.equal(reset(doc2, pat), 404);
   // psychologists: the master clinician, the practice admin, OpenWorks; not a colleague
@@ -1390,4 +1393,45 @@ test("staff sign-in 1.0: without email settings nothing changes, and a failed em
     try { down.hooks.middleware[0]({ request: { url: { path: p }, remoteAddr: "1.2.3.4:5" }, response: { header: () => ({ set() {} }) }, next: () => "passed" }); } catch (err) { threw = err; }
     assert.ok(threw && threw.status === 404, p);
   }
+});
+
+test("patient resets by the practice admin or master clinician finish only with a code emailed to the patient", () => {
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_SMTP_HOST: "mail.test" }) });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const adm = rt.makeUser({ name: "Front desk", role: "admin", active: true, email: "a@example.org" });
+  rt.makeRecord("staffdevices", { user: adm.id, keyHash: require("crypto").createHash("sha256").update("a".repeat(40)).digest("hex"), platform: "android", confirmedAt: "2099-01-01 00:00:00.000Z" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "pat@example.org" });
+  const r = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: adm, headers: { "X-Steady-Device": "a".repeat(40) } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.emailed, "p***@example.org");
+  const mail = rt.mails.find((m) => m.to[0].address === "pat@example.org");
+  assert.ok(mail, "the patient is emailed");
+  assert.ok(!/psycholog|practice|VR Demo/i.test(mail.subject + mail.text), "the email says nothing about a practice");
+  const code = /is:\s+(\d{6})/.exec(mail.text)[1];
+  assert.equal(pat.getBool("emailCodeNeeded"), true);
+  const change = (body) => rt.call("POST", "/api/steady/me/password", { auth: pat, body: Object.assign({ password: r.data.temporaryPassword, newPassword: "Chosen-by-admin-1" }, body) });
+  // the temporary password alone isn't enough: the person who reset it can't finish
+  assert.equal(change({}).status, 400);
+  assert.equal(change({ emailCode: "000000" }).status, 400);
+  assert.equal(change({ emailCode: code }).status, 200);
+  assert.equal(pat.getBool("emailCodeNeeded"), false);
+  // the patient's own psychologist: no code (they already see the data)
+  rt.makeRecord("staffdevices", { user: doc.id, keyHash: require("crypto").createHash("sha256").update("d".repeat(40)).digest("hex"), platform: "android", confirmedAt: "2099-01-01 00:00:00.000Z" });
+  const own = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc, headers: { "X-Steady-Device": "d".repeat(40) } });
+  assert.equal(own.status, 200);
+  assert.equal(own.data.emailed, "");
+  assert.equal(pat.getBool("emailCodeNeeded"), false);
+  // five wrong codes end it
+  const r2 = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: adm, headers: { "X-Steady-Device": "a".repeat(40) } });
+  const code2 = /is:\s+(\d{6})/.exec(rt.mails.filter((m) => m.to[0].address === "pat@example.org").pop().text)[1];
+  const change2 = (c) => rt.call("POST", "/api/steady/me/password", { auth: pat, body: { password: r2.data.temporaryPassword, newPassword: "Another-pass-12", emailCode: c } });
+  for (let i = 0; i < 5; i++) change2("111111");
+  assert.match(change2(code2).error, /expired/);
+  // without email settings, only their own psychologist resets a patient
+  const plain = makeRuntime({ env: ENV });
+  const d2 = plain.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const a2 = plain.makeUser({ name: "Admin", role: "admin", active: true, email: "a@example.org" });
+  const p2 = plain.makeUser({ name: "P", role: "patient", clinician: d2.id, active: true, email: "p@example.org" });
+  assert.equal(plain.call("POST", `/api/steady/people/${p2.id}/reset-password`, { auth: a2 }).status, 400);
+  assert.equal(plain.call("POST", `/api/steady/people/${p2.id}/reset-password`, { auth: d2 }).status, 200);
 });

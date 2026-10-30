@@ -432,15 +432,18 @@ class Api {
       pb.authStore.save('${res['token']}', RecordModel.fromJson(asMap(res['record'])));
 
   bool get mustChangePassword => me?.getBoolValue('mustChangePassword') ?? false;
+  /// A reset by the practice admin or master clinician: finished with a code emailed to the patient.
+  bool get emailCodeNeeded => me?.getBoolValue('emailCodeNeeded') ?? false;
   bool get twoStepOn => (me?.getStringValue('totpEnabledAt') ?? '').isNotEmpty;
   bool get isMaster => role == 'clinician' && (me?.getBoolValue('master') ?? false);
   bool get isSupport => role == 'support';
   bool get isStaff => role == 'clinician' || role == 'admin' || role == 'support';
 
   /// Choose a new password (also the way out of a temporary one).
-  Future<void> changePassword(String current, String next) async {
+  /// [emailCode]: after a reset by the practice (not the psychologist), the code emailed to the patient.
+  Future<void> changePassword(String current, String next, {String? emailCode}) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/me/password',
-        method: 'POST', body: {'password': current, 'newPassword': next});
+        method: 'POST', body: {'password': current, 'newPassword': next, 'emailCode': ?emailCode});
     _saveAuth(res);
   }
 
@@ -721,10 +724,12 @@ class Api {
   /* ---------------- the practice (master clinician, administrator) ---------------- */
 
   /// A temporary password for someone; they must choose their own at next sign-in.
-  Future<String> resetPassword(String userId, {bool twoStep = false}) async {
+  /// A temporary password for someone, and the (masked) address a finishing code was emailed to
+  /// when the patient must confirm it themselves (empty otherwise).
+  Future<({String password, String emailed})> resetPassword(String userId, {bool twoStep = false}) async {
     final res = await confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/people/$userId/reset-password',
         method: 'POST', body: {'twoStep': twoStep}));
-    return '${res['temporaryPassword']}';
+    return (password: '${res['temporaryPassword']}', emailed: '${res['emailed'] ?? ''}');
   }
 
   Future<({List<Person> patients, List<Person> clinicians, List<Person> admins, String serverBuild})> people() async {

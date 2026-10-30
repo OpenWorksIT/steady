@@ -160,7 +160,9 @@ Future<void> exportExcel(BuildContext context, {String? patientId}) async {
 }
 
 /// Shows a temporary password once, for the person who reset it to pass on.
-Future<void> showTemporaryPassword(BuildContext context, String name, String password) => showDialog<void>(
+/// [emailed]: the patient was also emailed a code (to this masked address) that only they can
+/// use to finish the reset.
+Future<void> showTemporaryPassword(BuildContext context, String name, String password, {String emailed = ''}) => showDialog<void>(
       context: context,
       builder: (c) => AlertDialog(
         title: Text('Temporary password for $name'),
@@ -169,6 +171,11 @@ Future<void> showTemporaryPassword(BuildContext context, String name, String pas
           const SizedBox(height: 12),
           const Text('Give it to them by phone or in person, not by email or chat. They\'re signed out everywhere now, '
               'and choose their own password when they sign in with this one. It isn\'t shown again.'),
+          if (emailed.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('We\'ve also emailed $emailed a code. They need both to finish: the temporary password alone '
+                'can\'t set a new one. If the email doesn\'t arrive, their psychologist can reset it instead.'),
+          ],
         ]),
         actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Done'))],
       ),
@@ -201,8 +208,8 @@ Future<void> resetPasswordFlow(BuildContext context, {required String userId, re
   );
   if (ok != true || !context.mounted) return;
   try {
-    final pw = await AppScope.api(context).resetPassword(userId, twoStep: twoStep);
-    if (context.mounted) await showTemporaryPassword(context, name, pw);
+    final r = await AppScope.api(context).resetPassword(userId, twoStep: twoStep);
+    if (context.mounted) await showTemporaryPassword(context, name, r.password, emailed: r.emailed);
   } catch (e) {
     if (context.mounted) showSnack(context, errorText(e));
   }

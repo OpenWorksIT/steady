@@ -15,6 +15,7 @@ import http.client
 import json
 import os
 import pathlib
+import re
 import secrets
 import socket
 import struct
@@ -769,9 +770,15 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     P = "password resets"
     tokF, f, emailF, pwF = patient(doc1, "Fran (D1)", "Fran", want_password=True)
     checkin(tokF, f, 3, "F's note")
+    s, cfgP = call("GET", "/api/steady/config")
+    mail = bool(cfgP.get("deviceLink"))
     s, rs = call("POST", f"/api/steady/people/{f}/reset-password", adm)
+    if mail:
+        check(P, "the administrator starts a patient's reset; the patient is emailed a code", s == 200 and len(rs.get("temporaryPassword", "")) == 14 and "@" in rs.get("emailed", ""), rs)
+    else:
+        check(P, "without email for the patient's code, the administrator can't reset a patient", s == 400, rs)
+        s, rs = call("POST", f"/api/steady/people/{f}/reset-password", doc1)
     temp = rs.get("temporaryPassword", "")
-    check(P, "the administrator resets a patient's password", s == 200 and len(temp) == 14, rs)
     s, r = call("POST", "/api/collections/users/auth-refresh", tokF)
     check(P, "a reset signs the patient out everywhere", s == 401, r)
     s, r = call("POST", "/api/collections/users/auth-with-password", body={"identity": emailF, "password": pwF})
@@ -787,12 +794,22 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(P, "with a temporary password, Steady's routes refuse too", s == 403, r)
     s, r = call("POST", "/api/steady/me/password", tt, {"password": temp, "newPassword": "short"})
     check(P, "a new password needs at least 10 characters", s == 400, r)
-    s, ch = call("POST", "/api/steady/me/password", tt, {"password": temp, "newPassword": "Fran-new-password-1"})
+    code = {}
+    if mail:
+        s, r = call("POST", "/api/steady/me/password", tt, {"password": temp, "newPassword": "Chosen-by-admin-1"})
+        check(P, "whoever reset it can't finish without the code in the patient's email", s == 400 and "emailCode" in json.dumps(r), r)
+        url = ENV.get("MAILSINK_URL", "http://127.0.0.1:8025").rstrip("/")
+        with urllib.request.urlopen(url + "/latest?" + urllib.parse.urlencode({"to": emailF, "subject": "finish a password reset"}), timeout=10) as resp:
+            m = json.loads(resp.read())
+        check(P, "the patient's email names no practice or psychologist", not any(w in (m.get("text", "") + m.get("subject", "")).lower() for w in ("psycholog", "practice", "clinical", "dr one")), m)
+        code = {"emailCode": re.search(r"is:\s+(\d{6})", m.get("text", "")).group(1)}
+    s, ch = call("POST", "/api/steady/me/password", tt, dict({"password": temp, "newPassword": "Fran-new-password-1"}, **code))
     check(P, "the patient chooses a new password", s == 200 and ch.get("record", {}).get("mustChangePassword") is False and ch.get("token"), ch)
     s, r = call("GET", "/api/collections/checkins/records", ch.get("token"))
     check(P, "after choosing a new password the patient sees their data again", s == 200 and items(r), r)
     s, r = call("GET", "/api/collections/notifications/records", doc1, query={"perPage": 200, "sort": "-created"})
-    check(P, "the psychologist is told when someone else reset their patient's password", any("Password reset for Fran" in i["title"] for i in items(r)), [i["title"] for i in items(r)][:5])
+    if mail:
+        check(P, "the psychologist is told when someone else reset their patient's password", any("Password reset for Fran" in i["title"] for i in items(r)), [i["title"] for i in items(r)][:5])
     s, r = call("POST", f"/api/steady/people/{b}/reset-password", doc2)
     check(P, "a psychologist can't reset another psychologist's patient", s == 404, r)
     s, r = call("POST", f"/api/steady/people/{c}/reset-password", doc2)
