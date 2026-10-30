@@ -189,6 +189,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
         exportPatientPdf(context, widget.patientId);
       case 'excel':
         exportExcel(context, patientId: widget.patientId);
+      case 'heidi':
+        exportHeidiPdf(context, widget.patientId);
     }
   }
 
@@ -207,6 +209,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
                 PopupMenuItem(value: 'settings', child: ListTile(leading: Icon(Icons.tune), title: Text('Patient settings'), subtitle: Text('Stable, archive, RADR measures'))),
                 PopupMenuItem(value: 'pdf', child: ListTile(leading: Icon(Icons.picture_as_pdf_outlined), title: Text('PDF report'))),
                 PopupMenuItem(value: 'excel', child: ListTile(leading: Icon(Icons.table_chart_outlined), title: Text('Export to Excel'))),
+                PopupMenuItem(value: 'heidi', child: ListTile(leading: Icon(Icons.description_outlined), title: Text('Export for Heidi'), subtitle: Text('Text PDF for the AI scribe; only what\'s new'))),
                 PopupMenuItem(value: 'share', child: ListTile(leading: Icon(Icons.group_add_outlined), title: Text('Share with a colleague'))),
                 PopupMenuItem(value: 'reset', child: ListTile(leading: Icon(Icons.key_outlined), title: Text('Reset password'))),
                 PopupMenuItem(value: 'rename', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Rename'))),

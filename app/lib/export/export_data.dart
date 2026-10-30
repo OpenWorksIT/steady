@@ -14,11 +14,56 @@ class ExportCheckin {
 }
 
 class ExportFlag {
-  final String label, severity;
-  ExportFlag(this.label, this.severity);
+  final String label, severity, key;
+  final DateTime? at;
+  /// Marked as reviewed in Steady: who, when, and their note. Null when not (yet) marked.
+  final ({String by, DateTime? at, String note})? review;
+  ExportFlag(this.label, this.severity, {this.key = '', this.at, this.review});
+  /// Flags a psychologist can mark as reviewed (not "no check-in for 3 days" and the like).
+  bool get reviewable => key.isNotEmpty;
   static ExportFlag fromJson(Object? raw) {
     final j = asMap(raw);
-    return ExportFlag('${j['label'] ?? ''}', '${j['severity'] ?? 'none'}');
+    final r = j['review'] is Map ? asMap(j['review']) : null;
+    return ExportFlag('${j['label'] ?? ''}', '${j['severity'] ?? 'none'}',
+        key: '${j['key'] ?? ''}',
+        at: _date(j['at']),
+        review: r == null ? null : (by: '${r['by'] ?? ''}', at: _date(r['at']), note: '${r['note'] ?? ''}'));
+  }
+
+  /// "reviewed by Dr X on 3 Oct (note)" or "not yet marked as reviewed in Steady".
+  String reviewText(String Function(DateTime) date) {
+    final r = review;
+    if (!reviewable) return '';
+    if (r == null) return 'not yet marked as reviewed in Steady';
+    return 'reviewed by ${r.by.isEmpty ? 'the psychologist' : r.by}${r.at == null ? '' : ' on ${date(r.at!)}'}${r.note.trim().isEmpty ? '' : ' ("${r.note.trim()}")'}';
+  }
+}
+
+/// A short dated note by the psychologist (never shown to the patient).
+class ExportNote {
+  final DateTime at;
+  final String by, text;
+  ExportNote(this.at, this.by, this.text);
+}
+
+/// What the last Heidi-ready export covered (for "since the last export").
+class HeidiMark {
+  final DateTime? at;
+  final String from, to, by, radr;
+  final int part;
+  HeidiMark({this.at, required this.from, required this.to, required this.part, this.by = '', this.radr = ''});
+  static HeidiMark? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final j = asMap(raw);
+    final at = j['at'];
+    return HeidiMark(
+      at: at is num ? DateTime.fromMillisecondsSinceEpoch(at.toInt()) : _date(at),
+      from: '${j['from'] ?? ''}',
+      to: '${j['to'] ?? ''}',
+      part: (j['part'] as num?)?.toInt() ?? 1,
+      by: '${j['by'] ?? ''}',
+      radr: '${j['radr'] ?? ''}',
+    );
   }
 }
 
@@ -61,6 +106,13 @@ class ExportRadr {
   final ExportRadrDay? latest;
   final String shift;
   final int wearDays, checkinDays;
+  /// e.g. radr-1, and the method's settings (baseline days, smoothing, "away" threshold...)
+  String version = '';
+  Map<String, dynamic> method = const {};
+  /// domains switched off for this patient: [{domain, since, by, reason}]
+  List<Map<String, dynamic>> exclusions = const [];
+  /// each measure's value and usual value on the first and latest rated days
+  Map<String, dynamic> startFeatures = const {}, latestFeatures = const {};
   ExportRadr(this.days, this.concordance, this.latest, this.shift, this.wearDays, this.checkinDays);
 
   static const domainKeys = ['sleep', 'circadian', 'activity', 'cardiac'];
@@ -84,7 +136,7 @@ class ExportRadr {
     if (raw is! Map) return null;
     final j = asMap(raw);
     final latest = j['latest'] is Map ? _day(asMap(j['latest'])) : null;
-    return ExportRadr(
+    final r = ExportRadr(
       asList(j['days']).map((d) => _day(asMap(d))).toList(),
       asList(j['concordance']).map((c) {
         final m = asMap(c);
@@ -95,6 +147,12 @@ class ExportRadr {
       (j['wearDays'] as num?)?.toInt() ?? 0,
       (j['checkinDays'] as num?)?.toInt() ?? 0,
     );
+    r.version = '${j['version'] ?? ''}';
+    r.method = asMap(j['method']);
+    r.exclusions = asList(j['exclusions']).map(asMap).toList();
+    r.startFeatures = asMap(asMap(j['start'])['features']);
+    r.latestFeatures = asMap(asMap(j['latest'])['features']);
+    return r;
   }
 }
 
@@ -109,6 +167,14 @@ class ExportPatient {
   final List<({String day, Map<String, dynamic> values})> wearableDays;
   final Map<String, ExportInstrument> instruments;
   final ExportRadr? radr;
+  /// the psychologist's own notes for the period
+  final List<ExportNote> notes;
+  /// how things were worked out: radr (version), checkins, questionnaireFlags, steadyBuild
+  final Map<String, String> methods;
+  /// the latest questionnaire of each kind before the period ("where things stood")
+  final List<({DateTime? at, String name, double? total, double? max, String band})> before;
+  final HeidiMark? lastHeidi;
+  final String careStatus;
   ExportPatient({
     required this.id,
     required this.name,
@@ -125,6 +191,11 @@ class ExportPatient {
     required this.wearableDays,
     required this.instruments,
     this.radr,
+    this.notes = const [],
+    this.methods = const {},
+    this.before = const [],
+    this.lastHeidi,
+    this.careStatus = '',
   });
 
   factory ExportPatient.fromJson(Map<String, dynamic> j) {
@@ -175,6 +246,17 @@ class ExportPatient {
       wearableDays: asList(w['days']).map((raw) => (day: '${asMap(raw)['day']}', values: asMap(asMap(raw)['values']))).toList(),
       instruments: inst,
       radr: ExportRadr.fromJson(j['radr']),
+      notes: asList(j['notes']).map((raw) {
+        final n = asMap(raw);
+        return ExportNote(_date(n['at']) ?? DateTime(1970), '${n['by'] ?? ''}', '${n['text'] ?? ''}');
+      }).toList(),
+      methods: asMap(j['methods']).map((k, v) => MapEntry(k, '${v ?? ''}')),
+      before: asList(asMap(j['before'])['assessments']).map((raw) {
+        final b = asMap(raw);
+        return (at: _date(b['at']), name: '${b['name'] ?? ''}', total: _num(b['total']), max: _num(b['max']), band: '${b['band'] ?? ''}');
+      }).toList(),
+      lastHeidi: HeidiMark.fromJson(j['lastHeidiExport']),
+      careStatus: '${j['careStatus'] ?? ''}',
     );
   }
 

@@ -495,7 +495,7 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
   const q = e.requestInfo().query || {};
   const joined = s.toMs(p, "created");
   const span = r.range(q, 3660, Math.ceil((s.nowMs() - joined) / s.core.DAY) + 1);
-  const rec = r.patientRecord($app, p, span[0], span[1], { answers: true, radr: true });
+  const rec = r.patientRecord($app, p, span[0], span[1], { answers: true, radr: true, clinical: true });
   s.audit($app, e, "patient.export", "user:" + p.id + " " + rec.from.slice(0, 10) + ".." + rec.to.slice(0, 10), p.id);
   return e.json(200, {
     practice: require(`${__hooks}/lib/brand.js`).current().name,
@@ -503,6 +503,35 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
     generatedAt: r.iso(s.nowMs()),
     patients: [rec]
   });
+}, $apis.requireAuth());
+
+// The patient's last Heidi export (null if none), for offering "since the last export".
+routerAdd("GET", "/api/steady/patients/{id}/heidi-export", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  const prev = s.readJson(p, "lastHeidiExport");
+  return e.json(200, { last: prev && typeof prev === "object" ? prev : null, radr: require(`${__hooks}/lib/radr.js`).VERSION });
+}, $apis.requireAuth());
+
+// After a Heidi-ready export is saved: remember what it covered, so the next one can carry on
+// from there. body: { kind: "since" | "all", from, to } (YYYY-MM-DD). A file for chosen dates
+// isn't part of the series and isn't recorded here.
+routerAdd("POST", "/api/steady/patients/{id}/heidi-export", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireRole(e, "clinician");
+  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  const b = s.body(e);
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  if (!day.test(String(b.from || "")) || !day.test(String(b.to || "")) || b.from > b.to) throw s.badRequest("from and to are dates like 2026-10-01.");
+  const kind = b.kind === "all" ? "all" : "since";
+  const prev = s.readJson(p, "lastHeidiExport");
+  const part = kind === "since" && prev && prev.part ? prev.part + 1 : 1;
+  const mark = { at: s.nowMs(), from: String(b.from), to: String(b.to), part: part, by: e.auth.getString("name"), radr: require(`${__hooks}/lib/radr.js`).VERSION };
+  p.set("lastHeidiExport", mark);
+  $app.unsafeWithoutHooks().save(p);
+  s.audit($app, e, "patient.export.heidi", "user:" + p.id + " " + mark.from + ".." + mark.to + " part:" + part, p.id);
+  return e.json(200, mark);
 }, $apis.requireAuth());
 
 // All of the psychologist's own patients, stopped ones included. The last 12 months unless
@@ -524,7 +553,7 @@ routerAdd("GET", "/api/steady/export", (e) => {
   // RADR is worked out per patient and is slow in bulk; past EXPORT_RADR patients it's left out
   // (each patient's own export still has it)
   const radr = list.length <= EXPORT_RADR;
-  const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true, radr: radr }));
+  const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true, radr: radr, clinical: true }));
   s.audit($app, e, "patients.export", "count:" + out.length, "");
   return e.json(200, {
     practice: require(`${__hooks}/lib/brand.js`).current().name,

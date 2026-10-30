@@ -9,6 +9,9 @@ var core = s.core;
 
 function iso(ms) { return ms ? new Date(ms).toISOString() : null; }
 
+// the scales the app asks with (1 to 5) and how the check-in flag is worked out
+var CHECKIN_METHOD = "Check-ins: mood, anxiety, sleep and energy, each 1 to 5. Low mood flag: the last 3 check-ins all 2 or lower.";
+
 /** Parses YYYY-MM-DD (or empty) into a [fromMs, toMs] range of at most maxDays, ending today. */
 function range(q, maxDays, defaultDays) {
   var day = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,6 +27,9 @@ function range(q, maxDays, defaultDays) {
 /**
  * opts.answers: include item-level answers (exports yes; the Sorted feed no).
  * opts.notes: include the patient's own words.
+ * opts.clinical: the psychologist's own exports: their notes for the period, whether each flag
+ *   was marked as reviewed, the methods used, where things stood just before the period, and
+ *   the last Heidi export (for "since the last export").
  */
 function patientRecord(app, p, fromMs, toMs, opts) {
   opts = opts || {};
@@ -87,7 +93,7 @@ function patientRecord(app, p, fromMs, toMs, opts) {
       if (res.seconds) ex.minutes = Math.round(res.seconds / 60);
       exercises.push(ex);
     }
-    rowsForFlags.push({ status: "done", name: name, score: score, completedAt: s.toMs(r, "completedAt") });
+    rowsForFlags.push({ id: r.id, status: "done", name: name, score: score, completedAt: s.toMs(r, "completedAt") });
   });
 
   var flagCheckins = cks.map(function (r) {
@@ -122,6 +128,40 @@ function patientRecord(app, p, fromMs, toMs, opts) {
   if (opts.answers) {
     out.patient.selfName = p.getString("name");
     out.instruments = instruments;
+  }
+  if (opts.clinical) {
+    var revs = {};
+    app.findRecordsByFilter("flagreviews", "patient = {:p}", "-created", 5000, 0, { p: p.id }).forEach(function (r) {
+      var k = r.getString("key");
+      if (!revs[k]) revs[k] = { by: r.getString("reviewerName"), at: iso(s.toMs(r, "created")), note: r.getString("note") };
+    });
+    out.flags = flags.map(function (f) {
+      return { key: f.key, label: f.label, severity: f.severity, at: iso(f.at), review: revs[f.key] || null };
+    });
+    out.notes = app.findRecordsByFilter("notes", "patient = {:p} && created >= {:a} && created <= {:b}", "created", 5000, 0, { p: p.id, a: a, b: b })
+      .map(function (n) { return { at: iso(s.toMs(n, "created")), by: n.getString("authorName"), text: n.getString("text") }; });
+    out.careStatus = p.getString("careStatus");
+    // the latest questionnaire of each kind before the period: "where things stood"
+    var before = {};
+    app.findRecordsByFilter("assignments", "patient = {:p} && status = 'done' && completedAt < {:a}", "-completedAt", 200, 0, { p: p.id, a: a })
+      .forEach(function (r) {
+        var i = inst(r.getString("instrument"));
+        if (!i || i.rec.getString("kind") !== "questionnaire") return;
+        var key = i.rec.getString("key");
+        if (before[key]) return;
+        var sc = s.readJson(r, "score") || {};
+        before[key] = { at: iso(s.toMs(r, "completedAt")), key: key, name: i.rec.getString("name"), total: sc.total === undefined ? null : sc.total, max: sc.max === undefined ? null : sc.max, band: sc.band || "" };
+      });
+    out.before = { assessments: Object.keys(before).map(function (k) { return before[k]; }) };
+    var heidi = s.readJson(p, "lastHeidiExport");
+    out.lastHeidiExport = heidi && typeof heidi === "object" ? heidi : null;
+    var dist = require(__hooks + "/lib/dist.js").appInfo(s.publicDir());
+    out.methods = {
+      radr: require(__hooks + "/lib/radr.js").VERSION,
+      checkins: CHECKIN_METHOD,
+      questionnaireFlags: "As each questionnaire defines them, e.g. PHQ-9 item 9 above 0.",
+      steadyBuild: dist ? dist.build : ""
+    };
   }
   if (opts.radr && connected) {
     // the research view for the period (at most its last year), for the report

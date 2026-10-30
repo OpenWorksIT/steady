@@ -1067,6 +1067,22 @@ test("care: most concerning first (RADR counted), stable at the bottom, archived
   assert.ok(flag.key && flag.at);
   assert.equal(rt.call("POST", "/api/steady/patients/" + b.id + "/flags/review", { auth: doc, body: { key: flag.key, label: flag.label, note: "Spoke on the phone, safe." } }).status, 200);
   assert.equal(rt.call("POST", "/api/steady/patients/" + b.id + "/flags/review", { auth: doc, body: { key: "nonsense", label: "x" } }).status, 400);
+  // exports carry the review, the note, the methods, and the Heidi series marker
+  // (the test's check-ins are dated before the fake account was made, so ask for the period)
+  const ex = rt.call("GET", "/api/steady/patients/" + b.id + "/export", { auth: doc, query: { from: "2020-01-01", to: "2027-01-01" } }).data.patients[0];
+  const exFlag = ex.flags.find((f) => f.key === flag.key);
+  assert.ok(exFlag && exFlag.review && exFlag.review.note === "Spoke on the phone, safe.", "the export says the flag was reviewed");
+  assert.ok(ex.notes.some((n) => /Spoke on the phone/.test(n.text)));
+  assert.equal(ex.methods.radr, "radr-1");
+  assert.match(ex.methods.checkins, /1 to 5/);
+  assert.equal(ex.lastHeidiExport, null);
+  let mark = rt.call("POST", "/api/steady/patients/" + b.id + "/heidi-export", { auth: doc, body: { kind: "all", from: "2026-01-01", to: "2026-10-10" } });
+  assert.equal(mark.data.part, 1);
+  mark = rt.call("POST", "/api/steady/patients/" + b.id + "/heidi-export", { auth: doc, body: { kind: "since", from: "2026-10-11", to: "2026-10-14" } });
+  assert.equal(mark.data.part, 2);
+  assert.equal(rt.call("GET", "/api/steady/patients/" + b.id + "/export", { auth: doc }).data.patients[0].lastHeidiExport.to, "2026-10-14");
+  assert.equal(rt.call("POST", "/api/steady/patients/" + b.id + "/heidi-export", { auth: col, body: { kind: "since", from: "2026-10-11", to: "2026-10-14" } }).status, 404);
+  assert.equal(rt.call("POST", "/api/steady/patients/" + b.id + "/heidi-export", { auth: doc, body: { kind: "since", from: "2026-10-15", to: "2026-10-11" } }).status, 400);
   list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
   const b2 = list.find((p) => p.name === "Demo B");
   assert.equal(b2.flags.find((f) => f.key === flag.key).reviewed.by, "Dr Demo");

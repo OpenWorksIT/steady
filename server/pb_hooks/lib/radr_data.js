@@ -93,7 +93,12 @@ function compact(r) {
     wearDays: r.wearDays,
     checkinDays: r.checkinDays,
     concordance: r.concordance,
-    latest: r.latest ? { day: r.latest.day, watch: r.latest.watch, self: r.latest.self, combined: r.latest.combined, convergent: r.latest.convergent, domains: r.latest.domains, shift: r.latest.shift } : null,
+    latest: r.latest ? { day: r.latest.day, watch: r.latest.watch, self: r.latest.self, combined: r.latest.combined, convergent: r.latest.convergent, domains: r.latest.domains, shift: r.latest.shift, features: r.latest.features || null } : null,
+    // each measure's value and usual (baseline) value on the first rated day: "where things stood"
+    start: (function () {
+      var first = r.days.filter(function (d) { return d.watch !== null && d.watch !== undefined; })[0];
+      return first ? { day: first.day, features: first.features || null } : null;
+    })(),
     days: r.days.map(function (d) {
       return { day: d.day, watch: d.watch, self: d.self, combined: d.combined, convergent: d.convergent, domains: d.domains };
     })

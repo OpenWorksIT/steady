@@ -95,6 +95,8 @@ Future<Uint8List> buildPdfReport(ExportBundle bundle, ExportPatient p, {Uint8Lis
       ..._wearable(p),
       ..._exercises(p),
       ..._notes(p),
+      ..._clinicianNotes(p),
+      ..._method(p),
     ],
   ));
   return doc.save();
@@ -265,7 +267,8 @@ List<pw.Widget> _summary(ExportPatient p) => [
           child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
             pw.Text('Review flags at the end of the period', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: _warn)),
             pw.SizedBox(height: 3),
-            for (final f in p.flags) pw.Text('•  ${f.label}', style: pw.TextStyle(fontSize: 8.5, color: _severity(f.severity))),
+            for (final f in p.flags)
+              pw.Text('•  ${f.label}${f.reviewable ? '  ·  ${f.reviewText(_date)}' : ''}', style: pw.TextStyle(fontSize: 8.5, color: _severity(f.severity))),
           ]),
         ),
       ],
@@ -648,3 +651,40 @@ List<pw.Widget> _notes(ExportPatient p) {
 }
 
 String _n(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+
+
+List<pw.Widget> _clinicianNotes(ExportPatient p) {
+  if (p.notes.isEmpty) return [];
+  return [
+    _section('Clinician notes', 'Short notes kept in Steady by the psychologist. Patients never see them.'),
+    _table(['Date', 'By', 'Note'], [
+      for (final n in p.notes.reversed) [_cell(_dateTime(n.at)), _cell(n.by), pw.Text(n.text.trim(), style: _body)],
+    ], widths: {0: const pw.FixedColumnWidth(88), 1: const pw.FixedColumnWidth(80)}),
+  ];
+}
+
+/// How the numbers were worked out: printed on every report, so a reader years later (or
+/// another system) knows which version of each method produced them.
+List<pw.Widget> _method(ExportPatient p) {
+  final r = p.radr;
+  final m = r?.method ?? const {};
+  final lines = <String>[
+    if (p.methods['checkins']?.isNotEmpty ?? false) p.methods['checkins']!,
+    if (p.methods['questionnaireFlags']?.isNotEmpty ?? false) 'Questionnaire flags: ${p.methods['questionnaireFlags']}',
+    if (r != null || (p.methods['radr']?.isNotEmpty ?? false))
+      'RADR version ${r?.version.isNotEmpty == true ? r!.version : p.methods['radr']}: each measure compared with this person\'s own '
+          '${m['baselineDays'] ?? 28} days before, leaving out the most recent ${m['baselineGap'] ?? 7}; smoothed over ${m['smoothDays'] ?? 3} days; '
+          'scored 0 (usual) to ${m['cap'] ?? 4}; a domain counts as away from usual at ${m['notable'] ?? 1.5} or more. '
+          'Rated once there are ${m['baselineMin'] ?? 14} days to compare with.',
+    if (r != null && r.exclusions.isNotEmpty)
+      'Switched off for this patient: ${r.exclusions.map((x) => '${ExportRadr.domainNames['${x['domain']}'] ?? x['domain']} (${x['reason'] ?? ''})').join(', ')}.',
+    if (p.methods['steadyBuild']?.isNotEmpty ?? false) 'Steady build ${p.methods['steadyBuild']}.',
+  ];
+  if (lines.isEmpty) return [];
+  return [
+    _keep([
+      _section('How this was worked out'),
+      for (final l in lines) pw.Padding(padding: const pw.EdgeInsets.only(bottom: 3), child: pw.Text(l, style: _small)),
+    ]),
+  ];
+}

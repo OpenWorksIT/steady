@@ -32,6 +32,8 @@ Uint8List buildWorkbook(ExportBundle bundle) {
     ['Patients', '${bundle.patients.length}'],
     ['Note', 'Confidential health information from Steady. Keep it in the patient file. Flags are review aids, not a diagnosis.'],
     ['RADR', 'Research only: how far watch data and check-ins are from the person\'s own normal, 0 to 4. Not a risk score or diagnosis. See docs/RADR.md.'],
+    // which version of each method produced the numbers
+    for (final e in _methods(bundle).entries) [e.key, e.value],
   ]) {
     about.appendRow([TextCellValue(row[0]), TextCellValue(row[1])]);
   }
@@ -41,6 +43,8 @@ Uint8List buildWorkbook(ExportBundle bundle) {
   final scores = sheet('Questionnaires', ['Patient', 'When', 'Questionnaire', 'Score', 'Out of', 'Band', 'Severity', 'Flags']);
   final answers = sheet('Answers', ['Patient', 'When', 'Questionnaire', 'Item', 'Question', 'Answer', 'Answer text']);
   final exercises = sheet('Exercises', ['Patient', 'When', 'Exercise', 'Minutes', 'Started by the patient']);
+  final flags = sheet('Flags', ['Patient', 'When', 'Flag', 'Severity', 'Reviewed in Steady', 'Reviewed by', 'Reviewed on', 'Review note']);
+  final notes = sheet('Clinician notes', ['Patient', 'When', 'By', 'Note']);
   final keys = <String>{for (final p in bundle.patients) for (final d in p.wearableDays) ...d.values.keys};
   final order = [...kWearableLabels.keys.where(keys.contains), ...keys.where((k) => !kWearableLabels.containsKey(k)).toList()..sort()];
   final watch = sheet('Watch', ['Patient', 'Day', for (final k in order) kWearableLabels[k] == null ? k : '${kWearableLabels[k]!.$1}${kWearableLabels[k]!.$2.isEmpty ? '' : ' (${kWearableLabels[k]!.$2})'}']);
@@ -88,6 +92,22 @@ Uint8List buildWorkbook(ExportBundle bundle) {
     for (final e in p.exercises) {
       exercises.appendRow([who, dt(e.at), TextCellValue(e.name), n(e.minutes), TextCellValue(e.selfStarted ? 'yes' : 'no')]);
     }
+    for (final f in p.flags.where((f) => f.reviewable)) {
+      final r = f.review;
+      flags.appendRow([
+        who,
+        f.at == null ? null : dt(f.at!),
+        TextCellValue(f.label),
+        TextCellValue(f.severity),
+        TextCellValue(r == null ? 'not yet' : 'yes'),
+        t(r?.by ?? ''),
+        r?.at == null ? null : dt(r!.at!),
+        t(r?.note ?? ''),
+      ]);
+    }
+    for (final nt in p.notes) {
+      notes.appendRow([who, dt(nt.at), t(nt.by), TextCellValue(nt.text)]);
+    }
     for (final d in p.radr?.rated ?? const <ExportRadrDay>[]) {
       radr.appendRow([
         who,
@@ -107,4 +127,23 @@ Uint8List buildWorkbook(ExportBundle bundle) {
   if (first != 'About') x.delete(first);
   x.setDefaultSheet('About');
   return Uint8List.fromList(x.encode() ?? const []);
+}
+
+/// Method versions across the export (normally one of each), for the About sheet.
+Map<String, String> _methods(ExportBundle bundle) {
+  final radr = <String>{}, build = <String>{};
+  var checkins = '', flags = '';
+  for (final p in bundle.patients) {
+    final v = p.radr?.version.isNotEmpty == true ? p.radr!.version : (p.methods['radr'] ?? '');
+    if (v.isNotEmpty) radr.add(v);
+    if ((p.methods['steadyBuild'] ?? '').isNotEmpty) build.add(p.methods['steadyBuild']!);
+    if (checkins.isEmpty) checkins = p.methods['checkins'] ?? '';
+    if (flags.isEmpty) flags = p.methods['questionnaireFlags'] ?? '';
+  }
+  return {
+    if (radr.isNotEmpty) 'RADR method': radr.join(', '),
+    if (checkins.isNotEmpty) 'Check-ins': checkins,
+    if (flags.isNotEmpty) 'Questionnaire flags': flags,
+    if (build.isNotEmpty) 'Steady build': build.join(', '),
+  };
 }

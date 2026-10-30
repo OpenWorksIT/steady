@@ -819,6 +819,16 @@ class Api {
       confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/export', query: {'from': ?from, 'to': ?to}));
 
   /// All of this psychologist's own patients.
+  /// The patient's last Heidi-ready export, or null (for offering "since the last export").
+  Future<Map<String, dynamic>?> lastHeidiExport(String patientId) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/heidi-export');
+    return res['last'] is Map ? asMap(res['last']) : null;
+  }
+
+  /// After saving a Heidi-ready export: what it covered (kind: since | all; days YYYY-MM-DD).
+  Future<void> markHeidiExport(String patientId, {required String kind, required String from, required String to}) =>
+      pb.send('/api/steady/patients/$patientId/heidi-export', method: 'POST', body: {'kind': kind, 'from': from, 'to': to});
+
   Future<Map<String, dynamic>> exportAll() => confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/export'));
 
   /// Server and updates (server admins): status from deploy/ctl/steady-ctl.sh.
