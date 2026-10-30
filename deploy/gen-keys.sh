@@ -13,11 +13,17 @@ else
   echo "Keeping existing secrets/vapid.pem"
 fi
 
-# The relay runs as the distroless "nonroot" user (uid 65532) and must be able to read its keys.
+# The relay runs as the distroless "nonroot" user (uid 65532) and must be able to read its keys:
+# it may enter the folder (umask 077 above made it root-only) and read its own key files, but
+# the files only root uses (allowed_signers, backup.age.pub) stay root's.
 if [ "$(id -u)" = "0" ]; then
-  chown 65532:65532 secrets/* 2>/dev/null || true
+  chown root:65532 secrets && chmod 750 secrets
+  for f in secrets/*; do
+    case "$f" in */allowed_signers|*.pub) chown root:root "$f" ;; *) chown 65532:65532 "$f" ;; esac
+  done
 else
-  echo "Note: run 'sudo chown 65532:65532 deploy/secrets/*' so the push relay can read its keys."
+  echo "Note: as root, run 'chown root:65532 deploy/secrets && chmod 750 deploy/secrets' and"
+  echo "'chown 65532:65532 deploy/secrets/vapid.pem' so the push relay can read its key."
 fi
 
 # Uncompressed P-256 public key (65 bytes), base64url without padding

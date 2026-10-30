@@ -80,8 +80,8 @@ from anywhere but inside the server container. Accounts are managed in two place
 **On the server, by OpenWorks** (`deploy/accounts.sh`, run with sudo in `/opt/steady/deploy`):
 
 ```bash
-sudo ./accounts.sh add-clinician "Kempie van Rooyen" kempie@vrpsych.co.za --master   # the master clinician
-sudo ./accounts.sh add-admin "Front desk" reception@vrpsych.co.za                     # practice admin
+sudo ./accounts.sh add-clinician "Dr Thandi Example" thandi@yourpractice.co.za --master   # the master clinician
+sudo ./accounts.sh add-admin "Front desk" reception@yourpractice.co.za                    # practice admin
 sudo ./accounts.sh add-support "OpenWorks support" support@openworks.co.za           # OpenWorks: no patients
 sudo ./accounts.sh list                         # who has which role, and who still lacks two-step sign-in
 sudo ./accounts.sh reset <email> [--full]       # a temporary password (--full: also the authenticator)
@@ -207,6 +207,10 @@ token or a compromised build can't reach it:
 
 One-time setup for signing: `git config --global gpg.format ssh` and
 `git config --global user.signingkey ~/.ssh/id_ed25519.pub`.
+
+`release.sh` then keeps a copy of each release on that computer (`deploy/backup-repo.sh`: the
+code and the web app as zips, and the whole repository with its history, in `~/Backups/steady`).
+`deploy/backup-repo.sh --install-timer` also checks GitHub every hour for anything new.
 
 ## Sharing a server (e.g. vps1 with Shap)
 

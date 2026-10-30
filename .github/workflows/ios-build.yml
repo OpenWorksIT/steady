@@ -23,6 +23,9 @@ jobs:
   build:
     # Xcode 26 / iOS 26 SDK: required for App Store Connect uploads since April 2026
     runs-on: macos-26
+    # the signing keys live in the "signing" environment, which only main and v1 may use
+    # (Settings > Environments); a workflow on any other branch can't reach them
+    environment: signing
     timeout-minutes: 45
     env:
       HAS_KEYS: ${{ secrets.APP_STORE_KEY_ID != '' && secrets.APP_STORE_ISSUER_ID != '' && secrets.APP_STORE_KEY != '' && secrets.IOS_CERT_KEY != '' }}

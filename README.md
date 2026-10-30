@@ -7,7 +7,9 @@ Between-session check-ins for a psychology practice. One app for Android, iPhone
 - **Psychologists** see their patients most concerning first, send questionnaires or exercises (once, daily or weekly), keep short notes, mark flags as reviewed, and export a patient's record as a PDF, an Excel workbook or a text PDF for Heidi (only what's new since the last one).
 - **The practice**: a master clinician and a practice admin manage accounts and see each patient's connection status (never their data); OpenWorks IT support looks after the server and sees no patients at all.
 
-Built by [OpenWorks IT](https://openworks.co.za). Free software under the GNU AGPL v3 or later.
+Built by [OpenWorks IT](https://openworks.co.za), with the clinical science and research of Kempie van Rooyen and VR Clinical Psychology (see [Credits](#credits)). Free software under the GNU AGPL v3 or later.
+
+Each practice runs Steady on its own server, and its patients' data stays there: OpenWorks IT looks after the servers, but OpenWorks' accounts can't open any patient's information.
 
 > **Status: version 1.0.** In use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
 
@@ -68,8 +70,22 @@ node --test server/tests/*.test.js     # scoring, flags, importers, and the full
 cd pusher && go test ./...             # encryption, signing, delivery
 ```
 
+## Credits
+
+- **Clinical science and research: Kempie van Rooyen, VR Clinical Psychology** (kempie@vrpsych.co.za). Steady grew out of
+  his research, and VR Clinical Psychology signs off on all of its science and clinical content: what patients are asked
+  and how, how questionnaires are scored and flagged, the watch measures, and RADR. VR also tested Steady with its patients
+  through two beta rounds.
+- **Code, security and deployment: [OpenWorks IT](https://openworks.co.za).**
+- **Questionnaires:** PHQ-9 and GAD-7 (Spitzer, Williams, Kroenke and colleagues; Pfizer), PCL-5 (US National Center for
+  PTSD) and WHO-5 (World Health Organization). Their terms and the other third-party parts are in [NOTICE](NOTICE).
+
+## Reporting a security problem
+
+Please don't open a public issue. See [SECURITY.md](SECURITY.md).
+
 ## Licence
 
 Copyright (C) 2026 OpenWorks IT (Pty) Ltd. Licensed under the GNU Affero General Public License v3.0 or later; see [LICENSE](LICENSE). If you run a modified version for others over a network, you must offer them its source.
 
-Questionnaire texts remain under their own terms; see each instrument's licence note.
+Questionnaire texts remain under their own terms; see [NOTICE](NOTICE) and each instrument's licence note in the app.

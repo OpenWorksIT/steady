@@ -4,12 +4,12 @@
 # audit log. Everything else happens in the app (the master clinician and the administrator).
 #
 #   sudo ./accounts.sh list
-#   sudo ./accounts.sh add-clinician "Kempie van Rooyen" kempie@vrpsych.co.za --master
-#   sudo ./accounts.sh add-admin "Front desk" reception@vrpsych.co.za        # practice admin
+#   sudo ./accounts.sh add-clinician "Dr Thandi Example" thandi@yourpractice.co.za --master
+#   sudo ./accounts.sh add-admin "Front desk" reception@yourpractice.co.za       # practice admin
 #   sudo ./accounts.sh add-support "OpenWorks support" support@openworks.co.za # no patients
-#   sudo ./accounts.sh reset kempie@vrpsych.co.za [--full]   # temporary password; --full also
+#   sudo ./accounts.sh reset thandi@yourpractice.co.za [--full]   # temporary password; --full also
 #                                         # clears the authenticator (lost phone); devices unlink
-#   sudo ./accounts.sh set kempie@vrpsych.co.za master|server-admin|active on|off
+#   sudo ./accounts.sh set thandi@yourpractice.co.za master|server-admin|active on|off
 #                                         # "active on" unlocks an account its owner locked
 #   sudo ./accounts.sh audit [--patient <id>] [--actor <id>] [--days 90]
 #   sudo ./accounts.sh check                                     # proxy, rate limits, dashboard

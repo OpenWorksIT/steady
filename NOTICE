@@ -1,0 +1,42 @@
+Steady
+Copyright (C) 2026 OpenWorks IT (Pty) Ltd
+Licensed under the GNU Affero General Public License v3.0 or later (see LICENSE).
+
+Clinical science and research: Kempie van Rooyen, VR Clinical Psychology (kempie@vrpsych.co.za).
+VR Clinical Psychology signs off on Steady's science and clinical content.
+Code, security and deployment: OpenWorks IT (https://openworks.co.za).
+
+
+Questionnaires built into Steady
+--------------------------------
+The questionnaire texts are not covered by Steady's licence; each stays under its own terms.
+
+PHQ-9 (Patient Health Questionnaire-9) and GAD-7 (Generalized Anxiety Disorder-7)
+  Developed by Drs Robert L. Spitzer, Janet B. W. Williams, Kurt Kroenke and colleagues, with an
+  educational grant from Pfizer Inc. No permission is required to reproduce, translate, display or
+  distribute them. https://www.phqscreeners.com/
+
+PCL-5 (PTSD Checklist for DSM-5)
+  Weathers, F. W., Litz, B. T., Keane, T. M., Palmieri, P. A., Marx, B. P., & Schnurr, P. P. (2013),
+  US National Center for PTSD. In the public domain.
+  https://www.ptsd.va.gov/professional/assessment/adult-sr/ptsd-checklist.asp
+
+WHO-5 (WHO-Five Well-Being Index)
+  World Health Organization, licensed CC BY-NC-SA 3.0 IGO. Steady ships it marked "check licence",
+  so each practice confirms its use before sending it. Steady does not use the WHO logo.
+  https://cdn.who.int/media/docs/default-source/mental-health/who-5_english-original4da539d6ed4b49389e3afe47cda2326a.pdf
+
+The breathing and grounding exercises and the thought record are OpenWorks IT's own wording of
+widely used techniques (AGPL-3.0).
+
+Questionnaires imported from the ReproSchema library, FHIR or JSON keep their own licences, which
+Steady shows for each one.
+
+
+Other third-party parts
+-----------------------
+DejaVu fonts (app/assets/fonts): Bitstream Vera licence and public domain changes;
+  see app/assets/fonts/LICENSE-DejaVu.txt.
+PocketBase (downloaded and checked by server/Dockerfile): MIT licence, https://pocketbase.io
+Flutter and the Dart packages listed in app/pubspec.lock, and the Go modules in pusher/go.mod,
+  each under their own licences.

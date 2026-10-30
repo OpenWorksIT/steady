@@ -98,7 +98,15 @@ else
   fail "no deploy/.env here"
 fi
 if [ -d secrets ]; then
-  find secrets -type f ! -name '*.pub' -perm /o+r 2>/dev/null | while read -r f; do
+  # the relay (uid 65532) must be able to enter the folder, or it can't start
+  [ "$(stat -c %u secrets)" = 0 ] && { [ "$(stat -c %g secrets)" = 65532 ] || [ -n "$(find secrets -maxdepth 0 -perm -o+x)" ]; } \
+    && ok "the push relay can reach secrets/" || fail "the push relay can't enter secrets/: chown root:65532 secrets && chmod 750 secrets"
+  # public keys only root reads: fine to read, never writable by anyone but root
+  for f in secrets/allowed_signers secrets/backup.age.pub; do
+    [ -f "$f" ] || continue
+    { [ "$(stat -c %u "$f")" = 0 ] && [ -z "$(find "$f" -perm /go+w)" ]; } || fail "$f must belong to root and be writable only by root: chown root:root $f && chmod 644 $f"
+  done
+  find secrets -type f ! -name '*.pub' ! -name allowed_signers -perm /o+r 2>/dev/null | while read -r f; do
     case "$f" in *vapid.pem) warn "$f is world-readable (needed by the relay container's user; 640 with group 65532 is tighter)" ;; *) fail "$f is world-readable" ;; esac
   done
   priv=""

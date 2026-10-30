@@ -13,6 +13,7 @@ import 'auth/server_screen.dart';
 import 'auth/two_step_screen.dart';
 import 'clinician/server_updates_screen.dart';
 import 'update_notice.dart';
+import 'source_link.dart';
 import 'calm.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -221,7 +222,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           Text('Steady ${kAppBuild.isEmpty ? '(development build)' : 'build $kAppBuild'}'
               '${appUpdateAvailable(state) ? ' · build ${state.config.appBuild} available' : ''}',
               style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
-          Text('Steady is free software (AGPL-3.0) by OpenWorks IT.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+          const SourceLink(),
         ]),
       ),
     );

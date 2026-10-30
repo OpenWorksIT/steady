@@ -40,7 +40,8 @@ echo "  code:    ${sha:0:7}  $(git log -1 --format=%s "$sha")"
 echo "  web app: $(git rev-parse --short origin/web-dist)  $built"
 echo "  changes since the last release:"
 last="$(git tag -l 'v[0-9]*' | sort -V | tail -1)"
-git log --no-merges --format='    %h %s' "${last:+$last..}$sha" | head -30
+# -n, not | head: head closing the pipe early would end this script here (pipefail)
+git log --no-merges -n 30 --format='    %h %s' "${last:+$last..}$sha"
 read -r -p "Sign and publish $tag? Type yes: " ok
 [ "$ok" = yes ] || exit 1
 
@@ -54,3 +55,5 @@ git -c gpg.ssh.allowedSignersFile="$signers" verify-tag "$tag"
 git -c gpg.ssh.allowedSignersFile="$signers" verify-tag "$web"
 git push -q origin "$tag" "$web"
 echo "Published. Servers offer $tag under Settings > Server and updates (and check every night)."
+# a copy of the release on this computer (see backup-repo.sh); a failure here changes nothing above
+deploy/backup-repo.sh || echo "  (The local backup didn't run; try deploy/backup-repo.sh by hand.)" >&2
