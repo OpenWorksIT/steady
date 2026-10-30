@@ -81,11 +81,11 @@ from anywhere but inside the server container. Accounts are managed in two place
 
 ```bash
 sudo ./accounts.sh add-clinician "Kempie van Rooyen" kempie@vrpsych.co.za --master   # the master clinician
-sudo ./accounts.sh add-admin "Front desk" reception@vrpsych.co.za                     # practice administrator
-sudo ./accounts.sh add-admin "OpenWorks support" support@openworks.co.za --server-admin
+sudo ./accounts.sh add-admin "Front desk" reception@vrpsych.co.za                     # practice admin
+sudo ./accounts.sh add-support "OpenWorks support" support@openworks.co.za           # OpenWorks: no patients
 sudo ./accounts.sh list                         # who has which role, and who still lacks two-step sign-in
-sudo ./accounts.sh reset <email> [--two-step]   # a temporary password (and a fresh two-step set-up)
-sudo ./accounts.sh set <email> master|server-admin|active on|off
+sudo ./accounts.sh reset <email> [--full]       # a temporary password (--full: also the authenticator)
+sudo ./accounts.sh set <email> master|server-admin|active on|off   # "active on" unlocks a locked account
 sudo ./accounts.sh audit --patient <id>         # who looked at a patient's data (POPIA access requests)
 sudo ./accounts.sh check                        # proxy header, rate limits, dashboard closed
 sudo ./accounts.sh demo-patients <email> [--remove]   # three fictional patients for the RADR tab
@@ -100,14 +100,41 @@ then set up two-step sign-in.
 
 | Who | Can | Can't |
 |---|---|---|
-| Psychologist | Invite patients, see and send to their own patients, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records | See other psychologists' patients unless shared with them |
-| Master clinician | All of the above, plus create psychologist and administrator accounts, reset their passwords, stop or restore them, invite patients for and move patients to any psychologist, and install server updates from Settings | Reset their own or another master's password (that's `accounts.sh`) |
-| Practice administrator, OpenWorks support | See names only. Invite a patient for a chosen psychologist, reset patients' passwords, stop or restore patients, move a patient to another psychologist. Both can install server updates from Settings. | See check-ins, scores, notes or watch data; create psychologist accounts (that would let them open patient data) |
+| Psychologist | Invite patients, see and send to their own patients, keep notes, mark flags as reviewed, set a patient as stable or archived and switch RADR measures off for them, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records (PDF, Excel, Heidi) | See other psychologists' patients unless shared with them |
+| Master clinician | All of the above, plus create psychologist and practice admin accounts, reset their passwords, stop their accounts, invite patients for and move patients to any psychologist, see every patient's connection status, read the audit report, and install server updates from Settings | Restore a stopped staff account, clear someone's authenticator, or reset their own password (OpenWorks support does these) |
+| Practice admin | Patients' names and whether each is set up and connected (no data); invite a patient for a chosen psychologist, reset patients' and psychologists' passwords, stop accounts, move patients, remind a patient to reconnect their watch, read the audit report and server health; feedback as tickets | See check-ins, scores, notes or watch data; create psychologist accounts; restore accounts; install updates |
+| OpenWorks support | The practice's staff (names, status, app versions), the server and its updates, feedback in full; reset any staff password, including a full reset after a lost phone; restore stopped or locked accounts | See anything about patients, including their names |
 
 Every one of these actions is in the audit log, and the psychologist is told when someone else
-resets their patient's password or moves a patient. Psychologists and administrators **must use
-two-step sign-in** (a 6-digit code from Aegis, 2FAS, Google or Microsoft Authenticator) unless
-`STEADY_REQUIRE_2FA=off`; until they set it up, their account can't see anything.
+resets their patient's password or moves a patient. Staff **must use two-step sign-in** (a 6-digit
+code from Aegis, 2FAS, Google or Microsoft Authenticator) unless `STEADY_REQUIRE_2FA=off`; until
+they set it up, their account can't see anything.
+
+**Linked devices.** Once the server has email settings (`STEADY_SMTP_*` in `.env`, step 5a), staff
+sign in only from devices they've linked: the first sign-in on a new phone or browser sends a
+6-digit code to their email. Sensitive actions (resets, stopping or restoring accounts, adding
+staff, exports, the audit report, removing devices) ask them to confirm it's them first: the
+phone's screen lock, or an authenticator code on the web. A staff member whose phone is lost
+locks their own account from the sign-in screen on any device ("Lost your phone? Lock your
+account"); OpenWorks support unlocks it with `accounts.sh set <email> active on` or in the app,
+after checking it's really them.
+
+### 5a. Email for staff sign-in
+
+Steady emails staff only about their own account (device codes and notices), never anything
+about patients, from the Steady mailbox at **steadyapp.co.za**:
+
+1. Create the mailbox `noreply@steadyapp.co.za` with the domain's mail provider.
+2. DNS for steadyapp.co.za: **SPF** (`v=spf1 include:<provider> -all`), **DKIM** (the provider's
+   key), and **DMARC** (`_dmarc` TXT `v=DMARC1; p=quarantine; rua=mailto:<reports address>`), so
+   codes don't land in spam and nobody else can send as Steady.
+3. In `deploy/.env`: `STEADY_SMTP_HOST`, `STEADY_SMTP_PORT` (587 with STARTTLS, or 465 with
+   `STEADY_SMTP_TLS=on`), `STEADY_SMTP_USER`, `STEADY_SMTP_PASSWORD`. Then `docker compose up -d`.
+4. Check: sign in on a new browser; the code should arrive within a minute. Server health
+   (Settings, or `./health.sh`) shows `signIn.email` and `signIn.linkedDevices` as true.
+
+Without email settings, staff sign in with password and authenticator code anywhere, as before
+1.0. `STEADY_DEVICE_LINK=off` keeps it that way even with email set up.
 
 Rate limits and the trusted proxy header are set by migrations; `accounts.sh check` shows them.
 For an emergency, `STEADY_DASHBOARD=on` in `.env` (then `docker compose up -d`) reopens `/_/`
@@ -124,6 +151,7 @@ Do these on the VPS before real patient data arrives:
 - [ ] Docker's data on an encrypted volume (LUKS), or full-disk encryption if the provider supports it.
 - [ ] `chmod 600 deploy/.env` and keep `deploy/secrets/` readable only by root and the relay (uid 65532).
 - [ ] `sudo ./accounts.sh check` says the dashboard is closed; `accounts.sh list` shows two-step sign-in for every staff account.
+- [ ] Email set up (step 5a): staff sign in only from linked devices.
 - [ ] Delete any permanent superuser left from before (`docker compose exec pocketbase /pb/pocketbase superuser delete <email> --dir=/pb/pb_data`).
 - [ ] Backups running and copied off the server (step 7), restore tested.
 - [ ] Uptime monitoring on `https://<domain>/api/health`.
@@ -213,7 +241,7 @@ updates from Settings > Server and updates, the way Shap does; the server also c
 sudo /opt/steady/deploy/ctl/install.sh
 ```
 
-The master clinician and administrators can use it straight away; for another psychologist, `sudo ./accounts.sh set <email> server-admin on`. The app
+The master clinician and OpenWorks support can use it straight away (the practice admin sees server health only); for another psychologist, `sudo ./accounts.sh set <email> server-admin on`. The app
 only leaves a request; `deploy/ctl/steady-ctl.sh` does the work as root (outside the app), saves a
 copy of the data to `/var/backups/steady/` first (the last 5 are kept, root only) and then runs
 `update.sh`.

@@ -616,7 +616,8 @@ routerAdd("POST", "/api/steady/ops/accounts", (e) => {
   let pw = "";
   if (!u) {
     if (b.create !== true) throw new NotFoundError("No account with that email.");
-    u = x.newStaff(s, String(b.name || ""), email, b.role === "admin" ? "admin" : "clinician");
+    // OpenWorks support accounts are made only here, on the server (never in the app)
+    u = x.newStaff(s, String(b.name || ""), email, b.role === "admin" ? "admin" : b.role === "support" ? "support" : "clinician");
     pw = s.resetPassword($app, u);
   } else if (u.getString("role") === "patient") {
     throw s.badRequest("That email belongs to a patient.");

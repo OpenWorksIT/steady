@@ -74,6 +74,21 @@ dependencies {
 
 and in `android/app/src/main/AndroidManifest.xml` add `<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>` and `android:allowBackup="false"` on `<application>`.
 
+For the staff screen lock (`local_auth`), the script also adds `USE_BIOMETRIC`, the
+`androidx.appcompat` library, and makes `LaunchTheme` in `res/values*/styles.xml` inherit from
+`Theme.AppCompat.DayNight.NoActionBar` (the fingerprint dialog crashes on Android 8 without an
+AppCompat theme). `MainActivity` must be a `FlutterFragmentActivity`. On iPhones,
+`scripts/patch_ios.py` adds the Face ID reason (`NSFaceIDUsageDescription`).
+
+## Staff sign-in on phones
+
+Practice staff link each phone with a code emailed to them (when the server has email set up),
+and the app locks when it opens and after two minutes in the background; it unlocks with the
+phone's own screen lock (fingerprint, face, PIN or pattern). A phone without a screen lock can't
+be used for the practice: the app says so. The device's key is kept in secure storage and stays
+when signing out, so the phone stays linked. Patients aren't locked. The web app has no screen
+lock; it asks for an authenticator code before sensitive actions instead.
+
 ## Notifications
 
 - **iOS**: Apple Push Notification service through the small `packages/steady_apns` plugin in this repo. No Firebase.

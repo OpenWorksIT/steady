@@ -82,6 +82,18 @@ into research results.
 - The thresholds (14-day minimum, 1.5 for "away from usual", cap of 4) are starting points to be
   tested, not validated cut-offs.
 
+## In the app and in exports
+
+- Psychologists can **switch a domain off for one patient** (for example sleep for a shift worker),
+  with a reason. It's still collected and shown, just not counted; exports list it.
+- Tapping a day on the chart or the heatmap gives a plain-language breakdown with the numbers.
+- The patient list uses RADR only to **order** patients (how many domains are away from usual on a
+  recent day), never as a label.
+- **Every export states the version** (`radr-1`) and its settings (baseline days, the gap before
+  them, smoothing, the "away" threshold), so a file read later, or by Heidi, says how its numbers
+  were made. A Heidi export in a series says so plainly if the method changed since the previous
+  part. A change to the method gets a new version name.
+
 ## Sources
 
 - Büscher R. et al. (2024). [A systematic review on passive sensing for the prediction of suicidal thoughts and behaviors](https://doi.org/10.1038/s44184-024-00089-4). *npj Mental Health Research* 3.

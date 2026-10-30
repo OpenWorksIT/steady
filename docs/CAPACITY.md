@@ -86,8 +86,8 @@ leave out RADR above 100; larger exports are done on the server.
 
 ## Watching it
 
-`deploy/health.sh` (or Settings > Server and updates in the app, for the master clinician and
-administrators) shows the slowest 5% of requests, a database check every minute, errors,
+`deploy/health.sh` (or Settings in the app: Server and updates for the master clinician and
+OpenWorks support, Server health for the practice admin) shows the slowest 5% of requests, a database check every minute, errors,
 database size, disk and memory. Move up a size when "typical requests" pass about a second, the
 database check stays over 60 ms, or the disk passes 80%.
 

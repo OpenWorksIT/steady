@@ -2,7 +2,7 @@
 //
 // Shown once on first launch, before sign-in. DRAFT for the practice to approve.
 // Change [privacyNoticeVersion] whenever the text changes so everyone sees it again.
-const privacyNoticeVersion = 'privacy-1';
+const privacyNoticeVersion = 'privacy-2';
 
 const privacyNoticeTitle = 'Your privacy';
 
@@ -21,15 +21,19 @@ const privacyNoticeSections = <(String, String)>[
   ),
   (
     'Who can see it',
-    'Only your own psychologist at the practice, and the practice\'s IT provider who maintains the system under a '
-        'confidentiality agreement. It is not sold, not used for advertising, and not shared with anyone else unless '
-        'the law requires it.',
+    'Your own psychologist. Another psychologist at the practice only if your psychologist shares your record with '
+        'them (for supervision or cover); you can see who in Settings. The practice\'s master clinician and '
+        'administrator see your name and whether your app is set up and connected, not what you share. Your '
+        'psychologist may add what you share to your clinical record at the practice. The practice\'s IT provider '
+        'looks after the system under a confidentiality agreement and does not see patients\' information. It is not '
+        'sold, not used for advertising, and not shared with anyone else unless the law requires it.',
   ),
   (
     'How it is protected',
     'Information travels over encrypted connections and is stored on the practice\'s own servers in South Africa. '
         'Your psychologist can only see their own patients, and every time patient information is viewed it is '
-        'logged. Notifications never show your name, scores or what you wrote.',
+        'logged. Practice staff sign in with a password, a code and a device they have linked. Notifications never '
+        'show your name, scores or what you wrote, and nothing about you is ever sent by email.',
   ),
   (
     'Your rights under POPIA',
