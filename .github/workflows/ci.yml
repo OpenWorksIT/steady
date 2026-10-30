@@ -179,14 +179,6 @@ jobs:
         run: |
           set -o pipefail
           flutter pub get 2>&1 | tee ../pubget.txt || { echo "::error title=flutter pub get::$(sed 's/%/%25/g' ../pubget.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
-      - name: report the toolchain and the resolved packages
-        # (until pubspec.lock is committed: the exact versions this build used)
-        working-directory: app
-        run: |
-          echo "::notice title=flutter version::$(flutter --version --machine | tr -d '\n')"
-          if [ -f pubspec.lock ]; then
-            gzip -9c pubspec.lock | base64 -w0 | fold -w 3800 | nl -ba -w2 -s' ' | while read -r n part; do echo "::notice title=pubspec.lock part $n::$part"; done
-          fi
       - name: analyze
         working-directory: app
         run: |
