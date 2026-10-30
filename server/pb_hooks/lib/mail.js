@@ -21,7 +21,11 @@ function ready() {
   return env("STEADY_SMTP_HOST", "") !== "";
 }
 
-/** Copies the .env settings into PocketBase's in-memory settings (not saved to the database). */
+/**
+ * Copies the .env settings into PocketBase's in-memory settings for one send, and clear() wipes
+ * them again straight after: anything that saves the settings (a migration, the proxy setting at
+ * start-up) must never write the SMTP password into the database or its backups.
+ */
 function configure(app) {
   if (!ready()) return false;
   var st = app.settings();
@@ -35,6 +39,14 @@ function configure(app) {
   st.meta.senderAddress = env("STEADY_MAIL_FROM", "noreply@steadyapp.co.za");
   st.meta.senderName = env("STEADY_MAIL_NAME", "Steady");
   return true;
+}
+
+function clear(app) {
+  var st = app.settings();
+  st.smtp.enabled = false;
+  st.smtp.host = "";
+  st.smtp.username = "";
+  st.smtp.password = "";
 }
 
 function esc(t) {
@@ -56,8 +68,10 @@ function send(app, to, subject, text) {
     app.newMailClient().send(msg);
     return true;
   } catch (err) {
-    console.log("steady mail: couldn't send to the mail server: " + err);
+    console.log("steady mail: couldn't send to the mail server: " + String(err).slice(0, 200));
     return false;
+  } finally {
+    clear(app);
   }
 }
 
@@ -71,4 +85,4 @@ function notice(app, user, subject, lines) {
   return send(app, user.email(), "Steady: " + subject, text);
 }
 
-module.exports = { ready: ready, configure: configure, send: send, notice: notice, FOOTER: FOOTER };
+module.exports = { ready: ready, configure: configure, clear: clear, send: send, notice: notice, FOOTER: FOOTER };

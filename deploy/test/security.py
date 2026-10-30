@@ -48,17 +48,21 @@ CONFIRMERS = {}
 
 
 def call(method, path, token=None, body=None, query=None, raw=False, confirm=True, headers=None):
+    # staff requests carry their device's key, as the app's do (confirmations count per device)
+    st = CONFIRMERS.get(token)
+    if st is not None and st.device and headers is None:
+        headers = {"X-Steady-Device": st.device["key"]}
     s, r = _call(method, path, token, body, query, raw, headers)
     if (confirm and s == 403 and token in CONFIRMERS and isinstance(r, dict)
             and r.get("data", {}).get("confirm", {}).get("code") == "confirm_needed"):
         st = CONFIRMERS[token]
-        cs, cr = _call("POST", "/api/steady/me/confirm", token, st.confirm_body(), None, False)
+        cs, cr = _call("POST", "/api/steady/me/confirm", token, st.confirm_body(), None, False, headers)
         # no linked devices on a server without email: the authenticator code instead (a check
         # elsewhere may have used the current code, so up to three tries, waiting as needed)
         for _ in range(3):
             if cs == 200 or not st.secret:
                 break
-            cs, cr = _call("POST", "/api/steady/me/confirm", token, st.confirm_body(phone=False), None, False)
+            cs, cr = _call("POST", "/api/steady/me/confirm", token, st.confirm_body(phone=False), None, False, headers)
         if cs == 200:
             s, r = _call(method, path, token, body, query, raw, headers)
     return s, r
@@ -632,21 +636,23 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
 
         # confirm it's you
         C = "confirm it's you"
-        s, r = call("GET", "/api/steady/export", web, confirm=False)
+        s, r = call("GET", "/api/steady/export", web, confirm=False, headers={"X-Steady-Device": laptop["key"]})
         check(C, "an export needs a fresh confirmation", s == 403 and "confirm_needed" in json.dumps(r), r)
         s, r = call("POST", "/api/steady/me/confirm", web, {"device": laptop})
         check(C, "a browser can't confirm with its device key alone", s == 400, r)
         s, r = call("POST", "/api/steady/me/confirm", web, {"device": S5.device})
         check(C, "a phone confirms with its own key (after its screen lock)", s == 200 and r.get("how") == "device", r)
+        s, r = call("GET", "/api/steady/export", web, confirm=False, headers={"X-Steady-Device": laptop["key"]})
+        check(C, "confirming on the phone doesn't count for the browser", s == 403 and "confirm_needed" in json.dumps(r), r)
         s, r = call("POST", "/api/steady/me/confirm", S2.token, {"device": S5.device})
         check(C, "one person's device doesn't confirm for another", s == 400, r)
         s, r = call("GET", "/api/steady/export", S2.token, confirm=False)
         check(C, "confirming is per person", s == 403, r)
-        s, r = call("POST", "/api/steady/me/confirm", web, {"code": "000000"})
+        s, r = call("POST", "/api/steady/me/confirm", web, {"code": "000000"}, headers={"X-Steady-Device": laptop["key"]})
         check(C, "a wrong authenticator code doesn't confirm", s == 400, r)
-        s, r = call("POST", "/api/steady/me/confirm", web, {"code": fresh_code()})
+        s, r = call("POST", "/api/steady/me/confirm", web, {"code": fresh_code()}, headers={"X-Steady-Device": laptop["key"]})
         check(C, "the authenticator code confirms on the web", s == 200 and r.get("how") == "code", r)
-        s, r = call("GET", "/api/steady/export", web, confirm=False)
+        s, r = call("GET", "/api/steady/export", web, confirm=False, headers={"X-Steady-Device": laptop["key"]})
         check(C, "after confirming, the export works", s == 200, r)
         S6 = staff(su, f"m6-{tag}@sec.test", "Dr Six", master=True)
         s, r = call("GET", "/api/steady/me/devices", S6.token)
@@ -658,7 +664,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
                                    (f"/api/steady/me/devices/{six_phone}/remove", "POST", {})):
             s, r = call(method, path, S6.token, body, confirm=False)
             check(C, f"{method} {path.replace(S3.id, '<id>').replace(six_phone, '<id>')} asks the master clinician to confirm first", s == 403 and "confirm_needed" in json.dumps(r), r)
-        s, r = call("POST", f"/api/steady/me/devices/{phone_id}/remove", web)
+        s, r = call("POST", f"/api/steady/me/devices/{phone_id}/remove", web, headers={"X-Steady-Device": laptop["key"]})
         check(C, "staff remove one of their devices; this one stays signed in", s == 200 and r.get("token"), r)
         web = r.get("token") or web
         s, r = call("POST", "/api/collections/users/auth-refresh", S5.token)
@@ -691,7 +697,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
         try:
             with urllib.request.urlopen(ENV.get("MAILSINK_URL", "http://127.0.0.1:8025").rstrip("/") + "/", timeout=5) as resp:
                 box = resp.read().decode("utf-8", "replace")
-            check(L, "staff were emailed (codes and notices)", "your code is" in box and "a new device was linked" in box, box[:300])
+            check(L, "staff were emailed (codes and notices)", "code to link" in box and "a new device was linked" in box, box[:300])
             check(L, "no email names a patient", not any(n in box for n in ("Alice", "Bongani", "Chen", "Eve", "Fran", "Gita")), box[:300])
         except OSError as err:
             check(L, "the test mail catcher can be read", False, str(err))

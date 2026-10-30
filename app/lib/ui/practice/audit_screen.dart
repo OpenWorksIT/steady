@@ -20,6 +20,12 @@ const _actions = {
   'patient.export': 'Exported a patient',
   'patients.export': 'Exported all patients',
   'patient.flag.review': 'Marked a flag as reviewed',
+  'patient.export.heidi': 'Exported a patient for Heidi',
+  'account.self-lock': 'Locked their own account',
+  'account.device.linked': 'Linked a device',
+  'account.device.removed': 'Removed a device',
+  'auth.device.code-sent': 'Asked for a device code',
+  'account.password-changed': 'Changed their password',
   'patient.share': 'Shared a patient',
   'patient.unshare': 'Stopped sharing a patient',
   'patient.reassign': 'Moved a patient',
@@ -36,7 +42,7 @@ const _actions = {
 String _describe(String action) {
   if (_actions[action] != null) return _actions[action]!;
   if (action.startsWith('list.') || action.startsWith('view.')) return 'Read ${action.split('.').last}';
-  if (action.startsWith('patient.care.')) return 'Set patient to ${action.split('.').last}';
+  if (action.startsWith('patient.care')) return 'Changed a patient\'s care settings';
   if (action.startsWith('patient.radr.')) return 'Changed RADR measures';
   return action;
 }

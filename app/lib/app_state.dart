@@ -3,7 +3,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pocketbase/pocketbase.dart' show ClientException;
 
 import 'build_info.dart';
@@ -22,7 +21,7 @@ class AppState extends ChangeNotifier {
   /// An invite code the app was opened with, waiting for the join screen.
   String? pendingInvite;
   String _privacyAckAt = '';
-  final _storage = const FlutterSecureStorage();
+  final _storage = kSecureStorage;
   AppState(this.api);
 
   static const _privacyKey = 'steady.privacy';

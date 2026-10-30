@@ -76,7 +76,8 @@ services:
       - ./brand:/pb/brand:ro
       # Settings > Server and updates: requests for deploy/ctl/steady-ctl.sh and its status
       # (set up by deploy/ctl/install.sh; without it the app just says so)
-      - /var/lib/steady/ctl:/ctl
+      - /var/lib/steady/ctl/in:/ctl/in
+      - /var/lib/steady/ctl/out:/ctl/out:ro
       # edit the consent text without rebuilding
       - ../server/pb_hooks/content:/pb/pb_hooks/content:ro
     networks:

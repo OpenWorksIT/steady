@@ -13,8 +13,11 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -117,8 +120,9 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		default:
 			out.Failed++
 			if err != nil && s.Logger != nil {
-				// never log tokens
-				s.Logger.Printf("send via %s failed: %v", t.Provider, err)
+				// never log tokens: a network error's text holds the whole address (an APNs
+				// device token, a UnifiedPush topic), so log only what went wrong
+				s.Logger.Printf("send via %s failed: %s", t.Provider, safeErr(err))
 			}
 		}
 	}
@@ -198,3 +202,21 @@ func main() {
 		logger.Fatal(err)
 	}
 }
+
+// safeErr describes an error without any address in it (see the comment where it's used).
+func safeErr(err error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		inner := ue.Err
+		var ne net.Error
+		if errors.As(inner, &ne) && ne.Timeout() {
+			return ue.Op + ": timeout"
+		}
+		return ue.Op + ": " + scrubURLs(inner.Error())
+	}
+	return scrubURLs(err.Error())
+}
+
+var urlPattern = regexp.MustCompile(`https?://[^\s"']+`)
+
+func scrubURLs(s string) string { return urlPattern.ReplaceAllString(s, "<address>") }

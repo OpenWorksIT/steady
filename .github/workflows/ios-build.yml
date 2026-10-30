@@ -61,7 +61,7 @@ jobs:
           echo "::notice title=iOS build::No App Store Connect secrets: compiling without signing. Nothing is uploaded."
           flutter build ios --release --no-codesign \
             --build-name=$IOS_VERSION --build-number=$IOS_BUILD_NUMBER \
-            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../ios.txt \
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE --dart-define=STEADY_SERVER=${{ vars.STEADY_SERVER }} 2>&1 | tee ../ios.txt \
             || { echo "::error title=flutter build ios::$(sed 's/%/%25/g' ../ios.txt | grep -iE 'error|failed' | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: what was built
@@ -124,7 +124,7 @@ jobs:
           set -o pipefail
           flutter build ipa --release --export-options-plist=$HOME/export_options.plist \
             --build-name=$IOS_VERSION --build-number=$IOS_BUILD_NUMBER \
-            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../ipa.txt \
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE --dart-define=STEADY_SERVER=${{ vars.STEADY_SERVER }} 2>&1 | tee ../ipa.txt \
             || { echo "::error title=flutter build ipa::$(sed 's/%/%25/g' ../ipa.txt | grep -iE 'error|failed' | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: upload to TestFlight

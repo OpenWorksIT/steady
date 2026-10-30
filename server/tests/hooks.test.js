@@ -160,6 +160,7 @@ function makeRuntime(opts = {}) {
     runInTransaction: (fn) => fn(app),
     unsafeWithoutHooks: () => app,
     settings: () => settings,
+    runInTransaction: (fn) => fn(app),
     newMailClient: () => ({ send: (m) => { if (opts.mailFails) throw new Error("smtp down"); mails.push(m); } }),
     logger: () => ({ warn: (...a) => { if (opts.verbose) console.warn(...a); }, info() {} }),
     // PocketBase's in-memory app store, and the data folder
@@ -220,6 +221,7 @@ function makeRuntime(opts = {}) {
     onRecordAuthWithPasswordRequest: (fn, ...tags) => tags.forEach((t) => ((hooks.authWithPassword = hooks.authWithPassword || {})[t] = fn)),
     onRecordAfterCreateSuccess: (fn, ...tags) => tags.forEach((t) => (hooks.afterCreate[t] = fn)),
     onRecordsListRequest: (fn, ...tags) => tags.forEach((t) => (hooks.list[t] = fn)),
+    onRecordEnrich: (fn, ...tags) => tags.forEach((t) => ((hooks.enrich = hooks.enrich || {})[t] = fn)),
     onRecordViewRequest: (fn, ...tags) => tags.forEach((t) => (hooks.view[t] = fn)),
     migrate: (up) => up(app)
   };
@@ -245,6 +247,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_care.pb.js"));
   run(path.join(HOOKS, "steady_roles.pb.js"));
   run(path.join(HOOKS, "steady_devices.pb.js"));
+  run(path.join(HOOKS, "steady_privacy.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -866,7 +869,11 @@ test("feedback: staff send love, dislikes and bugs with a trail; the master clin
   const sup = rt.makeUser({ name: "OpenWorks", role: "support", active: true, email: "s@openworks.test" });
   assert.equal(rt.call("GET", "/api/steady/feedback").status, 401);
   assert.equal(rt.call("GET", "/api/steady/feedback", { auth: pat }).status, 403);
-  const tickets = rt.call("GET", "/api/steady/feedback", { auth: doc }).data;
+  // a psychologist who isn't the master clinician sees only the tickets they raised
+  const own = rt.call("GET", "/api/steady/feedback", { auth: doc }).data;
+  assert.equal(own.full, false);
+  assert.ok(own.items.every((i) => i.whoName === "Dr Doc"));
+  const tickets = rt.call("GET", "/api/steady/feedback", { auth: master }).data;
   assert.equal(tickets.full, false);
   assert.equal(tickets.items.length, 2);
   assert.equal(tickets.items[0].whoName, "Front desk");
@@ -891,7 +898,7 @@ test("feedback: staff send love, dislikes and bugs with a trail; the master clin
   assert.equal(rt.call("PATCH", "/api/steady/feedback/" + bug.data.id, { auth: sup, body: { status: "done", note: "Fixed in 0.4" } }).status, 200);
   assert.equal(rt.call("GET", "/api/steady/feedback", { auth: sup }).data.items.length, 1, "done ones leave the open list");
   assert.equal(rt.call("GET", "/api/steady/feedback", { auth: sup, query: { status: "done" } }).data.items[0].note, "Fixed in 0.4");
-  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: doc, query: { status: "done" } }).data.items[0].status, "done", "staff see their ticket's status");
+  assert.equal(rt.call("GET", "/api/steady/feedback", { auth: master, query: { status: "done" } }).data.items[0].status, "done", "staff see their ticket's status");
 
   // twenty in ten minutes, then a pause
   for (let i = 0; i < 19; i++) rt.call("POST", "/api/steady/feedback", { auth: doc, body: { kind: "love" } });
@@ -1014,7 +1021,7 @@ test("roles: an administrator sees names only and can't open patient data", () =
   const row = people.data.patients.find((p) => p.id === pat.id);
   assert.equal(row.name, "Pat (clinic)");
   assert.deepEqual(Object.keys(row).sort(), ["active", "app", "clinician", "id", "joinedAt", "name", "role", "status"]);
-  assert.deepEqual(Object.keys(row.status).sort(), ["careStatus", "consent", "lastCheckinAt", "notifications", "privacyNoticeAt", "watch"]);
+  assert.deepEqual(Object.keys(row.status).sort(), ["consent", "lastCheckinAt", "notifications", "privacyNoticeAt", "watch"]);
   assert.ok(!JSON.stringify(row).match(/mood|anxiety|score|note/i), "status, never data");
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: adm }).status, 403);
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/export`, { auth: adm }).status, 403);
@@ -1165,7 +1172,8 @@ test("roles 1.0: who resets whom, easy to lock down and hard to restore, OpenWor
   assert.equal(reset(master, sup), 403);
   // clearing a staff member's authenticator (a full reset): OpenWorks only
   assert.equal(reset(master, doc, true), 403);
-  assert.equal(reset(sup, doc, true), 200);
+  // ...and only where the server can email device codes (else whoever reset could sign in as them)
+  assert.equal(reset(sup, doc, true), 400);
 
   // (the resets above left temporary passwords; as if each had chosen a new one)
   for (const u of [master, doc, adm, sup]) { u.set("mustChangePassword", false); rt.app.save(u); }
@@ -1237,7 +1245,9 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
 
   // PocketBase's own password sign-in is closed to staff; patients still use it
   assert.throws(() => rt.hooks.authWithPassword.users({ record: doc, password: "doctor-password", next: () => "ok" }), /update Steady/);
-  assert.equal(rt.hooks.authWithPassword.users({ record: pat, password: "patient-password", next: () => "ok" }), "ok");
+  let passed = false;
+  rt.hooks.authWithPassword.users({ record: pat, password: "patient-password", next: () => { passed = true; } });
+  assert.ok(passed, "patients still sign in with PocketBase's own route");
   // an old app (no device key) is asked to update
   assert.equal(signIn(undefined).status, 400);
   // a new device: no token, a code by email
@@ -1250,6 +1260,7 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
   assert.equal(rt.mails[0].to[0].address, "dr@example.org");
   assert.equal(rt.mails[0].from.address, "noreply@steadyapp.co.za");
   const code = /is:\s+(\d{6})/.exec(rt.mails[0].text)[1];
+  assert.ok(!rt.mails[0].subject.includes(code), "the code isn't in the subject (lock screens show it)");
   assert.ok(!/patient|Pat\b/.test(rt.mails[0].text.replace(/Nothing about patients/, "")), "no patient details in email");
   // wrong codes count; the right one links the device and signs in
   assert.equal(rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: r.data.ticket, code: "000000" } }).status, 400);
@@ -1274,12 +1285,15 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
   r = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc });
   assert.equal(r.status, 403);
   assert.equal(r.data.confirm.code, "confirm_needed");
+  const onPhone = { "X-Steady-Device": phone.key };
   assert.equal(rt.call("POST", "/api/steady/me/confirm", { auth: doc, body: { device: { key: "z".repeat(40) } } }).status, 400);
-  assert.equal(rt.call("POST", "/api/steady/me/confirm", { auth: doc, body: { device: { key: phone.key } } }).data.how, "device");
-  assert.equal(rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc }).status, 200);
-  rt.tick(6 * 60000);
+  assert.equal(rt.call("POST", "/api/steady/me/confirm", { auth: doc, headers: onPhone, body: { device: { key: phone.key } } }).data.how, "device");
+  // it counts on that phone only: the same account elsewhere (another session) still has to confirm
   assert.equal(rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc }).status, 403);
-  assert.equal(rt.call("GET", "/api/steady/export", { auth: doc }).status, 403);
+  assert.equal(rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc, headers: onPhone }).status, 200);
+  rt.tick(6 * 60000);
+  assert.equal(rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc, headers: onPhone }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/export", { auth: doc, headers: onPhone }).status, 403);
 
   // your devices; removing one signs out everywhere but keeps you signed in here
   const list = rt.call("GET", "/api/steady/me/devices", { auth: doc, headers: { "X-Steady-Device": phone.key } }).data;
@@ -1289,7 +1303,10 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
 
   // a staff password reset unlinks every device and tells them by email
   const before = rt.mails.length;
-  assert.equal(rt.call("POST", `/api/steady/people/${doc.id}/reset-password`, { auth: master }).status, 200);
+  // (the master clinician confirmed on their own linked phone)
+  rt.makeRecord("staffdevices", { user: master.id, keyHash: require("crypto").createHash("sha256").update("m".repeat(40)).digest("hex"), platform: "android", confirmedAt: "2099-01-01 00:00:00.000Z" });
+  assert.equal(rt.call("POST", `/api/steady/people/${doc.id}/reset-password`, { auth: master }).status, 403, "not from another session");
+  assert.equal(rt.call("POST", `/api/steady/people/${doc.id}/reset-password`, { auth: master, headers: { "X-Steady-Device": "m".repeat(40) } }).status, 200);
   assert.equal(rt.store.staffdevices.filter((d) => d.getString("user") === doc.id).length, 0);
   assert.ok(rt.mails.slice(before).some((m) => /password was reset/.test(m.subject) && m.to[0].address === "dr@example.org"));
 
@@ -1305,12 +1322,60 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
   assert.ok(rt.mails.some((m) => /account is locked/.test(m.subject)));
   // and the master clinician can't unlock it
   assert.equal(rt.call("POST", `/api/steady/admin/people/${doc.id}/active`, { auth: master, body: { active: true } }).status, 403);
+  // the mail settings never stay in PocketBase's settings (a settings save would store them)
+  assert.ok(!rt.settings.smtp.password && !rt.settings.smtp.host);
+});
+
+test("1.0 hardening: patients never get scores, wrong tries rest the account, link codes are capped", () => {
+  const env = Object.assign({}, ENV, { STEADY_SMTP_HOST: "mail.test" });
+  const rt = makeRuntime({ env });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org", passwordHash: "pw:doctor-password" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "p@example.org", passwordHash: "pw:patient-password" });
+  // scores are hidden from the patient (lists, views, expand and realtime all go through this)
+  const rec = rt.makeRecord("assignments", { patient: pat.id, clinician: doc.id, status: "done", score: JSON.stringify({ total: 17, band: "Moderately severe" }) });
+  const hidden = [];
+  rec.hide = (...f) => hidden.push(...f);
+  let next = false;
+  rt.hooks.enrich.assignments({ record: rec, requestInfo: { auth: pat }, next: () => { next = true; } });
+  assert.deepEqual(hidden, ["score"]);
+  assert.ok(next);
+  hidden.length = 0;
+  rt.hooks.enrich.assignments({ record: rec, requestInfo: { auth: doc }, next: () => {} });
+  assert.deepEqual(hidden, [], "the psychologist sees the score");
+  // of their psychologist, a patient sees the name only
+  doc.hide = (...f) => hidden.push(...f);
+  rt.hooks.enrich.users({ record: doc, requestInfo: { auth: pat }, next: () => {} });
+  assert.ok(hidden.includes("email") && hidden.includes("master") && hidden.includes("totpEnabledAt") && !hidden.includes("name"));
+
+  // ten wrong passwords: the account rests for 15 minutes, even with the right password
+  const signIn = (password) => rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "p@example.org", password } });
+  for (let i = 0; i < 10; i++) assert.equal(signIn("wrong-" + i).status, 400);
+  assert.equal(signIn("patient-password").status, 429);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "auth.resting"));
+  rt.tick(16 * 60000);
+  assert.ok(signIn("patient-password").data.token, "after the rest it works, and the count starts again");
+  // an unknown email gets the same answer
+  const unknown = rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "nobody@example.org", password: "x" } });
+  assert.equal(unknown.status, 400);
+  assert.equal(unknown.error, signIn("wrong").error);
+
+  // five link codes an hour, however they end
+  const dev = (i) => ({ key: String(i).repeat(40), platform: "web" });
+  const staffIn = (i) => rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "d@example.org", password: "doctor-password", device: dev(i) } });
+  for (let i = 1; i <= 5; i++) {
+    const r = staffIn(i);
+    assert.equal(r.data.linkDevice, true);
+    for (let k = 0; k < 6; k++) rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: r.data.ticket, code: "000000" } });
+  }
+  assert.equal(staffIn(6).status, 400, "spoilt codes still count");
 });
 
 test("staff sign-in 1.0: without email settings nothing changes, and a failed email links nothing", () => {
   const rt = makeRuntime({ env: ENV });
   const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org", passwordHash: "pw:doctor-password" });
-  assert.equal(rt.hooks.authWithPassword.users({ record: doc, password: "doctor-password", next: () => "ok" }), "ok");
+  let passed = false;
+  rt.hooks.authWithPassword.users({ record: doc, password: "doctor-password", next: () => { passed = true; } });
+  assert.ok(passed);
   assert.ok(rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "dr@example.org", password: "doctor-password" } }).data.token);
 
   const down = makeRuntime({ env: Object.assign({}, ENV, { STEADY_SMTP_HOST: "mail.test" }), mailFails: true });

@@ -262,7 +262,12 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
                 minLines: 3,
                 maxLines: 6,
                 onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(labelText: current.$4, border: const OutlineInputBorder()),
+                decoration: InputDecoration(
+                  labelText: current.$4,
+                  border: const OutlineInputBorder(),
+                  // what's written here (and a screenshot) goes to OpenWorks IT, who never see patients
+                  helperText: 'Goes to OpenWorks IT support. Please don\'t name patients.',
+                ),
               ),
               if (_kind == 'bug') ...[
                 if (shots == null)

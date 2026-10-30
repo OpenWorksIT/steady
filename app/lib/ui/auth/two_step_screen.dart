@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -110,8 +112,8 @@ class _TwoStepSetupScreenState extends State<TwoStepSetupScreen> {
               tooltip: 'Copy key',
               icon: const Icon(Icons.copy),
               onPressed: () {
-                Clipboard.setData(ClipboardData(text: _start!.secret));
-                showSnack(context, 'Key copied');
+                copySecret(_start!.secret);
+                showSnack(context, 'Key copied. It\'s cleared from the clipboard in a minute.');
               },
             ),
             IconButton(
@@ -168,8 +170,8 @@ class _TwoStepSetupScreenState extends State<TwoStepSetupScreen> {
         OutlinedButton.icon(
           icon: const Icon(Icons.copy),
           onPressed: () {
-            Clipboard.setData(ClipboardData(text: _recovery!.join('\n')));
-            showSnack(context, 'Recovery codes copied');
+            copySecret(_recovery!.join('\n'));
+            showSnack(context, 'Recovery codes copied. Paste them into your password manager now: they\'re cleared from the clipboard in a minute.');
           },
           label: const Text('Copy codes'),
         ),
@@ -179,3 +181,15 @@ class _TwoStepSetupScreenState extends State<TwoStepSetupScreen> {
 }
 
 String _grouped(String s) => [for (var i = 0; i < s.length; i += 4) s.substring(i, i + 4 > s.length ? s.length : i + 4)].join(' ');
+
+/// Copies a secret, and clears the clipboard a minute later if it still holds it (keyboards keep
+/// clipboard history, and other apps can read the clipboard).
+void copySecret(String text) {
+  Clipboard.setData(ClipboardData(text: text));
+  Timer(const Duration(minutes: 1), () async {
+    try {
+      final now = await Clipboard.getData(Clipboard.kTextPlain);
+      if (now?.text == text) await Clipboard.setData(const ClipboardData(text: ''));
+    } catch (_) {/* best effort */}
+  });
+}

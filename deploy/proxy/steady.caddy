@@ -19,7 +19,7 @@ STEADY_DOMAIN {
 
 	# The dashboard and superuser sign-in are not on the internet: use the SSH tunnel
 	# (ssh -L 8091:localhost:8091 <server>, then http://localhost:8091/_/).
-	@admin path /_/* /api/collections/_superusers/*
+	@admin path_regexp admin (?i)^/(_|_/.*|api/collections/(_superusers|pbc_3142635823)(/.*)?)$
 	respond @admin 404
 
 	handle {
@@ -27,6 +27,21 @@ STEADY_DOMAIN {
 		reverse_proxy steady-pocketbase:8090 {
 			# keep realtime (server-sent events) connections open
 			flush_interval -1
+		}
+	}
+
+	log {
+		output stdout
+		# JSON, without query strings, credentials or device and monitor keys
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>headers>X-Steady-Device delete
+				request>headers>X-Steady-Monitor delete
+			}
 		}
 	}
 }

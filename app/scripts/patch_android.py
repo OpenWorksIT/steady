@@ -35,6 +35,29 @@ HEALTH_PERMISSIONS = [
 ]
 
 DESUGAR_VERSION = "2.1.4"
+MAIN_ACTIVITY = """import android.view.WindowManager
+import io.flutter.embedding.android.FlutterFragmentActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity : FlutterFragmentActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "steady/secure").setMethodCallHandler { call, result ->
+            if (call.method == "set") {
+                val on = call.arguments as? Boolean ?: false
+                runOnUiThread {
+                    if (on) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
+                result.success(null)
+            } else {
+                result.notImplemented()
+            }
+        }
+    }
+}
+"""
 APPCOMPAT = "androidx.appcompat:appcompat:1.7.0"
 styles = [ROOT / "android" / "app" / "src" / "main" / "res" / d / "styles.xml" for d in ("values", "values-night")]
 
@@ -179,6 +202,13 @@ def main():
         src = kt.read_text()
         new = src.replace("io.flutter.embedding.android.FlutterActivity", "io.flutter.embedding.android.FlutterFragmentActivity")
         new = re.sub(r":\s*FlutterActivity\(\)", ": FlutterFragmentActivity()", new)
+        # staff screens can't be screenshotted, recorded or shown in the app switcher
+        # (FLAG_SECURE, switched on by the app for practice staff; ui/auth/screen_lock.dart)
+        if "steady/secure" not in new:
+            pkg = re.search(r"^package\s+[\w.]+", new, re.M)
+            if not pkg:
+                fail("couldn't find the package line in MainActivity.kt")
+            new = pkg.group(0) + "\n\n" + MAIN_ACTIVITY
         if new != src:
             kt.write_text(new)
             print("patched", kt.relative_to(ROOT))

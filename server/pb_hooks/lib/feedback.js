@@ -13,6 +13,15 @@ function text(v, max) {
 }
 
 /** The trail as sent (an array, or a JSON string in a multipart form), checked and trimmed. */
+// Error text can quote a server address with its query (a filter with an email or a name) or a
+// response body. Keep the kind of error and the HTTP status; drop the rest.
+function scrub(kind, detail) {
+  if (kind !== "error") return detail;
+  var type = (/^([A-Za-z_][A-Za-z0-9_]*)/.exec(detail) || [])[1] || "Error";
+  var status = (/statusCode:\s*(\d{3})/.exec(detail) || /\b(4\d\d|5\d\d)\b/.exec(detail) || [])[1];
+  return type + (status ? " " + status : "");
+}
+
 function cleanTrail(raw) {
   var list = raw;
   if (typeof raw === "string") { try { list = JSON.parse(raw); } catch (e) { list = []; } }
@@ -20,7 +29,7 @@ function cleanTrail(raw) {
   return list.slice(-MAX_TRAIL).filter(function (x) {
     return x && typeof x === "object" && typeof x.t === "number" && isFinite(x.t) && TRAIL_KINDS.indexOf(x.kind) >= 0;
   }).map(function (x) {
-    return { at: new Date(x.t).toISOString(), kind: x.kind, detail: text(x.detail, 300) };
+    return { at: new Date(x.t).toISOString(), kind: x.kind, detail: scrub(x.kind, text(x.detail, 300)) };
   });
 }
 

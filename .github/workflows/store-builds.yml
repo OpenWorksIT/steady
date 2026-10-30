@@ -57,7 +57,7 @@ jobs:
         run: |
           set -o pipefail
           flutter build appbundle --release --build-name=$VERSION_NAME --build-number=$VERSION_CODE \
-            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../aab.txt \
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE --dart-define=STEADY_SERVER=${{ vars.STEADY_SERVER }} 2>&1 | tee ../aab.txt \
             || { echo "::error title=flutter build appbundle::$(sed 's/%/%25/g' ../aab.txt | grep -iE 'error|failed' | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
           cp build/app/outputs/bundle/release/app-release.aab ../steady-$VERSION_NAME-$VERSION_CODE.aab
 

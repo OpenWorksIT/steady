@@ -3,7 +3,7 @@
 Description=Steady: watch for update requests from the app
 
 [Path]
-PathExists=/var/lib/steady/ctl/request
+PathExists=/var/lib/steady/ctl/in/request
 Unit=steady-ctl.service
 
 [Install]

@@ -10,7 +10,9 @@
  *
  * "Confirm it's you" (before resets, locks, adding staff, exports, the audit report, removing
  * devices): a phone confirms with its screen lock and its device key; the web app with an
- * authenticator code. Valid for CONFIRM_MS.
+ * authenticator code. Valid for CONFIRM_MS, and only on the device it was given on: the app
+ * sends its device key with every request (X-Steady-Device), so confirming on a phone doesn't
+ * unlock a session elsewhere.
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
@@ -43,6 +45,14 @@ function parse(d) {
 
 function defaultName(platform) {
   return platform === "android" ? "Android phone" : platform === "ios" ? "iPhone" : "Web browser";
+}
+
+/** The linked device the request came from (its X-Steady-Device header), or null. */
+function fromRequest(app, user, e) {
+  if (!user || !e || !e.request) return null;
+  var key = "";
+  try { key = String(e.request.header.get("X-Steady-Device") || ""); } catch (_) { key = ""; }
+  return find(app, user, parse({ key: key }));
 }
 
 /** The user's linked device with this key, or null. */
@@ -86,7 +96,8 @@ function mask(email) {
  */
 function startLink(app, user, d, ip) {
   var now = s.nowMs();
-  var recent = app.findRecordsByFilter("devicelinks", "user = {:u} && created >= {:s}", "", 10, 0, { u: user.id, s: s.dateValue(now - 3600000).string() });
+  // counted from the audit log, so finishing or spoiling a code doesn't free a place
+  var recent = app.findRecordsByFilter("auditlog", "actor = {:u} && action = 'auth.device.code-sent' && created >= {:s}", "", 10, 0, { u: user.id, s: s.dateValue(now - 3600000).string() });
   if (recent.length >= 5) throw s.badRequest("Too many codes were asked for in the last hour. Please wait a while and try again.");
   var ticket = $security.randomString(40);
   var code = "";
@@ -103,9 +114,10 @@ function startLink(app, user, d, ip) {
   rec.set("expiresAt", s.dateValue(now + LINK_MS));
   app.save(rec);
   var practice = require(__hooks + "/lib/brand.js").current().name;
-  var sent = mail.send(app, user.email(), "Steady: your code is " + code,
+  // the code only in the body: a subject shows on lock screens
+  var sent = mail.send(app, user.email(), "Steady: your code to link a device",
     "Hi " + (user.getString("name") || "there") + ",\n\n" +
-    "Your code to link " + d.name + " to Steady (" + practice + ") is:\n\n    " + code + "\n\n" +
+    "Your code to link a new " + (d.platform === "web" ? "browser" : "phone") + " to Steady (" + practice + ") is:\n\n    " + code + "\n\n" +
     "It works for 15 minutes. Steady will never ask you for this code by phone, message or email.\n\n" +
     "If you didn't just sign in, someone has your password and your authenticator code: open Steady, choose \"Lost your phone? Lock your account\" on the sign-in screen, and contact OpenWorks IT support." + mail.FOOTER);
   if (!sent) {
@@ -129,11 +141,17 @@ function finishLink(app, ticket, code, ip) {
   var user = s.findUser(app, link.getString("user"));
   if (!user || !user.getBool("active")) { app.delete(link); throw s.badRequest("Failed to authenticate."); }
   var clean = String(code || "").replace(/[^0-9]/g, "");
-  if (!$security.equal(hash(user.id + ":" + clean), link.getString("codeHash"))) {
-    link.set("attempts", link.getInt("attempts") + 1);
-    app.save(link);
-    throw bad();
-  }
+  // count the try first, inside a transaction, so requests at once can't get extra guesses
+  var allowed = false;
+  app.runInTransaction(function (tx) {
+    var l = tx.findRecordById("devicelinks", link.id);
+    if (l.getInt("attempts") >= MAX_TRIES) return;
+    l.set("attempts", l.getInt("attempts") + 1);
+    tx.save(l);
+    allowed = true;
+  });
+  if (!allowed) throw s.badRequest("This code has expired. Please sign in again for a new one.");
+  if (!$security.equal(hash(user.id + ":" + clean), link.getString("codeHash"))) throw bad();
   var dev = new Record(app.findCollectionByNameOrId("staffdevices"));
   var existing = app.findRecordsByFilter("staffdevices", "user = {:u} && keyHash = {:k}", "", 1, 0, { u: user.id, k: link.getString("keyHash") });
   if (existing.length) dev = existing[0];
@@ -151,8 +169,10 @@ function finishLink(app, ticket, code, ip) {
   return { user: user, device: dev };
 }
 
-/** True when the person confirmed it's them in the last few minutes. */
-function confirmedRecently(user) {
+/** True when the person confirmed it's them in the last few minutes (on this device, where
+ *  devices are linked). */
+function confirmedRecently(user, dev) {
+  if (required()) return !!dev && s.nowMs() - s.toMs(dev, "confirmedAt") < CONFIRM_MS;
   return s.nowMs() - s.toMs(user, "confirmedAt") < CONFIRM_MS;
 }
 
@@ -163,7 +183,7 @@ function confirmedRecently(user) {
 function requireConfirmed(e, what) {
   if (!e.auth || e.auth.isSuperuser() || !s.isStaff(e.auth)) return;
   var u = s.findUser($app, e.auth.id);
-  if (u && confirmedRecently(u)) return;
+  if (u && confirmedRecently(u, fromRequest($app, u, e))) return;
   throw new ForbiddenError("Please confirm it's you first.", { confirm: new ValidationError("confirm_needed", "Please confirm it's you" + (what ? " before " + what : "") + ".") });
 }
 
@@ -171,12 +191,13 @@ function requireConfirmed(e, what) {
  * "Confirm it's you". body: { device: {key} } from a linked phone after its screen lock, or
  * { code } (authenticator) from anywhere, or { password } where two-step sign-in is off.
  */
-function confirm(app, user, b) {
+function confirm(app, user, b, here) {
   var d = parse(b.device);
   var dev = d ? find(app, user, d) : null;
   var ok = false;
   var how = "";
-  if (dev && PHONES.indexOf(dev.getString("platform")) >= 0) {
+  // a phone's own key, from that phone (the app asks for the screen lock first)
+  if (dev && PHONES.indexOf(dev.getString("platform")) >= 0 && (!here || here.id === dev.id)) {
     ok = true; how = "device";
   } else if (b.code && s.twoStepOn(user)) {
     var t = require(__hooks + "/lib/totp.js");
@@ -188,11 +209,13 @@ function confirm(app, user, b) {
   if (!ok) return null;
   user.set("confirmedAt", new DateTime());
   app.save(user);
+  var on = here || dev;
+  if (on) { on.set("confirmedAt", new DateTime()); app.save(on); }
   return how;
 }
 
 module.exports = {
   required: required, parse: parse, find: find, touch: touch, list: list, row: row, unlinkAll: unlinkAll,
-  startLink: startLink, finishLink: finishLink, confirm: confirm, confirmedRecently: confirmedRecently,
+  startLink: startLink, finishLink: finishLink, confirm: confirm, confirmedRecently: confirmedRecently, fromRequest: fromRequest,
   requireConfirmed: requireConfirmed, CONFIRM_MS: CONFIRM_MS, mask: mask
 };

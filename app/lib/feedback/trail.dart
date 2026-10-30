@@ -136,17 +136,25 @@ class _TrailTapsState extends State<TrailTaps> {
       );
 }
 
+/// The kind of error (and an HTTP status), never its text: error messages can quote a server
+/// address with its query, a response body or something typed into a field.
+String trailError(Object error) {
+  final type = error.runtimeType.toString();
+  final status = RegExp(r'statusCode:\s*(\d{3})').firstMatch('$error')?.group(1);
+  return status == null ? type : '$type $status';
+}
+
 /// Errors the app hit, alongside Flutter's own handling.
 void startTrailErrorHooks() {
   final previous = FlutterError.onError;
   FlutterError.onError = (details) {
-    Trail.record('error', details.exceptionAsString());
+    Trail.record('error', trailError(details.exception));
     previous?.call(details);
   };
   final dispatcher = WidgetsBinding.instance.platformDispatcher;
   final previousAsync = dispatcher.onError;
   dispatcher.onError = (error, stack) {
-    Trail.record('error', '$error');
+    Trail.record('error', trailError(error));
     return previousAsync?.call(error, stack) ?? false;
   };
 }

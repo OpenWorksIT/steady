@@ -207,8 +207,9 @@ function summary(app, nowMs, hours, ctlDir, startedMs) {
       return d;
     });
   var since = function (min) { var m = minuteOf(nowMs - min * 60000); return rows.filter(function (d) { return d.minute >= m; }); };
-  var host = ctlDir ? readJsonFile(ctlDir + "/host.json") : null;
-  var status = ctlDir ? readJsonFile(ctlDir + "/status.json") : null;
+  var out = ctlDir ? require(__hooks + "/lib/dist.js").ctlOut(ctlDir) : null;
+  var host = out ? readJsonFile(out + "/host.json") : null;
+  var status = out ? readJsonFile(out + "/status.json") : null;
   var w15 = windowOf(since(15));
   // the chart: one point per 5 minutes (per hour beyond a day)
   var step = hours <= 24 ? 5 : 60;

@@ -44,7 +44,7 @@ routerAdd("POST", "/api/steady/patients/{id}/care", (e) => {
   p.set("careStatus", status);
   p.set("careStatusAt", status ? new DateTime() : "");
   $app.unsafeWithoutHooks().save(p);
-  s.audit($app, e, "patient.care." + (status || "active"), "user:" + p.id, p.id);
+  s.audit($app, e, "patient.care", "user:" + p.id, p.id);
   return e.json(200, { id: p.id, careStatus: status });
 }, $apis.requireAuth());
 
@@ -79,7 +79,8 @@ routerAdd("POST", "/api/steady/patients/{id}/radr-exclusions", (e) => {
   p.set("radrExclusions", list);
   $app.unsafeWithoutHooks().save(p);
   D.refreshLatest($app, p);
-  s.audit($app, e, "patient.radr." + (b.excluded === true ? "exclude" : "include"), domain + (reason ? " (" + reason + ")" : ""), p.id);
+  // the reason stays with the patient's settings: the audit report is read by the practice admin
+  s.audit($app, e, "patient.radr." + (b.excluded === true ? "exclude" : "include"), domain, p.id);
   return e.json(200, { exclusions: list });
 }, $apis.requireAuth());
 
@@ -108,7 +109,7 @@ routerAdd("POST", "/api/steady/patients/{id}/flags/review", (e) => {
   r.set("note", note);
   $app.save(r);
   if (note) c.addNote($app, p, e.auth, "Reviewed " + (s.core.str(b.label, 160) || "a flag") + ": " + note);
-  s.audit($app, e, "patient.flag.review", key, p.id);
+  s.audit($app, e, "patient.flag.review", "flag", p.id);
   return e.json(200, { key: key, reviewed: { by: e.auth.getString("name"), at: s.nowMs(), note: note } });
 }, $apis.requireAuth());
 

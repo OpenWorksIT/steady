@@ -111,12 +111,21 @@ function joinPage(opts) {
 
 /* ---------- server updates (deploy/ctl/steady-ctl.sh does the work, as root) ---------- */
 
+// Since 1.0 the folder is split: in/ is the only place this container may write (a request),
+// out/ is written by root and mounted read-only (status, host stats). Servers set up before
+// that have one shared folder until update.sh or ctl/install.sh moves them over.
+function ctlSub(ctlDir, name) {
+  try { $os.stat(ctlDir + "/" + name); return ctlDir + "/" + name; } catch (_) { return ctlDir; }
+}
+
+function ctlOut(ctlDir) { return ctlSub(ctlDir, "out"); }
+
 function ctlStatus(ctlDir) {
-  return readJsonFile(ctlDir + "/status.json");
+  return readJsonFile(ctlOut(ctlDir) + "/status.json");
 }
 
 function ctlPending(ctlDir) {
-  var t = readText(ctlDir + "/request");
+  var t = readText(ctlSub(ctlDir, "in") + "/request");
   return t === null ? null : (t.replace(/[^a-z-]/g, "") || null);
 }
 
@@ -124,10 +133,11 @@ function ctlRequest(ctlDir, action) {
   var bytes = [];
   var text = action + "\n";
   for (var i = 0; i < text.length; i++) bytes.push(text.charCodeAt(i));
-  $os.writeFile(ctlDir + "/request", bytes, 432); // 0660
+  $os.writeFile(ctlSub(ctlDir, "in") + "/request", bytes, 432); // 0660
 }
 
 module.exports = {
+  ctlOut: ctlOut,
   cleanCode: cleanCode,
   formatCode: formatCode,
   appInfo: appInfo,

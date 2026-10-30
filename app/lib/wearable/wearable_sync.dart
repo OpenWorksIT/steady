@@ -2,7 +2,6 @@
 //
 // Reads the watch data from the phone's health store, summarises it per day and uploads
 // the summaries. Runs when the app opens and when the patient taps "Sync now".
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../services/api.dart';
 import 'health_source.dart';
@@ -24,7 +23,7 @@ class WearableSync {
   static final instance = WearableSync._();
 
   final HealthStore? store = createHealthStore();
-  final _storage = const FlutterSecureStorage();
+  final _storage = kSecureStorage;
   Future<SyncResult?>? _running;
 
   bool get supported => store != null;

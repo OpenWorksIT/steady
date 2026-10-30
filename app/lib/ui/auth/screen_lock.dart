@@ -7,7 +7,9 @@
 // lock on a phone, an authenticator code on the web.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../app_state.dart';
@@ -44,6 +46,16 @@ Future<bool> phoneHasScreenLock() async {
   }
 }
 
+// Android: no screenshots, screen recording or app-switcher picture of the staff app
+// (FLAG_SECURE, set in MainActivity by scripts/patch_android.py).
+const _secure = MethodChannel('steady/secure');
+bool? _secureOn;
+void _setSecure(bool on) {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android || _secureOn == on) return;
+  _secureOn = on;
+  _secure.invokeMethod('set', on).catchError((_) => null);
+}
+
 /// Covers the whole app (every screen) while a staff member's phone app is locked.
 class StaffLock extends StatefulWidget {
   final Widget child;
@@ -54,6 +66,8 @@ class StaffLock extends StatefulWidget {
 
 class _StaffLockState extends State<StaffLock> with WidgetsBindingObserver {
   bool _locked = true;
+  // hidden while the app isn't in front, so the app switcher's picture shows nothing
+  bool _covered = false;
   bool? _hasLock;
   DateTime? _away;
   String? _forUser;
@@ -72,9 +86,11 @@ class _StaffLockState extends State<StaffLock> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.inactive && !_prompting && !_covered) setState(() => _covered = true);
     if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
       if (!_prompting) _away ??= DateTime.now();
     } else if (s == AppLifecycleState.resumed) {
+      if (_covered) setState(() => _covered = false);
       final away = _away;
       _away = null;
       if (away != null && DateTime.now().difference(away) >= _relockAfter && !_locked) {
@@ -99,6 +115,7 @@ class _StaffLockState extends State<StaffLock> with WidgetsBindingObserver {
     final state = AppScope.of(context);
     final api = state.api;
     final applies = api.isPhone && state.signedIn && api.isStaff && !api.mustChangePassword;
+    _setSecure(applies);
     if (!applies) {
       _forUser = null;
       return widget.child;
@@ -113,6 +130,7 @@ class _StaffLockState extends State<StaffLock> with WidgetsBindingObserver {
       // nothing behind the lock is shown or reachable
       Offstage(offstage: _locked, child: TickerMode(enabled: !_locked, child: widget.child)),
       if (_locked) _LockScreen(hasLock: _hasLock, onUnlock: _unlock, onSignOut: () => state.signOut()),
+      if (_covered && !_locked) const Positioned.fill(child: ColoredBox(color: Colors.black)),
     ]);
   }
 }

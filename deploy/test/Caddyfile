@@ -7,7 +7,9 @@
 
 :80 {
 	# dashboard and superuser endpoints stay local (use http://localhost:8090/_/ on this PC)
-	@admin path /_/* /api/collections/_superusers/*
+	# (by name and by the collection's id, in any letter case: the test stack's own scripts use
+	# the superuser API through the local port, so the server lets it through)
+	@admin path_regexp admin (?i)^/(_|_/.*|api/collections/(_superusers|pbc_3142635823)(/.*)?)$
 	respond @admin 404
 
 	header {

@@ -18,15 +18,25 @@ import '../models.dart';
 const kServerUrl = String.fromEnvironment('STEADY_SERVER');
 
 const _authKey = 'steady.auth';
+
+/// Secure storage for the session and the device key. On iPhones, "this device only": a backup
+/// restored onto another phone doesn't bring them along (that would copy a linked device).
+const kSecureStorage = FlutterSecureStorage(iOptions: IOSOptions(accessibility: KeychainAccessibility.unlocked_this_device));
 const _serverKey = 'steady.server';
 
 /// Returns a clean https://host[:port] address, or null if it isn't usable.
+/// Plain http only in development builds (a local test server): released apps must never send
+/// a password or session over an unencrypted connection. STEADY_ALLOW_HTTP=true for a test build.
+const kAllowHttp = kDebugMode || bool.fromEnvironment('STEADY_ALLOW_HTTP');
+
+bool _schemeOk(Uri u) => u.scheme == 'https' || (kAllowHttp && u.scheme == 'http');
+
 String? normaliseServerUrl(String input) {
   var s = input.trim();
   if (s.isEmpty) return null;
   if (!s.contains('://')) s = 'https://$s';
   final u = Uri.tryParse(s);
-  if (u == null || u.host.isEmpty || !(u.scheme == 'https' || u.scheme == 'http')) return null;
+  if (u == null || u.host.isEmpty || !_schemeOk(u)) return null;
   final path = u.path.replaceAll(RegExp(r'/+$'), '');
   return '${u.scheme}://${u.host}${u.hasPort ? ':${u.port}' : ''}$path';
 }
@@ -36,7 +46,7 @@ String? normaliseServerUrl(String input) {
 /// or null if it isn't a Steady invite.
 ({String server, String code})? parseInviteLink(String raw) {
   final u = Uri.tryParse(raw.trim());
-  if (u == null || u.host.isEmpty || !(u.scheme == 'https' || u.scheme == 'http')) return null;
+  if (u == null || u.host.isEmpty || !_schemeOk(u)) return null;
   final code = (u.queryParameters['invite'] ?? '').toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
   if (code.length != 8) return null;
   final path = u.path.replaceAll(RegExp(r'/+$'), '').replaceAll(RegExp(r'/join$'), '');
@@ -215,7 +225,7 @@ class Api {
   final FlutterSecureStorage _storage;
   Api._(this.pb, this._storage);
 
-  static Future<Api> create({FlutterSecureStorage storage = const FlutterSecureStorage()}) async {
+  static Future<Api> create({FlutterSecureStorage storage = kSecureStorage}) async {
     String? initial;
     String? saved;
     try {
@@ -236,8 +246,11 @@ class Api {
             : kIsWeb
                 ? Uri.base.origin
                 : '';
-    // every server call goes into the feedback trail (method, path shape, result, time)
-    return Api._(PocketBase(url, authStore: store, httpClientFactory: () => TrailClient(http.Client())), storage);
+    // every server call goes into the feedback trail (method, path shape, result, time), and
+    // carries this device's key (see _DeviceKeyClient)
+    final api = Api._(PocketBase(url, authStore: store, httpClientFactory: () => TrailClient(_DeviceKeyClient(http.Client()))), storage);
+    if (url.isNotEmpty) await api.deviceKey();
+    return api;
   }
 
   /// Fixed at build time, so the server can't be changed in the app.
@@ -263,6 +276,7 @@ class Api {
     pb.authStore.clear();
     pb.baseURL = url;
     await _storage.write(key: _serverKey, value: url);
+    await deviceKey();
   }
 
   RecordModel? get me => pb.authStore.record;
@@ -326,6 +340,8 @@ class Api {
         await _storage.write(key: k, value: v);
       } catch (_) {/* this session only */}
     }
+    _DeviceKeyClient.key = v;
+    _DeviceKeyClient.host = Uri.tryParse(pb.baseURL)?.host ?? '';
     return v;
   }
 
@@ -942,4 +958,23 @@ class Api {
       );
     }).toList();
   }
+}
+
+/// Adds this device's key to requests to its own Steady server (X-Steady-Device), never to
+/// anywhere else: the server ties "confirm it's you" to the device it was given on.
+class _DeviceKeyClient extends http.BaseClient {
+  final http.Client _inner;
+  _DeviceKeyClient(this._inner);
+  static String? key;
+  static String host = '';
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    final k = key;
+    if (k != null && host.isNotEmpty && request.url.host == host) request.headers['X-Steady-Device'] = k;
+    return _inner.send(request);
+  }
+
+  @override
+  void close() => _inner.close();
 }

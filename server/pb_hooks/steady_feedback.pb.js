@@ -9,6 +9,7 @@ routerAdd("POST", "/api/steady/feedback", (e) => {
   const f = require(`${__hooks}/lib/feedback.js`);
   if (!e.auth) throw new UnauthorizedError("Sign in first.");
   if (!s.isStaff(e.auth)) throw new ForbiddenError("Feedback is for the practice's staff.");
+  s.requireSignedIn(e);
   // twenty reports in ten minutes is plenty
   const recent = $app.findRecordsByFilter("feedback", "who = {:u} && created >= {:since}", "", 21, 0,
     { u: e.auth.id, since: s.dateValue(s.nowMs() - 10 * 60000).string() });
@@ -54,7 +55,11 @@ routerAdd("GET", "/api/steady/feedback", (e) => {
     if (!s.isStaff(e.auth)) throw new ForbiddenError("Feedback is for the practice's staff.");
     full = s.isSupport(e.auth);
   }
-  const list = $app.findRecordsByFilter("feedback", filter, "-created", 500, 0)
+  // other psychologists see the tickets they raised themselves; the master clinician, the
+  // practice admin and OpenWorks see everyone's
+  let mine = "";
+  if (!full && s.role(e) === "clinician" && !s.isMaster(e.auth)) mine = (filter ? " && " : "") + "who = {:me}";
+  const list = $app.findRecordsByFilter("feedback", filter + mine, "-created", 500, 0, { me: e.auth ? e.auth.id : "" })
     .map((r) => (full ? f.summary(r, s.toMs, s.readJson) : f.ticket(r, s.toMs)));
   return e.json(200, { items: list, full: full });
 });

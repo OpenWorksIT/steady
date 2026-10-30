@@ -101,7 +101,16 @@ routerAdd("POST", "/api/steady/join", (e) => {
   }
 
   let user = null;
+  let taken = false;
+  try { $app.findAuthRecordByEmail("users", email); taken = true; } catch (_) { taken = false; }
+  // the same answer whether or not the email has an account (it would say who is a patient)
+  if (taken) throw s.badRequest("Steady couldn't set up an account with these details. If you already use Steady, sign in instead; otherwise ask the practice.");
   $app.runInTransaction((tx) => {
+    // checked again inside the transaction: two people joining at once can't both use one code
+    const inv = tx.findRecordById("invites", invite.id);
+    if (inv.getString("usedBy") || s.toMs(inv, "expiresAt") < s.nowMs()) {
+      throw s.badRequest("This invite code has expired or was already used. Ask your psychologist for a new one.");
+    }
     const users = tx.findCollectionByNameOrId("users");
     user = new Record(users);
     user.setEmail(email);
@@ -117,9 +126,9 @@ routerAdd("POST", "/api/steady/join", (e) => {
     const tz = Number(b.tzOffset);
     user.set("tzOffset", isFinite(tz) ? Math.max(-720, Math.min(840, Math.round(tz))) : 120);
     tx.save(user);
-    invite.set("usedBy", user.id);
-    invite.set("usedAt", new DateTime());
-    tx.save(invite);
+    inv.set("usedBy", user.id);
+    inv.set("usedAt", new DateTime());
+    tx.save(inv);
   });
 
   s.audit($app, e, "patient.join", "invite:" + invite.id, user.id);
@@ -695,7 +704,10 @@ onRecordsListRequest((e) => {
     const info = e.requestInfo();
     const filter = (info.query && info.query.filter) || "";
     const m = /patient\s*=\s*["']([a-z0-9]{15})["']/.exec(String(filter));
-    s.audit(e.app, e, "list." + e.collection.name, String(filter).slice(0, 180), m ? m[1] : "");
+    // which fields were filtered on, not the values (the audit report is read by the practice admin)
+    const fields = {};
+    String(filter).replace(/([A-Za-z_][A-Za-z0-9_.]*)\s*(\?)?(=|!=|>=|<=|>|<|~|!~)/g, (x, f) => { fields[f] = true; return x; });
+    s.audit(e.app, e, "list." + e.collection.name, Object.keys(fields).length ? "filter: " + Object.keys(fields).sort().join(",") : "", m ? m[1] : "");
   }
 }, "checkins", "assignments", "biometrics");
 

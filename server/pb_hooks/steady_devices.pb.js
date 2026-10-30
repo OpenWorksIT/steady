@@ -12,7 +12,7 @@ routerAdd("GET", "/api/steady/me/devices", (e) => {
   const D = require(`${__hooks}/lib/devices.js`);
   s.requireSignedIn(e);
   const u = $app.findRecordById("users", e.auth.id);
-  const mine = D.find($app, u, D.parse({ key: String(e.request.header.get("X-Steady-Device") || "") }));
+  const mine = D.fromRequest($app, u, e);
   const list = D.list($app, u).map((d) => Object.assign(d, { current: !!mine && mine.id === d.id }));
   return e.json(200, { devices: list, required: D.required() });
 }, $apis.requireAuth());
@@ -45,9 +45,12 @@ routerAdd("POST", "/api/steady/me/confirm", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const D = require(`${__hooks}/lib/devices.js`);
   s.requireSignedIn(e);
+  const G = require(`${__hooks}/lib/signin.js`);
   const u = $app.findRecordById("users", e.auth.id);
-  const how = D.confirm($app, u, s.body(e));
+  G.checkResting(u);
+  const how = D.confirm($app, u, s.body(e), D.fromRequest($app, u, e));
   if (!how) {
+    G.failed($app, u, e, "code");
     s.audit($app, e, "account.confirm.failed", "", "");
     throw s.badRequest(s.twoStepOn(u) ? "That code didn't work. Try the newest code from your authenticator app." : "That password isn't right.",
       { confirm: new ValidationError(s.twoStepOn(u) ? "code" : "password", "Not confirmed.") });

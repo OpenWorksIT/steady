@@ -70,8 +70,7 @@ function statusRows(app, patients) {
         lapsed: lapsed(p),
         lastDay: lastDay[p.id] || ""
       },
-      lastCheckinAt: lastCheckin[p.id] || 0,
-      careStatus: p.getString("careStatus")
+      lastCheckinAt: lastCheckin[p.id] || 0
     };
   });
 }

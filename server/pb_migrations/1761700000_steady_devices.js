@@ -7,17 +7,23 @@
 //                 the new device. Expires after 15 minutes or 5 wrong tries.
 //   users.confirmedAt  when the person last confirmed it's them ("confirm it's you", before a
 //                 reset, an export, the audit report...). Valid for a few minutes. Hidden.
+//   users.authFails    wrong passwords and codes lately: { n, first, until } (a short rest after
+//                 too many). Hidden.
+//   staffdevices.confirmedAt  "confirm it's you" from that device (it counts for that device only)
 // All written through /api/steady routes only; the collections have no API rules.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-const DEVICE_FIELDS = ["confirmedAt"];
+const DEVICE_FIELDS = ["confirmedAt", "authFails"];
+// staff can't rename themselves (the audit report and emails go by name); patients can
+const NAME_LOCK = " && (@request.auth.role = 'patient' || @request.body.name:isset = false)";
 
 migrate((app) => {
   const users = app.findCollectionByNameOrId("users");
   users.fields.add(new DateField({ name: "confirmedAt", hidden: true }));
+  users.fields.add(new JSONField({ name: "authFails", maxSize: 500, hidden: true }));
   const rule = users.updateRule === null || users.updateRule === undefined ? null : String(users.updateRule);
   if (rule !== null && rule.indexOf("confirmedAt") < 0) {
-    users.updateRule = rule + DEVICE_FIELDS.map((f) => " && @request.body." + f + ":isset = false").join("");
+    users.updateRule = rule + DEVICE_FIELDS.map((f) => " && @request.body." + f + ":isset = false").join("") + NAME_LOCK;
   }
   app.save(users);
 
@@ -31,6 +37,7 @@ migrate((app) => {
       { name: "keyHash", type: "text", max: 100, required: true, hidden: true },
       { name: "lastUsedAt", type: "date" },
       { name: "lastIp", type: "text", max: 80 },
+      { name: "confirmedAt", type: "date", hidden: true },
       { name: "created", type: "autodate", onCreate: true, onUpdate: false }
     ],
     indexes: ["CREATE UNIQUE INDEX `idx_staffdevices_key` ON `staffdevices` (`user`, `keyHash`)"],
@@ -60,6 +67,6 @@ migrate((app) => {
   const users = app.findCollectionByNameOrId("users");
   DEVICE_FIELDS.forEach((f) => users.fields.removeByName(f));
   const rule = users.updateRule === null || users.updateRule === undefined ? null : String(users.updateRule);
-  if (rule !== null) users.updateRule = DEVICE_FIELDS.reduce((r, f) => r.split(" && @request.body." + f + ":isset = false").join(""), rule);
+  if (rule !== null) users.updateRule = DEVICE_FIELDS.reduce((r, f) => r.split(" && @request.body." + f + ":isset = false").join(""), rule).split(NAME_LOCK).join("");
   app.save(users);
 });

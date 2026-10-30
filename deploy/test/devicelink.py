@@ -38,7 +38,7 @@ def emailed_code(env, email):
     url = env.get("MAILSINK_URL", "http://127.0.0.1:8025").rstrip("/")
     for _ in range(40):
         try:
-            with urllib.request.urlopen(url + "/latest?" + urllib.parse.urlencode({"to": email, "subject": "your code is"}), timeout=5) as r:
+            with urllib.request.urlopen(url + "/latest?" + urllib.parse.urlencode({"to": email, "subject": "code to link"}), timeout=5) as r:
                 m = json.loads(r.read() or b"{}")
             hit = re.search(r"is:\s+(\d{6})", m.get("text", ""))
             if hit:

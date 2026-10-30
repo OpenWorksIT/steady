@@ -93,6 +93,7 @@ if [ -f .env ]; then
   [ "$(envv STEADY_REQUIRE_2FA)" = off ] && fail "STEADY_REQUIRE_2FA=off: staff sign in without two-step" || ok "two-step sign-in is required for staff"
   [ -n "$(envv STEADY_SMTP_HOST)" ] && ok "email is set up: staff link their devices" || warn "no STEADY_SMTP_HOST: staff devices aren't linked (docs/DEPLOY.md 5a)"
   [ "$(envv STEADY_DEVICE_LINK)" = off ] && warn "STEADY_DEVICE_LINK=off: device linking is switched off" || true
+  [ -s secrets/allowed_signers ] && ok "updates install only releases signed by OpenWorks (secrets/allowed_signers)" || fail "no secrets/allowed_signers: updates follow GitHub's main branch unsigned (docs/DEPLOY.md, signed releases)"
 else
   fail "no deploy/.env here"
 fi

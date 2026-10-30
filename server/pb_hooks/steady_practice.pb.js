@@ -41,8 +41,8 @@ routerUse((e) => {
 // Rules give staff without two-step sign-in nothing, when it's required (the default).
 onBootstrap((e) => {
   e.next();
-  // email settings from the .env (kept out of the database)
-  require(`${__hooks}/lib/mail.js`).configure(e.app);
+  // email settings live in the .env and are put in place only while sending (lib/mail.js)
+  require(`${__hooks}/lib/mail.js`).clear(e.app);
   const GUARD = "@request.auth.active = true && @request.auth.mustChangePassword = false";
   const TWO = " && (@request.auth.role = 'patient' || @request.auth.totpEnabledAt != '')";
   const want = $os.getenv("STEADY_REQUIRE_2FA") !== "off";
@@ -70,17 +70,23 @@ onBootstrap((e) => {
 // so must staff when devices are linked (it checks the device).
 onRecordAuthWithPasswordRequest((e) => {
   const s = require(`${__hooks}/lib/server.js`);
-  if (e.record && s.isStaff(e.record) && require(`${__hooks}/lib/devices.js`).required()) {
-    if (e.record.validatePassword(e.password)) throw new BadRequestError("Please update Steady to sign in.", { device: new ValidationError("update_app", "Please update Steady to sign in.") });
+  const G = require(`${__hooks}/lib/signin.js`);
+  // an unknown email takes as long as a known one
+  if (!e.record) { G.dummyCheck($app, e.password); return e.next(); }
+  G.checkResting(e.record);
+  const right = e.record.validatePassword(e.password);
+  if (!right) G.failed($app, e.record, e, "password");
+  if (s.isStaff(e.record) && require(`${__hooks}/lib/devices.js`).required()) {
+    if (right) throw new BadRequestError("Please update Steady to sign in.", { device: new ValidationError("update_app", "Please update Steady to sign in.") });
     throw new BadRequestError("Failed to authenticate.");
   }
-  if (e.record && s.twoStepOn(e.record)) {
-    if (e.record.validatePassword(e.password)) {
-      throw new BadRequestError("Enter the code from your authenticator app.", { twoStep: new ValidationError("two_step", "Enter the code from your authenticator app.") });
-    }
+  if (s.twoStepOn(e.record)) {
+    if (right) throw new BadRequestError("Enter the code from your authenticator app.", { twoStep: new ValidationError("two_step", "Enter the code from your authenticator app.") });
     throw new BadRequestError("Failed to authenticate.");
   }
-  return e.next();
+  if (!right) throw new BadRequestError("Failed to authenticate.");
+  e.next();
+  G.succeeded($app, e.record);
 }, "users");
 
 routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
@@ -89,31 +95,55 @@ routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
   const b = s.body(e);
   const email = s.core.str(b.email, 200).toLowerCase();
   const password = typeof b.password === "string" ? b.password : "";
+  const G = require(`${__hooks}/lib/signin.js`);
   let u = null;
   try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
-  if (!u || !password || !u.validatePassword(password) || !u.getBool("active")) throw new BadRequestError("Failed to authenticate.");
+  // an unknown email takes as long as a known one
+  if (!u) { G.dummyCheck($app, password); throw new BadRequestError("Failed to authenticate."); }
+  G.checkResting(u);
+  if (!password || !u.validatePassword(password)) { G.failed($app, u, e, "password"); throw new BadRequestError("Failed to authenticate."); }
+  if (!u.getBool("active")) throw new BadRequestError("Failed to authenticate.");
   if (s.twoStepOn(u)) {
     const code = String(b.code || "").trim();
     if (!code) throw new BadRequestError("Enter the code from your authenticator app.", { twoStep: new ValidationError("two_step", "Enter the code from your authenticator app.") });
-    const step = t.verify(u.getString("totpSecret"), code, s.nowMs(), u.getInt("totpLastStep"));
     const actor = { auth: u, realIP: () => e.realIP() };
-    if (step >= 0) {
-      u.set("totpLastStep", step);
-      $app.save(u);
-    } else {
+    // inside a transaction, so two requests at once can't both use the same code
+    let how = "";
+    $app.runInTransaction((tx) => {
+      const fresh = tx.findRecordById("users", u.id);
+      const step = t.verify(fresh.getString("totpSecret"), code, s.nowMs(), fresh.getInt("totpLastStep"));
+      if (step >= 0) {
+        fresh.set("totpLastStep", step);
+        tx.save(fresh);
+        how = "code";
+        return;
+      }
       // a recovery code, used once
       const wanted = $security.sha256(code.toLowerCase().replace(/[^a-z0-9]/g, ""));
-      const codes = s.readJson(u, "recoveryCodes") || [];
+      const codes = s.readJson(fresh, "recoveryCodes") || [];
       const left = codes.filter((h) => !$security.equal(h, wanted));
-      if (left.length === codes.length) {
-        s.audit($app, actor, "auth.two-step.failed", "", u.getString("role") === "patient" ? u.id : "");
-        throw new BadRequestError("That code didn't work. Check the time on your phone, or use one of your recovery codes.", { twoStep: new ValidationError("two_step_wrong", "That code didn't work.") });
+      if (left.length < codes.length) {
+        fresh.set("recoveryCodes", left);
+        tx.save(fresh);
+        how = "recovery:" + left.length;
       }
-      u.set("recoveryCodes", left);
-      $app.save(u);
-      s.audit($app, actor, "auth.recovery-code", "left:" + left.length, "");
+    });
+    u = $app.findRecordById("users", u.id);
+    if (!how) {
+      G.failed($app, u, e, "code");
+      s.audit($app, actor, "auth.two-step.failed", "", u.getString("role") === "patient" ? u.id : "");
+      throw new BadRequestError("That code didn't work. Check the time on your phone, or use one of your recovery codes.", { twoStep: new ValidationError("two_step_wrong", "That code didn't work.") });
+    }
+    if (how.indexOf("recovery:") === 0) {
+      s.audit($app, actor, "auth.recovery-code", "left:" + how.split(":")[1], "");
+      if (s.isStaff(u)) {
+        require(`${__hooks}/lib/mail.js`).notice($app, u, "a recovery code was used", [
+          "One of your Steady recovery codes was used to sign in on " + new Date().toUTCString() + " from " + (e.realIP() || "an unknown address") + ". " + how.split(":")[1] + " are left."
+        ]);
+      }
     }
   }
+  G.succeeded($app, u);
   // staff: only from a linked device; a new device gets a code by email first
   const D = require(`${__hooks}/lib/devices.js`);
   if (s.isStaff(u) && D.required()) {
@@ -148,10 +178,13 @@ routerAdd("POST", "/api/steady/auth/lock", (e) => {
   const b = s.body(e);
   const email = s.core.str(b.email, 200).toLowerCase();
   const password = typeof b.password === "string" ? b.password : "";
+  const G = require(`${__hooks}/lib/signin.js`);
   let u = null;
   try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
-  if (!u || !password || !u.validatePassword(password)) throw new BadRequestError("That email and password didn't match.");
-  if (!s.isStaff(u)) throw s.badRequest("Patients: please ask your psychologist or the practice to stop your account.");
+  if (!u) { G.dummyCheck($app, password); throw new BadRequestError("That email and password didn't match."); }
+  G.checkResting(u);
+  if (!password || !u.validatePassword(password)) { G.failed($app, u, e, "password"); throw new BadRequestError("That email and password didn't match."); }
+  if (!s.isStaff(u)) throw new BadRequestError("That email and password didn't match.");
   if (s.isSupport(u)) throw s.badRequest("OpenWorks accounts are locked on the server.");
   const n = require(`${__hooks}/lib/devices.js`).unlinkAll($app, u);
   u.set("active", false);
@@ -185,7 +218,14 @@ routerAdd("POST", "/api/steady/me/password", (e) => {
   u.set("mustChangePassword", false);
   u.refreshTokenKey();
   $app.save(u);
+  // a device link someone started with the old password can't be finished any more
+  $app.findRecordsByFilter("devicelinks", "user = {:u}", "", 1000, 0, { u: u.id }).forEach((d) => $app.delete(d));
   s.audit($app, e, "account.password-changed", "", u.getString("role") === "patient" ? u.id : "");
+  if (s.isStaff(u)) {
+    require(`${__hooks}/lib/mail.js`).notice($app, u, "your password was changed", [
+      "Your Steady password was changed on " + new Date().toUTCString() + ". You're signed out on your other devices."
+    ]);
+  }
   return $apis.recordAuthResponse(e, u, "password");
 }, $apis.requireAuth());
 
@@ -284,11 +324,19 @@ routerAdd("POST", "/api/steady/people/{id}/reset-password", (e) => {
     if (target === "patient") throw new NotFoundError("Not found.");
     throw new ForbiddenError(check.why);
   }
-  require(`${__hooks}/lib/devices.js`).requireConfirmed(e, "a password reset");
+  const D = require(`${__hooks}/lib/devices.js`);
+  // A full reset hands over an account with no authenticator. Only the emailed device code (to
+  // the staff member's own inbox) then stops whoever did the reset from signing in as them.
+  if (b.twoStep === true && target !== "patient" && !D.required()) {
+    throw s.badRequest("This server can't email device codes yet, so a full reset would let whoever does it sign in as them. Set up email first (docs/DEPLOY.md, 5a), or reset on the server with accounts.sh.");
+  }
+  D.requireConfirmed(e, "a password reset");
   if (b.twoStep === true) {
     u.set("totpSecret", "");
     u.set("totpEnabledAt", "");
     u.set("recoveryCodes", []);
+    // after a lost phone this is how a locked account comes back (OpenWorks checks it's them)
+    if (target !== "patient" && !u.getBool("active")) u.set("active", true);
   }
   const pw = s.resetPassword($app, u);
   // staff sign in again from scratch: every device is unlinked and gets a new emailed code
@@ -380,8 +428,15 @@ routerAdd("POST", "/api/steady/admin/patients/{id}/reassign", (e) => {
   const c = s.activeClinician($app, String(s.body(e).clinician || ""));
   const old = p.getString("clinician");
   if (old === c.id) throw s.badRequest("They're already with " + c.getString("name") + ".");
+  // a move opens the patient's whole history to the new psychologist: nobody moves a patient to
+  // themselves while the patient's psychologist is still working here
+  if (c.id === e.auth.id) {
+    const cur = old ? s.findUser($app, old) : null;
+    if (cur && cur.getBool("active")) throw new ForbiddenError("You can't move a patient to yourself while their psychologist is active. Ask another manager, or stop their psychologist's account first.");
+  }
   p.set("clinician", c.id);
-  p.set("sharedWith", s.sharedIds(p).filter((id) => id !== c.id));
+  // the old psychologist's sharing decisions don't carry over
+  p.set("sharedWith", []);
   $app.save(p);
   $app.findRecordsByFilter("assignments", "patient = {:p} && status = 'pending'", "", 1000, 0, { p: p.id })
     .forEach((a) => { a.set("clinician", c.id); $app.save(a); });

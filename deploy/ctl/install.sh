@@ -8,8 +8,13 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 command -v jq >/dev/null || apt-get install -y jq
-# PocketBase runs as uid 10001 in its container: it may leave a request and read the status.
-install -d -m 0770 -o root -g 10001 /var/lib/steady/ctl
+# PocketBase runs as uid 10001 in its container: it may leave a request in in/ and read out/
+# (mounted read-only); root keeps its logs in work/. See the top of steady-ctl.sh.
+install -d -m 0755 -o root -g root /var/lib/steady/ctl
+chown root:root /var/lib/steady/ctl && chmod 0755 /var/lib/steady/ctl
+install -d -m 0770 -o root -g 10001 /var/lib/steady/ctl/in
+install -d -m 0755 -o root -g root /var/lib/steady/ctl/out /var/lib/steady/ctl/work
+chmod 0700 /var/lib/steady/ctl/work
 install -d -m 0700 /var/backups/steady
 chmod +x steady-ctl.sh
 install -m 0644 steady-ctl.path steady-ctl.service steady-check.service steady-check.timer steady-stats.service steady-stats.timer /etc/systemd/system/

@@ -22,7 +22,10 @@ bool appUpdateAvailable(AppState state) {
 Future<void> downloadAppUpdate(BuildContext context) async {
   final state = AppScope.of(context);
   final base = state.api.serverUrl.replaceAll(RegExp(r'/+$'), '');
-  final url = Uri.parse('$base${state.config.apkPath.isEmpty ? '/download/steady.apk' : state.config.apkPath}');
+  // a path on this same server only (never "//elsewhere" or "@elsewhere")
+  final p = state.config.apkPath;
+  final safe = RegExp(r'^/[A-Za-z0-9._/-]*$').hasMatch(p) && !p.startsWith('//') && !p.contains('..');
+  final url = Uri.parse('$base${safe ? p : '/download/steady.apk'}');
   final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
   if (!ok && context.mounted) showSnack(context, 'Couldn\'t open the download. Open $url in your browser.');
 }
