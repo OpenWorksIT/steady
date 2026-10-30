@@ -15,3 +15,7 @@ updates:
   - package-ecosystem: docker
     directories: [/server, /pusher]
     schedule: { interval: weekly }
+  # the images named in the compose files (Caddy, the mail catcher, cloudflared)
+  - package-ecosystem: docker-compose
+    directories: [/deploy, /deploy/test]
+    schedule: { interval: weekly }

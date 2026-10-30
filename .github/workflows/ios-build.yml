@@ -27,8 +27,10 @@ jobs:
     env:
       HAS_KEYS: ${{ secrets.APP_STORE_KEY_ID != '' && secrets.APP_STORE_ISSUER_ID != '' && secrets.APP_STORE_KEY != '' && secrets.IOS_CERT_KEY != '' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
           cache: true
@@ -100,7 +102,7 @@ jobs:
           [ "$APP_STORE_CONNECT_KEY_IDENTIFIER" != "AF3Y5N6XX9" ] || bad="$bad APP_STORE_KEY_ID is the push key's ID, not the API key's;"
           [ -z "$bad" ] || { echo "::error title=App Store Connect secrets::Check:$bad"; exit 1; }
           echo "::notice title=App Store Connect secrets::Key ID, Issuer ID and key all look the right shape (key ID ends ${APP_STORE_CONNECT_KEY_IDENTIFIER: -2})"
-          run pipx install codemagic-cli-tools
+          run pipx install codemagic-cli-tools==0.70.2
           # the tools want a traditional "BEGIN RSA PRIVATE KEY" PEM; openssl genrsa on Linux
           # writes the newer PKCS#8 form, so convert whichever we were given
           key=$(mktemp)

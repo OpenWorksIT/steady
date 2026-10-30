@@ -11,8 +11,10 @@ jobs:
   server:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
       - run: node --test server/tests/*.test.js
@@ -21,7 +23,9 @@ jobs:
     # Boots the real PocketBase with Steady's migrations and hooks and checks it starts cleanly.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: docker build -t steady-server server
       - run: |
           docker run -d --name pb -p 8090:8090 steady-server
@@ -35,7 +39,9 @@ jobs:
     # clinician/patient flow against the real PocketBase.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: start test stack
         run: |
           set -o pipefail
@@ -148,8 +154,10 @@ jobs:
   pusher:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.25"
       - run: cd pusher && go vet ./... && go test ./...
@@ -157,8 +165,10 @@ jobs:
   app:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
       # Each step reports its full output as one annotation, so it can be read with
@@ -168,6 +178,12 @@ jobs:
         run: |
           set -o pipefail
           flutter pub get 2>&1 | tee ../pubget.txt || { echo "::error title=flutter pub get::$(sed 's/%/%25/g' ../pubget.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+      - name: report the toolchain and the resolved packages
+        # (until pubspec.lock is committed: the exact versions this build used)
+        working-directory: app
+        run: |
+          echo "::notice title=flutter version::$(flutter --version --machine | tr -d '\n')"
+          [ -f pubspec.lock ] && echo "::notice title=pubspec.lock gz-b64::$(gzip -9c pubspec.lock | base64 -w0)"
       - name: analyze
         working-directory: app
         run: |
@@ -187,12 +203,14 @@ jobs:
     # that doesn't compile shows up on every push, not only when a release is built.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
           java-version: "17"
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
           cache: true
