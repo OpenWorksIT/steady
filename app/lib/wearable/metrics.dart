@@ -64,7 +64,7 @@ const wearableMetrics = <WearableMetric>[
   ),
   WearableMetric(key: 'sleep_min', label: 'Sleep', short: 'Sleep', kind: ChartKind.bar, format: formatMinutes, axis: _hours),
   WearableMetric(key: 'steps', label: 'Steps', short: 'Steps', kind: ChartKind.bar, format: formatSteps, axis: _thousands),
-  WearableMetric(key: 'spo2_avg', label: 'Blood oxygen', short: 'SpO₂', kind: ChartKind.line, format: _pct, axis: _int),
+  WearableMetric(key: 'spo2_avg', label: 'Blood oxygen', short: 'SpO2', kind: ChartKind.line, format: _pct, axis: _int),
   WearableMetric(key: 'sleep_onset', label: 'Fell asleep', short: 'Bedtime', kind: ChartKind.line, format: formatClock, axis: _clockAxis),
 ];
 
