@@ -23,6 +23,11 @@ services:
       # the Cloudflare tunnel passes the visitor's address in this header
       STEADY_TRUSTED_PROXY_HEADER: Cf-Connecting-Ip
       STEADY_REQUIRE_2FA: ${STEADY_REQUIRE_2FA:-staff}
+      # staff link each phone or browser with a code by email; on the test stack the email
+      # goes to the mail catcher below (read it at http://localhost:8025)
+      STEADY_SMTP_HOST: ${STEADY_SMTP_HOST-mailsink}
+      STEADY_SMTP_PORT: ${STEADY_SMTP_PORT:-1025}
+      STEADY_MAIL_FROM: noreply@steady.test
       STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
       # this PC's own scripts (start.sh, smoke.py) use the superuser API through the local port;
       # the tunnel and Caddy still block it, and the dashboard stays closed
@@ -40,6 +45,16 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # Catches the server's email (device codes, account notices): http://localhost:8025
+  mailsink:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    command: ["python3", "-u", "/mailsink.py"]
+    volumes:
+      - ./mailsink.py:/mailsink.py:ro
+    ports:
+      - "127.0.0.1:${MAIL_PORT:-8025}:8025"
 
   pusher:
     build: ../../pusher

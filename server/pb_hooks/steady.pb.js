@@ -34,6 +34,8 @@ routerAdd("GET", "/api/steady/config", (e) => {
     vapidPublicKey: s.env("STEADY_VAPID_PUBLIC_KEY", ""),
     // "staff": psychologists and administrators sign in with a code from an authenticator app
     twoStep: s.env("STEADY_REQUIRE_2FA", "staff") === "off" ? "off" : "staff",
+    // staff sign in only from devices they've linked with a code by email
+    deviceLink: require(`${__hooks}/lib/devices.js`).required(),
     // the newest Android build on this server, so older copies can offer the update
     app: require(`${__hooks}/lib/dist.js`).appInfo(s.publicDir())
   });

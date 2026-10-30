@@ -20,6 +20,12 @@ routerUse((e) => {
     throw new NotFoundError("Not found.");
   }
   const lower = path.toLowerCase();
+  // PocketBase's own email flows (reset links, sign-in codes, email changes) and other sign-in
+  // methods stay closed: resets are done by people at the practice, and staff sign in through
+  // /api/steady/auth/sign-in only. With email set up these would otherwise start working.
+  if (/^\/api\/collections\/[^/]+\/(request-password-reset|confirm-password-reset|request-verification|confirm-verification|request-email-change|confirm-email-change|request-otp|auth-with-otp|auth-with-oauth2|impersonate)/.test(lower)) {
+    throw new NotFoundError("Not found.");
+  }
   if (lower.indexOf("_superusers") >= 0 || lower.indexOf("pbc_3142635823") >= 0) {
     const addr = String(e.request.remoteAddr || "");
     const local = addr.indexOf("127.0.0.1:") === 0 || addr.indexOf("[::1]:") === 0;
@@ -35,6 +41,8 @@ routerUse((e) => {
 // Rules give staff without two-step sign-in nothing, when it's required (the default).
 onBootstrap((e) => {
   e.next();
+  // email settings from the .env (kept out of the database)
+  require(`${__hooks}/lib/mail.js`).configure(e.app);
   const GUARD = "@request.auth.active = true && @request.auth.mustChangePassword = false";
   const TWO = " && (@request.auth.role = 'patient' || @request.auth.totpEnabledAt != '')";
   const want = $os.getenv("STEADY_REQUIRE_2FA") !== "off";
@@ -58,9 +66,14 @@ onBootstrap((e) => {
  * Signing in
  * ===================================================================== */
 
-// Accounts with two-step sign-in must use /api/steady/auth/sign-in, which asks for the code.
+// Accounts with two-step sign-in must use /api/steady/auth/sign-in, which asks for the code;
+// so must staff when devices are linked (it checks the device).
 onRecordAuthWithPasswordRequest((e) => {
   const s = require(`${__hooks}/lib/server.js`);
+  if (e.record && s.isStaff(e.record) && require(`${__hooks}/lib/devices.js`).required()) {
+    if (e.record.validatePassword(e.password)) throw new BadRequestError("Please update Steady to sign in.", { device: new ValidationError("update_app", "Please update Steady to sign in.") });
+    throw new BadRequestError("Failed to authenticate.");
+  }
   if (e.record && s.twoStepOn(e.record)) {
     if (e.record.validatePassword(e.password)) {
       throw new BadRequestError("Enter the code from your authenticator app.", { twoStep: new ValidationError("two_step", "Enter the code from your authenticator app.") });
@@ -101,7 +114,55 @@ routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
       s.audit($app, actor, "auth.recovery-code", "left:" + left.length, "");
     }
   }
+  // staff: only from a linked device; a new device gets a code by email first
+  const D = require(`${__hooks}/lib/devices.js`);
+  if (s.isStaff(u) && D.required()) {
+    const d = D.parse(b.device);
+    if (!d) throw new BadRequestError("Please update Steady to sign in.", { device: new ValidationError("update_app", "Please update Steady to sign in.") });
+    const dev = D.find($app, u, d);
+    if (!dev) {
+      const link = D.startLink($app, u, d, e.realIP());
+      s.audit($app, { auth: u, realIP: () => e.realIP() }, "auth.device.code-sent", d.platform + ":" + d.name, "");
+      return e.json(200, { linkDevice: true, ticket: link.ticket, email: link.email });
+    }
+    D.touch($app, dev, e.realIP());
+  }
   return $apis.recordAuthResponse(e, u, "password");
+});
+
+// The emailed code links the new device and signs in. body: { ticket, code }
+routerAdd("POST", "/api/steady/auth/link-device", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const D = require(`${__hooks}/lib/devices.js`);
+  const b = s.body(e);
+  const got = D.finishLink($app, b.ticket, b.code, e.realIP());
+  s.audit($app, { auth: got.user, realIP: () => e.realIP() }, "account.device.linked", got.device.getString("platform") + ":" + got.device.getString("name"), "");
+  return $apis.recordAuthResponse(e, got.user, "password");
+});
+
+// Lost or stolen phone: a staff member locks their own account from any device with their
+// email and password (the authenticator may be on the lost phone). Signs out everywhere and
+// unlinks every device; OpenWorks support restores it after checking it's really them.
+routerAdd("POST", "/api/steady/auth/lock", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const b = s.body(e);
+  const email = s.core.str(b.email, 200).toLowerCase();
+  const password = typeof b.password === "string" ? b.password : "";
+  let u = null;
+  try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
+  if (!u || !password || !u.validatePassword(password)) throw new BadRequestError("That email and password didn't match.");
+  if (!s.isStaff(u)) throw s.badRequest("Patients: please ask your psychologist or the practice to stop your account.");
+  if (s.isSupport(u)) throw s.badRequest("OpenWorks accounts are locked on the server.");
+  const n = require(`${__hooks}/lib/devices.js`).unlinkAll($app, u);
+  u.set("active", false);
+  u.refreshTokenKey();
+  $app.save(u);
+  s.audit($app, { auth: u, realIP: () => e.realIP() }, "account.self-lock", "devices:" + n, "");
+  require(`${__hooks}/lib/mail.js`).notice($app, u, "your account is locked", [
+    "Your Steady account was locked from " + (e.realIP() || "a device") + " on " + new Date().toUTCString() + ".",
+    "You're signed out everywhere and no device is linked any more. To unlock it, contact OpenWorks IT support: they check it's really you and then restore it."
+  ]);
+  return e.json(200, { locked: true });
 });
 
 /* =====================================================================
@@ -223,13 +284,22 @@ routerAdd("POST", "/api/steady/people/{id}/reset-password", (e) => {
     if (target === "patient") throw new NotFoundError("Not found.");
     throw new ForbiddenError(check.why);
   }
+  require(`${__hooks}/lib/devices.js`).requireConfirmed(e, "a password reset");
   if (b.twoStep === true) {
     u.set("totpSecret", "");
     u.set("totpEnabledAt", "");
     u.set("recoveryCodes", []);
   }
   const pw = s.resetPassword($app, u);
-  s.audit($app, e, "account.reset-password", "user:" + u.id + (b.twoStep === true ? " two-step" : ""), target === "patient" ? u.id : "");
+  // staff sign in again from scratch: every device is unlinked and gets a new emailed code
+  const unlinked = target === "patient" ? 0 : require(`${__hooks}/lib/devices.js`).unlinkAll($app, u);
+  s.audit($app, e, "account.reset-password", "user:" + u.id + (b.twoStep === true ? " two-step" : "") + (unlinked ? " devices:" + unlinked : ""), target === "patient" ? u.id : "");
+  if (target !== "patient") {
+    require(`${__hooks}/lib/mail.js`).notice($app, u, "your password was reset", [
+      e.auth.getString("name") + " reset your Steady password" + (b.twoStep === true ? " and your two-step sign-in (a full reset)" : "") + " on " + new Date().toUTCString() + ".",
+      "They'll give you a temporary password. When you sign in you choose a new one" + (b.twoStep === true ? ", set up your authenticator app again," : "") + " and link your device again with a code by email."
+    ]);
+  }
   if (target === "patient" && u.getString("clinician") && u.getString("clinician") !== e.auth.id) {
     s.notify($app, {
       recipient: u.getString("clinician"), kind: "system", patient: u.id,
@@ -344,8 +414,16 @@ routerAdd("POST", "/api/steady/admin/people/{id}/active", (e) => {
     throw new ForbiddenError(active ? "Only OpenWorks support restores a staff account (they check it's really them first)."
       : "Only the master clinician, the practice admin or OpenWorks support can stop a staff account.");
   }
+  require(`${__hooks}/lib/devices.js`).requireConfirmed(e, active ? "restoring an account" : "stopping an account");
   u.set("active", active);
+  if (!active && !isPatient) u.refreshTokenKey();
   $app.save(u);
+  if (!isPatient) {
+    require(`${__hooks}/lib/mail.js`).notice($app, u, active ? "your account is restored" : "your account is stopped", [
+      e.auth.getString("name") + (active ? " restored" : " stopped") + " your Steady account on " + new Date().toUTCString() + ".",
+      active ? "You can sign in again with your password and authenticator code." : "You're signed out everywhere. OpenWorks IT support restores it after checking it's really you."
+    ]);
+  }
   if (!active && isPatient) {
     $app.findRecordsByFilter("assignments", "patient = {:p} && status = 'pending'", "", 1000, 0, { p: u.id })
       .forEach((a) => { a.set("status", "cancelled"); $app.save(a); });
@@ -359,6 +437,7 @@ routerAdd("POST", "/api/steady/admin/people", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const x = require(`${__hooks}/lib/practice.js`);
   s.requireMaster(e);
+  require(`${__hooks}/lib/devices.js`).requireConfirmed(e, "adding staff");
   const b = s.body(e);
   const role = b.role === "admin" ? "admin" : "clinician";
   const u = x.newStaff(s, String(b.name || ""), String(b.email || ""), role);
@@ -412,6 +491,7 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
   const r = require(`${__hooks}/lib/records.js`);
   s.requireRole(e, "clinician");
   const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  require(`${__hooks}/lib/devices.js`).requireConfirmed(e, "an export");
   const q = e.requestInfo().query || {};
   const joined = s.toMs(p, "created");
   const span = r.range(q, 3660, Math.ceil((s.nowMs() - joined) / s.core.DAY) + 1);
@@ -431,6 +511,7 @@ routerAdd("GET", "/api/steady/export", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const r = require(`${__hooks}/lib/records.js`);
   s.requireRole(e, "clinician");
+  require(`${__hooks}/lib/devices.js`).requireConfirmed(e, "an export");
   // (inside the handler: PocketBase runs handlers apart from the file's top-level constants)
   const EXPORT_MAX = 500;
   const EXPORT_RADR = 100;
@@ -538,7 +619,8 @@ routerAdd("POST", "/api/steady/ops/accounts/reset", (e) => {
     u.set("recoveryCodes", []);
   }
   const pw = s.resetPassword($app, u);
-  s.audit($app, null, "ops.account.reset-password", "user:" + u.id + (b.twoStep === true ? " two-step" : ""), u.getString("role") === "patient" ? u.id : "");
+  const unlinked = u.getString("role") === "patient" ? 0 : require(`${__hooks}/lib/devices.js`).unlinkAll($app, u);
+  s.audit($app, null, "ops.account.reset-password", "user:" + u.id + (b.twoStep === true ? " two-step" : "") + (unlinked ? " devices:" + unlinked : ""), u.getString("role") === "patient" ? u.id : "");
   return e.json(200, { account: s.personRow($app, u, null), temporaryPassword: pw });
 });
 

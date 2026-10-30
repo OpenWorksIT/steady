@@ -55,6 +55,16 @@ services:
       STEADY_TRUSTED_PROXY_HEADER: X-Forwarded-For
       # psychologists and administrators sign in with a code from an authenticator app
       STEADY_REQUIRE_2FA: ${STEADY_REQUIRE_2FA:-staff}
+      # email to staff: codes to link a new device, and notices about their own account (never
+      # about patients). With these set, staff sign in only from devices they've linked.
+      STEADY_SMTP_HOST: ${STEADY_SMTP_HOST:-}
+      STEADY_SMTP_PORT: ${STEADY_SMTP_PORT:-587}
+      STEADY_SMTP_USER: ${STEADY_SMTP_USER:-}
+      STEADY_SMTP_PASSWORD: ${STEADY_SMTP_PASSWORD:-}
+      STEADY_SMTP_TLS: ${STEADY_SMTP_TLS:-}
+      STEADY_MAIL_FROM: ${STEADY_MAIL_FROM:-noreply@steadyapp.co.za}
+      STEADY_MAIL_NAME: ${STEADY_MAIL_NAME:-Steady}
+      STEADY_DEVICE_LINK: ${STEADY_DEVICE_LINK:-on}
       # the Sorted feed (docs/SORTED.md); empty switches it off
       STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
       TZ: Africa/Johannesburg

@@ -149,6 +149,7 @@ Steady test server is running.
   Clinician sign-in    $CLINICIAN_EMAIL  /  $CLINICIAN_PASSWORD   (master clinician)
                        first sign-in sets up two-step sign-in: have an authenticator app ready
                        (Aegis, 2FAS, Google or Microsoft Authenticator)
+  Staff email          http://localhost:${MAIL_PORT:-8025}   (the code that links each new phone or browser)
   Accounts             ../accounts.sh --test list | reset <email> | add-admin ...
   Patients             sign in as the clinician, tap Invite, and join with the code on another phone
 

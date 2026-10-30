@@ -234,6 +234,8 @@ function summary(app, nowMs, hours, ctlDir, startedMs) {
     uptimeSeconds: startedMs ? Math.round((nowMs - startedMs) / 1000) : null,
     code: status && status.check && status.check.current ? status.check.current.sha.slice(0, 7) : "",
     health: verdict(w15, host),
+    // staff sign-in: whether the server can email device codes (and so requires linked devices)
+    signIn: { email: require(__hooks + "/lib/mail.js").ready(), linkedDevices: require(__hooks + "/lib/devices.js").required() },
     windows: { last15m: w15, lastHour: windowOf(since(60)), last24h: windowOf(since(1440)) },
     series: series,
     stepMinutes: step,

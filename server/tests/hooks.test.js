@@ -120,7 +120,8 @@ function makeRuntime(opts = {}) {
   }
 
   const hooks = { createRequest: {}, updateRequest: {}, update: {}, afterCreate: {}, list: {}, view: {} };
-  const settings = { trustedProxy: { headers: [], useLeftmostIP: false }, rateLimits: { enabled: false, rules: [] }, __settings: true };
+  const settings = { trustedProxy: { headers: [], useLeftmostIP: false }, rateLimits: { enabled: false, rules: [] }, smtp: {}, meta: {}, __settings: true };
+  const mails = [];
   const routes = {};
   const crons = {};
   const audit = [];
@@ -159,6 +160,7 @@ function makeRuntime(opts = {}) {
     runInTransaction: (fn) => fn(app),
     unsafeWithoutHooks: () => app,
     settings: () => settings,
+    newMailClient: () => ({ send: (m) => { if (opts.mailFails) throw new Error("smtp down"); mails.push(m); } }),
     logger: () => ({ warn: (...a) => { if (opts.verbose) console.warn(...a); }, info() {} }),
     // PocketBase's in-memory app store, and the data folder
     store: () => memStore,
@@ -177,6 +179,7 @@ function makeRuntime(opts = {}) {
     console, JSON, Date: FakeDate, Math, Number, String, Array, Object, RegExp, Error, isFinite, parseInt, parseFloat, encodeURIComponent,
     __hooks: HOOKS,
     $app: app,
+    MailerMessage: class { constructor(m) { Object.assign(this, m); } },
     DateTime, Record, Collection, ApiError, BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError,
     JSONField: fieldClass("json"),
     SelectField: fieldClass("select"), RelationField: fieldClass("relation"), BoolField: fieldClass("bool"),
@@ -193,6 +196,7 @@ function makeRuntime(opts = {}) {
     $security: {
       randomStringWithAlphabet: (n, alpha) => Array.from({ length: n }, (_, i) => alpha[(idSeq * 7 + i * 13 + (++randSeq)) % alpha.length]).join(""),
       sha256: (t) => require("crypto").createHash("sha256").update(String(t)).digest("hex"),
+      randomString: (n) => require("crypto").randomBytes(n).toString("hex").slice(0, n),
       equal: (a, b) => String(a) === String(b)
     },
     $http: {
@@ -240,6 +244,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_feedback.pb.js"));
   run(path.join(HOOKS, "steady_care.pb.js"));
   run(path.join(HOOKS, "steady_roles.pb.js"));
+  run(path.join(HOOKS, "steady_devices.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -292,9 +297,11 @@ function makeRuntime(opts = {}) {
     app.save(r);
     return r;
   }
-  const makeUser = (fields) => makeRecord("users", fields);
+  // staff have confirmed it's them unless a test says otherwise ("confirm it's you" is tested on its own)
+  const makeUser = (fields) => makeRecord("users", Object.assign(
+    ["clinician", "admin", "support"].indexOf(fields.role) >= 0 && !("confirmedAt" in fields) ? { confirmedAt: "2099-01-01 00:00:00.000Z" } : {}, fields));
 
-  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, tick: (ms) => { clock += ms; }, now: () => clock };
+  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, mails, tick: (ms) => { clock += ms; }, now: () => clock };
 }
 
 /* ------------------------------------------------------------------ tests */
@@ -1201,4 +1208,105 @@ test("app version and watch permissions: reported by the app, seen by the psycho
   // granted again: no longer lapsed
   rt.call("POST", "/api/steady/me/app", { auth: pat, body: { build: "abc1234", platform: "android", health: "granted" } });
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc }).data.watchPermission.lapsed, false);
+});
+
+test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, locking your own account", () => {
+  const env = Object.assign({}, ENV, { STEADY_SMTP_HOST: "mail.test", STEADY_MAIL_FROM: "noreply@steadyapp.co.za" });
+  const rt = makeRuntime({ env });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org", passwordHash: "pw:doctor-password", confirmedAt: "" });
+  const master = rt.makeUser({ name: "Dr Master", role: "clinician", master: true, active: true, email: "m@example.org" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "p@example.org", passwordHash: "pw:patient-password" });
+  const phone = { key: "k".repeat(40), name: "Pixel", platform: "android" };
+  const signIn = (device) => rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "dr@example.org", password: "doctor-password", device } });
+
+  // PocketBase's own password sign-in is closed to staff; patients still use it
+  assert.throws(() => rt.hooks.authWithPassword.users({ record: doc, password: "doctor-password", next: () => "ok" }), /update Steady/);
+  assert.equal(rt.hooks.authWithPassword.users({ record: pat, password: "patient-password", next: () => "ok" }), "ok");
+  // an old app (no device key) is asked to update
+  assert.equal(signIn(undefined).status, 400);
+  // a new device: no token, a code by email
+  let r = signIn(phone);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.linkDevice, true);
+  assert.equal(r.data.token, undefined);
+  assert.equal(r.data.email, "d***@example.org");
+  assert.equal(rt.mails.length, 1);
+  assert.equal(rt.mails[0].to[0].address, "dr@example.org");
+  assert.equal(rt.mails[0].from.address, "noreply@steadyapp.co.za");
+  const code = /is:\s+(\d{6})/.exec(rt.mails[0].text)[1];
+  assert.ok(!/patient|Pat\b/.test(rt.mails[0].text.replace(/Nothing about patients/, "")), "no patient details in email");
+  // wrong codes count; the right one links the device and signs in
+  assert.equal(rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: r.data.ticket, code: "000000" } }).status, 400);
+  assert.equal(rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: "nonsense-ticket-nonsense", code } }).status, 400);
+  const linked = rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: r.data.ticket, code } });
+  assert.equal(linked.status, 200);
+  assert.ok(linked.data.token);
+  assert.equal(rt.store.staffdevices.length, 1);
+  assert.ok(rt.mails.some((m) => /new device was linked/.test(m.subject)));
+  // the ticket can't be used twice
+  assert.equal(rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: r.data.ticket, code } }).status, 400);
+  // the linked device signs in directly; a different key needs a new code
+  assert.ok(signIn(phone).data.token);
+  assert.equal(signIn({ key: "z".repeat(40), platform: "web" }).data.linkDevice, true);
+  // five wrong tries end a code
+  const t2 = signIn({ key: "y".repeat(40), platform: "web" }).data.ticket;
+  for (let i = 0; i < 5; i++) rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: t2, code: "111111" } });
+  const code2 = /is:\s+(\d{6})/.exec(rt.mails[rt.mails.length - 1].text)[1];
+  assert.equal(rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: t2, code: code2 } }).status, 400);
+
+  // confirm it's you: needed before a reset; a linked phone confirms with its key
+  r = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc });
+  assert.equal(r.status, 403);
+  assert.equal(r.data.confirm.code, "confirm_needed");
+  assert.equal(rt.call("POST", "/api/steady/me/confirm", { auth: doc, body: { device: { key: "z".repeat(40) } } }).status, 400);
+  assert.equal(rt.call("POST", "/api/steady/me/confirm", { auth: doc, body: { device: { key: phone.key } } }).data.how, "device");
+  assert.equal(rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc }).status, 200);
+  rt.tick(6 * 60000);
+  assert.equal(rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/export", { auth: doc }).status, 403);
+
+  // your devices; removing one signs out everywhere but keeps you signed in here
+  const list = rt.call("POST", "/api/steady/me/devices", { auth: doc, body: { device: { key: phone.key } } }).data;
+  assert.equal(list.devices.length, 1);
+  assert.equal(list.devices[0].current, true);
+  assert.equal(list.devices[0].keyHash, undefined);
+
+  // a staff password reset unlinks every device and tells them by email
+  const before = rt.mails.length;
+  assert.equal(rt.call("POST", `/api/steady/people/${doc.id}/reset-password`, { auth: master }).status, 200);
+  assert.equal(rt.store.staffdevices.filter((d) => d.getString("user") === doc.id).length, 0);
+  assert.ok(rt.mails.slice(before).some((m) => /password was reset/.test(m.subject) && m.to[0].address === "dr@example.org"));
+
+  // lost phone: lock your own account with email and password
+  doc.set("passwordHash", "pw:doctor-password");
+  assert.equal(rt.call("POST", "/api/steady/auth/lock", { body: { email: "dr@example.org", password: "wrong" } }).status, 400);
+  assert.equal(rt.call("POST", "/api/steady/auth/lock", { body: { email: "p@example.org", password: "patient-password" } }).status, 400);
+  const key = doc.data.tokenKey;
+  assert.equal(rt.call("POST", "/api/steady/auth/lock", { body: { email: "dr@example.org", password: "doctor-password" } }).status, 200);
+  assert.equal(doc.getBool("active"), false);
+  assert.notEqual(doc.data.tokenKey, key);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "account.self-lock"));
+  assert.ok(rt.mails.some((m) => /account is locked/.test(m.subject)));
+  // and the master clinician can't unlock it
+  assert.equal(rt.call("POST", `/api/steady/admin/people/${doc.id}/active`, { auth: master, body: { active: true } }).status, 403);
+});
+
+test("staff sign-in 1.0: without email settings nothing changes, and a failed email links nothing", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org", passwordHash: "pw:doctor-password" });
+  assert.equal(rt.hooks.authWithPassword.users({ record: doc, password: "doctor-password", next: () => "ok" }), "ok");
+  assert.ok(rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "dr@example.org", password: "doctor-password" } }).data.token);
+
+  const down = makeRuntime({ env: Object.assign({}, ENV, { STEADY_SMTP_HOST: "mail.test" }), mailFails: true });
+  down.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org", passwordHash: "pw:doctor-password" });
+  const r = down.call("POST", "/api/steady/auth/sign-in", { body: { email: "dr@example.org", password: "doctor-password", device: { key: "k".repeat(40) } } });
+  assert.equal(r.status, 400);
+  assert.match(r.error, /couldn't send the email/);
+  assert.equal((down.store.devicelinks || []).length, 0);
+  // PocketBase's own email flows stay closed
+  for (const p of ["/api/collections/users/request-password-reset", "/api/collections/users/request-otp", "/api/collections/users/auth-with-oauth2"]) {
+    let threw = null;
+    try { down.hooks.middleware[0]({ request: { url: { path: p }, remoteAddr: "1.2.3.4:5" }, response: { header: () => ({ set() {} }) }, next: () => "passed" }); } catch (err) { threw = err; }
+    assert.ok(threw && threw.status === 404, p);
+  }
 });

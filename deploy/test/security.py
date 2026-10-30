@@ -25,6 +25,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import devicelink
+
 
 def load_env():
     env = dict(os.environ)
@@ -41,9 +43,28 @@ ENV = load_env()
 PORT = int(ENV.get("LOCAL_PORT", "8090"))
 BASE = f"http://127.0.0.1:{PORT}"
 results = []
+# staff by session token, so checks that aren't about "confirm it's you" confirm automatically
+CONFIRMERS = {}
 
 
-def call(method, path, token=None, body=None, query=None, raw=False):
+def call(method, path, token=None, body=None, query=None, raw=False, confirm=True):
+    s, r = _call(method, path, token, body, query, raw)
+    if (confirm and s == 403 and token in CONFIRMERS and isinstance(r, dict)
+            and r.get("data", {}).get("confirm", {}).get("code") == "confirm_needed"):
+        st = CONFIRMERS[token]
+        cs, cr = _call("POST", "/api/steady/me/confirm", token, st.confirm_body(), None, False)
+        # no linked devices on a server without email: the authenticator code instead (a check
+        # elsewhere may have used the current code, so up to three tries, waiting as needed)
+        for _ in range(3):
+            if cs == 200 or not st.secret:
+                break
+            cs, cr = _call("POST", "/api/steady/me/confirm", token, st.confirm_body(phone=False), None, False)
+        if cs == 200:
+            s, r = _call(method, path, token, body, query, raw)
+    return s, r
+
+
+def _call(method, path, token=None, body=None, query=None, raw=False):
     url = BASE + path + ("?" + urllib.parse.urlencode(query) if query else "")
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
@@ -84,8 +105,33 @@ def totp(secret, step=None):
 
 
 class Staff:
-    def __init__(self, token, id, email, password, secret=None, recovery=None):
+    def __init__(self, token, id, email, password, secret=None, recovery=None, device=None):
+        self._token = None
+        self.step = 0
         self.token, self.id, self.email, self.password, self.secret, self.recovery = token, id, email, password, secret, recovery or []
+        self.device = device
+
+    # the session token; registered so call() can confirm it's them when a route asks
+    @property
+    def token(self):
+        return self._token
+
+    @token.setter
+    def token(self, v):
+        self._token = v
+        if v:
+            CONFIRMERS[v] = self
+
+    def confirm_body(self, phone=True):
+        if phone and self.device and self.device.get("platform") in ("android", "ios"):
+            return {"device": self.device}
+        if not self.secret:
+            return {"password": self.password}
+        step = max(self.step + 1, int(time.time() // 30) - 1)
+        while step > int(time.time() // 30) + 1:
+            time.sleep(1)
+        self.step = step
+        return {"code": totp(self.secret, step)}
 
 
 def superuser():
@@ -101,9 +147,10 @@ def staff(su, email, name, role="clinician", master=False, two_step=True):
         "email": email, "password": pw, "passwordConfirm": pw, "name": name, "role": role, "master": master,
         "active": True, "verified": True, "tzOffset": 120})
     assert s == 200, r
-    s, a = call("POST", "/api/collections/users/auth-with-password", body={"identity": email, "password": pw})
-    assert s == 200, a
-    st = Staff(a["token"], a["record"]["id"], email, pw)
+    dev = devicelink.new_device("android", name + "'s phone")
+    s, a = devicelink.sign_in(call, ENV, email, pw, device=dev)
+    assert s == 200 and a.get("token"), a
+    st = Staff(a["token"], a["record"]["id"], email, pw, device=dev)
     if two_step:
         s, start = call("POST", "/api/steady/me/two-step/start", st.token)
         assert s == 200, start
@@ -506,18 +553,18 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("POST", "/api/steady/invites", S3.token, {"label": "x"})
     check(W, "staff without two-step sign-in can't make invites", s == 403, r)
     s, r = call("POST", "/api/collections/users/auth-with-password", body={"identity": S1.email, "password": S1.password})
-    check(W, "a password alone doesn't sign in a two-step account", s == 400 and "two_step" in json.dumps(r) and not r.get("token"), r)
+    check(W, "a password alone doesn't sign in a two-step account", s == 400 and ("two_step" in json.dumps(r) or "update_app" in json.dumps(r)) and not r.get("token"), r)
     s, r = call("POST", "/api/collections/users/auth-with-password", body={"identity": S1.email, "password": "wrong-password-1"})
     check(W, "a wrong password doesn't reveal that the account uses two-step sign-in", s == 400 and "two_step" not in json.dumps(r), r)
-    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S1.email, "password": S1.password, "code": totp(S1.secret, S1.step)})
+    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S1.email, "device": S1.device, "password": S1.password, "code": totp(S1.secret, S1.step)})
     check(W, "a code that was already used can't be used again", s == 400, r)
-    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S1.email, "password": "wrong-password-1", "code": totp(S1.secret, int(time.time() // 30) + 1)})
+    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S1.email, "device": S1.device, "password": "wrong-password-1", "code": totp(S1.secret, int(time.time() // 30) + 1)})
     check(W, "a right code with a wrong password is refused", s == 400 and not r.get("token"), r)
-    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S1.email, "password": S1.password, "code": S1.recovery[0]})
+    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S1.email, "device": S1.device, "password": S1.password, "code": S1.recovery[0]})
     check(W, "a recovery code signs in", s == 200 and r.get("token"), r)
-    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S1.email, "password": S1.password, "code": S1.recovery[0]})
+    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S1.email, "device": S1.device, "password": S1.password, "code": S1.recovery[0]})
     check(W, "each recovery code works once", s == 400, r)
-    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S2.email, "password": S2.password, "code": totp(S2.secret, int(time.time() // 30) + 1)})
+    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S2.email, "device": S2.device, "password": S2.password, "code": totp(S2.secret, int(time.time() // 30) + 1)})
     check(W, "the next code signs in", s == 200 and r.get("token"), r)
     s, me = call("GET", f"/api/collections/users/records/{d1}", doc1)
     check(W, "the secret and recovery codes are never returned", s == 200 and "totpSecret" not in me and "recoveryCodes" not in me, list(me))
@@ -525,6 +572,127 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(W, "staff can't switch two-step sign-in off", s == 400, r)
     s, r = call("PATCH", f"/api/collections/users/records/{a}", patA, {"totpEnabledAt": "2020-01-01 00:00:00.000Z"})
     check(W, "nobody marks two-step sign-in as on without a code", s in (400, 403, 404), r)
+
+    # ---- linked devices, "confirm it's you", locking your own account
+    L = "linked devices"
+    s, cfg = call("GET", "/api/steady/config")
+    if not cfg.get("deviceLink"):
+        check(L, "device linking is on (this server has no email settings, so it's off)", False, cfg)
+    else:
+        S5 = staff(su, f"c5-{tag}@sec.test", "Dr Five")
+        def fresh_code():
+            # an unused code the server accepts (one step either side of now), waiting for the
+            # next one when they're used up, as a person would
+            step = max(S5.step + 1, int(time.time() // 30) - 1)
+            while step > int(time.time() // 30) + 1:
+                time.sleep(1)
+            S5.step = step
+            return totp(S5.secret, step)
+        s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code()})
+        check(L, "password and code without a device don't sign staff in", s == 400 and not r.get("token") and "update_app" in json.dumps(r), r)
+        laptop = devicelink.new_device("web", "Laptop")
+        s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": laptop})
+        check(L, "a new device gets no token, only an emailed code", s == 200 and r.get("linkDevice") and not r.get("token") and "@" in r.get("email", ""), r)
+        ticket = r.get("ticket", "")
+        check(L, "the email address is masked in the answer", S5.email not in json.dumps(r), r)
+        s, r = call("POST", "/api/steady/auth/link-device", body={"ticket": ticket, "code": "000000"})
+        check(L, "a wrong emailed code is refused", s == 400 and not r.get("token"), r)
+        s, r = call("POST", "/api/steady/auth/link-device", body={"ticket": "x" * 40, "code": devicelink.emailed_code(ENV, S5.email)})
+        check(L, "the code only works with its own sign-in", s == 400 and not r.get("token"), r)
+        s, r = call("POST", "/api/steady/auth/link-device", body={"ticket": ticket, "code": devicelink.emailed_code(ENV, S5.email)})
+        check(L, "the emailed code links the device and signs in", s == 200 and r.get("token"), r)
+        web = r.get("token")
+        s, r = call("POST", "/api/steady/auth/link-device", body={"ticket": ticket, "code": devicelink.emailed_code(ENV, S5.email)})
+        check(L, "each emailed code works once", s == 400, r)
+        s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": "wrong-password-1", "code": "123456", "device": laptop})
+        check(L, "a linked device still needs the right password", s == 400 and not r.get("token"), r)
+        s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": "123456", "device": laptop})
+        check(L, "a linked device still needs the authenticator code", s == 400 and not r.get("token"), r)
+        s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": laptop})
+        check(L, "a linked device signs in with password and code", s == 200 and r.get("token") and not r.get("linkDevice"), r)
+        other = devicelink.new_device("web", "Elsewhere")
+        s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": other})
+        t2 = r.get("ticket", "")
+        for _ in range(5):
+            call("POST", "/api/steady/auth/link-device", body={"ticket": t2, "code": "111111"})
+        s, r = call("POST", "/api/steady/auth/link-device", body={"ticket": t2, "code": devicelink.emailed_code(ENV, S5.email)})
+        check(L, "five wrong tries end an emailed code", s == 400 and not r.get("token"), r)
+        s, r = call("POST", "/api/steady/me/devices", web, {"device": laptop})
+        devs = r.get("devices", [])
+        check(L, "staff see their linked devices, this one marked", s == 200 and any(d.get("current") and d.get("name") == "Laptop" for d in devs), r)
+        check(L, "device keys are never returned", "keyHash" not in json.dumps(r) and laptop["key"] not in json.dumps(r), r)
+        for coll in ("staffdevices", "devicelinks"):
+            s, r = call("GET", f"/api/collections/{coll}/records", web)
+            check(L, f"{coll} can't be read through the collections", s in (401, 403, 404) or (s == 200 and not items(r)), r)
+        phone_id = next((d["id"] for d in devs if d.get("platform") == "android"), "")
+        s, r = call("POST", f"/api/steady/me/devices/{phone_id}/remove", S1.token, confirm=False)
+        check(L, "nobody removes someone else's device", s == 404, r)
+
+        # confirm it's you
+        C = "confirm it's you"
+        s, r = call("GET", "/api/steady/export", web, confirm=False)
+        check(C, "an export needs a fresh confirmation", s == 403 and "confirm_needed" in json.dumps(r), r)
+        s, r = call("POST", "/api/steady/me/confirm", web, {"device": laptop})
+        check(C, "a browser can't confirm with its device key alone", s == 400, r)
+        s, r = call("POST", "/api/steady/me/confirm", web, {"device": S5.device})
+        check(C, "a phone confirms with its own key (after its screen lock)", s == 200 and r.get("how") == "device", r)
+        s, r = call("POST", "/api/steady/me/confirm", S2.token, {"device": S5.device})
+        check(C, "one person's device doesn't confirm for another", s == 400, r)
+        s, r = call("GET", "/api/steady/export", S2.token, confirm=False)
+        check(C, "confirming is per person", s == 403, r)
+        s, r = call("POST", "/api/steady/me/confirm", web, {"code": "000000"})
+        check(C, "a wrong authenticator code doesn't confirm", s == 400, r)
+        s, r = call("POST", "/api/steady/me/confirm", web, {"code": fresh_code()})
+        check(C, "the authenticator code confirms on the web", s == 200 and r.get("how") == "code", r)
+        s, r = call("GET", "/api/steady/export", web, confirm=False)
+        check(C, "after confirming, the export works", s == 200, r)
+        S6 = staff(su, f"m6-{tag}@sec.test", "Dr Six", master=True)
+        s, r = call("POST", "/api/steady/me/devices", S6.token, {"device": S6.device})
+        six_phone = (r.get("devices") or [{}])[0].get("id", "x")
+        for path, method, body in ((f"/api/steady/people/{S3.id}/reset-password", "POST", {}),
+                                   (f"/api/steady/admin/people/{S3.id}/active", "POST", {"active": False}),
+                                   ("/api/steady/admin/people", "POST", {"role": "admin", "name": "X", "email": f"x-{tag}@sec.test"}),
+                                   ("/api/steady/audit", "GET", None), ("/api/steady/export", "GET", None),
+                                   (f"/api/steady/me/devices/{six_phone}/remove", "POST", {})):
+            s, r = call(method, path, S6.token, body, confirm=False)
+            check(C, f"{method} {path.replace(S3.id, '<id>').replace(six_phone, '<id>')} asks the master clinician to confirm first", s == 403 and "confirm_needed" in json.dumps(r), r)
+        s, r = call("POST", f"/api/steady/me/devices/{phone_id}/remove", web)
+        check(C, "staff remove one of their devices; this one stays signed in", s == 200 and r.get("token"), r)
+        web = r.get("token") or web
+        s, r = call("POST", "/api/collections/users/auth-refresh", S5.token)
+        check(C, "removing a device signs out its old session", s == 401, r)
+        s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": S5.device})
+        check(C, "a removed device needs a new emailed code", s == 200 and r.get("linkDevice") and not r.get("token"), r)
+
+        # PocketBase's own email flows stay closed
+        for route in ("request-password-reset", "confirm-password-reset", "request-verification", "request-email-change", "request-otp", "auth-with-otp", "auth-with-oauth2"):
+            s, r = call("POST", f"/api/collections/users/{route}", body={"email": S5.email})
+            check(L, f"PocketBase's {route} is closed", s == 404, r)
+
+        # lost phone: lock your own account
+        K = "locking your own account"
+        s, r = call("POST", "/api/steady/auth/lock", body={"email": S5.email, "password": "wrong-password-1"})
+        check(K, "locking needs the right password", s == 400, r)
+        s, r = call("POST", "/api/steady/auth/lock", body={"email": "nobody@sec.test", "password": "whatever-123"})
+        check(K, "an unknown email gets the same answer", s == 400 and "didn't match" in json.dumps(r), r)
+        s, r = call("POST", "/api/steady/auth/lock", body={"email": S5.email, "password": S5.password})
+        check(K, "staff lock their own account with email and password", s == 200 and r.get("locked"), r)
+        s, r = call("POST", "/api/collections/users/auth-refresh", web)
+        check(K, "a locked account is signed out everywhere", s in (401, 403), r)
+        s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": "123456", "device": laptop})
+        check(K, "a locked account can't sign in", s == 400 and not r.get("token"), r)
+        s, r = call("POST", f"/api/steady/admin/people/{S5.id}/active", doc1, {"active": True})
+        check(K, "the master clinician can't unlock it (only OpenWorks)", s == 403, r)
+        S5.locked = True
+
+        # nothing about patients by email
+        try:
+            with urllib.request.urlopen(ENV.get("MAILSINK_URL", "http://127.0.0.1:8025").rstrip("/") + "/", timeout=5) as resp:
+                box = resp.read().decode("utf-8", "replace")
+            check(L, "staff were emailed (codes and notices)", "your code is" in box and "a new device was linked" in box, box[:300])
+            check(L, "no email names a patient", not any(n in box for n in ("Alice", "Bongani", "Chen", "Eve", "Fran", "Gita")), box[:300])
+        except OSError as err:
+            check(L, "the test mail catcher can be read", False, str(err))
 
     # ---- the practice administrator: names only
     M = "administrator"

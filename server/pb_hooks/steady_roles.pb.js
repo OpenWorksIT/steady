@@ -81,6 +81,7 @@ routerAdd("GET", "/api/steady/support/staff", (e) => {
 routerAdd("GET", "/api/steady/audit", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireManager(e);
+  require(`${__hooks}/lib/devices.js`).requireConfirmed(e, "reading the audit report");
   const q = e.requestInfo().query || {};
   const days = Math.max(1, Math.min(3660, Number(q.days) || 30));
   let filter = "created >= {:since}";

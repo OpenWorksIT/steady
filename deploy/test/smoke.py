@@ -21,6 +21,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import devicelink
+
 def load_env():
     env = dict(os.environ)
     p = pathlib.Path(__file__).with_name(".env")
@@ -65,8 +67,10 @@ def totp(secret, step=None):
 
 def staff_sign_in(email, password, secret_key):
     """Signs a staff account in, setting up two-step sign-in on first use (the secret is kept
-    in deploy/test/.env under secret_key so later runs can sign in again)."""
-    s, a = call("POST", "/api/collections/users/auth-with-password", body={"identity": email, "password": password})
+    in deploy/test/.env under secret_key so later runs can sign in again). Staff sign in from a
+    linked device: its key is kept there too, and a new one is linked with the emailed code."""
+    dev = devicelink.saved_device(ENV, secret_key.replace("TOTP_SECRET", "DEVICE_KEY"))
+    s, a = devicelink.sign_in(call, ENV, email, password, device=dev)
     if s == 200:
         tok = a["token"]
         if a["record"].get("totpEnabledAt"):
@@ -89,11 +93,11 @@ def staff_sign_in(email, password, secret_key):
     secret = ENV.get(secret_key)
     check(bool(secret), f"{email} uses two-step sign-in; set {secret_key} to its secret")
     s, r = call("POST", "/api/collections/users/auth-with-password", body={"identity": email, "password": password})
-    check(s == 400 and "two_step" in json.dumps(r), "password alone no longer signs a two-step account in", r)
-    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": email, "password": password, "code": "123456"})
+    check(s == 400 and ("two_step" in json.dumps(r) or "update_app" in json.dumps(r)), "password alone no longer signs a two-step account in", r)
+    s, r = call("POST", "/api/steady/auth/sign-in", body={"email": email, "password": password, "code": "123456", "device": dev})
     check(s == 400, "a wrong code is refused", r)
-    s, a = call("POST", "/api/steady/auth/sign-in", body={"email": email, "password": password, "code": totp(secret)})
-    check(s == 200 and a.get("token"), "sign-in with password and code works", a)
+    s, a = devicelink.sign_in(call, ENV, email, password, code=totp(secret), device=dev)
+    check(s == 200 and a.get("token"), "sign-in with password, code and this device works", a)
     return a
 
 
