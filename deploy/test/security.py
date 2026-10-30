@@ -401,7 +401,14 @@ def run(su):
     s, r = call("POST", "/api/steady/feedback", doc2, {"kind": "bug", "message": "test report", "trail": "[]"})
     check(S, "a psychologist can send feedback", s == 200 and "id" in r, r)
     s, r = call("GET", "/api/steady/feedback", doc2)
-    check(S, "a psychologist who isn't the master clinician can't read feedback", s == 403, r)
+    tick = r.get("items", []) if s == 200 else []
+    check(S, "other staff see feedback as tickets only", s == 200 and r.get("full") is False and tick, r)
+    check(S, "tickets carry no screen trail, screenshot or email", all(not ({"trail", "screenshot", "hasScreenshot", "email", "who"} & set(i)) for i in tick), [sorted(i) for i in tick][:2])
+    fid = tick[0]["id"] if tick else "x"
+    s, r = call("GET", f"/api/steady/feedback/{fid}", doc2)
+    check(S, "only OpenWorks opens a feedback report in full", s == 403, r)
+    s, r = call("PATCH", f"/api/steady/feedback/{fid}", doc1, {"status": "done"})
+    check(S, "only OpenWorks changes a ticket's status (not even the master clinician)", s == 403, r)
     s, r = call("GET", "/api/steady/feedback", patA)
     check(S, "patients can't read feedback", s == 403, r)
     s, r = call("GET", "/api/collections/feedback/records", doc1)
@@ -525,9 +532,12 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     adm = AD.token
     s, people = call("GET", "/api/steady/admin/people", adm)
     pats = people.get("patients", [])
-    allowed = {"id", "name", "role", "active", "joinedAt", "clinician"}
+    allowed = {"id", "name", "role", "active", "joinedAt", "clinician", "status", "app"}
+    status_keys = {"consent", "privacyNoticeAt", "notifications", "watch", "lastCheckinAt", "careStatus"}
     check(M, "the administrator sees the practice's people", s == 200 and {a, b, c} <= {p["id"] for p in pats}, people)
     check(M, "the administrator sees patients' names only, nothing clinical", all(set(p) <= allowed for p in pats), [sorted(p) for p in pats][:2])
+    check(M, "the status list is connection and agreement dates only", all(set(p.get("status", {})) <= status_keys for p in pats)
+          and "note" not in json.dumps(pats) and "mood" not in json.dumps(pats), [p.get("status") for p in pats][:2])
     for coll in ("checkins", "assignments", "biometrics", "notifications"):
         s, r = call("GET", f"/api/collections/{coll}/records", adm, query={"perPage": 200})
         check(M, f"the administrator reads no {coll} through the collections", s in (401, 403) or (s == 200 and not [i for i in items(r) if i.get("recipient") != AD.id]), r)
@@ -544,14 +554,40 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(M, "the invite appears for that psychologist", any(i["id"] == inv.get("id") for i in items(r)), r)
     s, r = call("POST", "/api/steady/admin/people", adm, {"role": "clinician", "name": "Fake", "email": f"fake-{tag}@sec.test"})
     check(M, "the administrator can't create psychologist accounts (that would open patient data)", s == 403, r)
-    s, r = call("POST", f"/api/steady/people/{d2}/reset-password", adm)
-    check(M, "the administrator can't reset a psychologist's password", s == 403, r)
-    s, r = call("POST", f"/api/steady/admin/people/{d2}/active", adm, {"active": False})
-    check(M, "the administrator can't stop a psychologist's account", s == 403, r)
+    S4 = staff(su, f"c4-{tag}@sec.test", "Dr Four")
+    s, r = call("POST", f"/api/steady/people/{S4.id}/reset-password", adm, {"twoStep": True})
+    check(M, "the administrator can't clear a psychologist's authenticator (only OpenWorks)", s == 403, r)
+    s, r = call("POST", f"/api/steady/people/{S4.id}/reset-password", adm)
+    check(M, "the administrator resets a psychologist's password", s == 200 and r.get("temporaryPassword"), r)
+    s, r = call("POST", f"/api/steady/admin/people/{S4.id}/active", adm, {"active": False})
+    check(M, "the administrator stops a psychologist's account", s == 200 and r.get("active") is False, r)
+    s, r = call("POST", "/api/collections/users/auth-with-password", body={"identity": S4.email, "password": S4.password})
+    check(M, "a stopped account can't sign in", s in (400, 403) and not r.get("token"), r)
+    s, r = call("POST", f"/api/steady/admin/people/{S4.id}/active", adm, {"active": True})
+    check(M, "the administrator can't restore a stopped account (only OpenWorks)", s == 403, r)
+    s, r = call("POST", f"/api/steady/admin/people/{S4.id}/active", doc1, {"active": True})
+    check(M, "the master clinician can't restore a stopped account either", s == 403, r)
+    MX = staff(su, f"mx-{tag}@sec.test", "Dr Master Two", master=True)
+    s, r = call("POST", f"/api/steady/admin/people/{MX.id}/active", adm, {"active": False})
+    check(M, "the administrator can lock the master clinician's account in an emergency", s == 200 and r.get("active") is False, r)
+    s, r = call("GET", "/api/steady/overview", MX.token)
+    check(M, "a locked account is signed out at once", s in (401, 403), r)
+    s, r = call("POST", f"/api/steady/admin/people/{MX.id}/active", MX.token, {"active": True})
+    check(M, "a locked master clinician can't unlock themselves", s in (401, 403), r)
     s, r = call("GET", "/api/steady/admin/people", doc2)
     check(M, "a psychologist who isn't the master clinician can't list the practice", s == 403, r)
     s, r = call("GET", "/api/steady/system", adm)
-    check(M, "the administrator may see the version and updates", s == 200 and "managed" in r, r)
+    check(M, "the administrator doesn't start updates", s == 403, r)
+    s, r = call("GET", "/api/steady/health", adm)
+    check(M, "the administrator sees server health", s == 200 and "health" in r, r)
+    s, r = call("GET", "/api/steady/audit", adm, query={"days": 30})
+    check(M, "the administrator reads the audit report", s == 200 and isinstance(r.get("rows"), list), r)
+    s, r = call("GET", "/api/steady/audit", doc2)
+    check(M, "a psychologist who isn't the master clinician can't read the audit report", s == 403, r)
+    s, r = call("GET", "/api/steady/audit", patA)
+    check(M, "patients can't read the audit report", s == 403, r)
+    s, r = call("GET", "/api/steady/audit", adm, query={"days": 1})
+    check(M, "reading the audit report is itself logged", s == 200 and any(x.get("action") == "audit.read" for x in r.get("rows", [])), r)
 
     # ---- password resets and the forced change
     P = "password resets"
@@ -598,7 +634,46 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("POST", "/api/steady/admin/people", doc1, {"role": "clinician", "name": "Dup", "email": S2.email})
     check(P, "an email can only have one account", s == 400, r)
     s, r = call("POST", f"/api/steady/people/{S3.id}/reset-password", doc1, {"twoStep": True})
-    check(P, "the master clinician resets a psychologist's password", s == 200, r)
+    check(P, "the master clinician can't clear a psychologist's authenticator (only OpenWorks)", s == 403, r)
+    s, r = call("POST", f"/api/steady/people/{S3.id}/reset-password", doc1)
+    check(P, "the master clinician resets a psychologist's password", s == 200 and r.get("temporaryPassword"), r)
+    s, r = call("POST", "/api/steady/admin/people", doc1, {"role": "support", "name": "Fake OpenWorks", "email": f"fakesup-{tag}@sec.test"})
+    check(P, "nobody in the app creates an OpenWorks account", s != 200 or r.get("role") != "support", r)
+
+    # ---- OpenWorks support: staff and the system, never patients
+    O = "OpenWorks support"
+    SU = staff(su, f"ow-{tag}@sec.test", "OpenWorks", role="support")
+    sup = SU.token
+    for path in ("/api/steady/overview", f"/api/steady/patients/{a}/summary", f"/api/steady/patients/{a}/biometrics", f"/api/steady/patients/{a}/radr",
+                 f"/api/steady/patients/{a}/notes", f"/api/steady/patients/{a}/export", "/api/steady/export", "/api/steady/audit",
+                 "/api/steady/admin/people", "/api/steady/patients-archived"):
+        s, r = call("GET", path, sup)
+        check(O, f"OpenWorks is refused {path.replace(a, '<id>')}", s in (403, 404), r)
+    for coll in ("checkins", "assignments", "biometrics", "notes", "flagreviews", "auditlog"):
+        s, r = call("GET", f"/api/collections/{coll}/records", sup, query={"perPage": 200})
+        check(O, f"OpenWorks reads no {coll} through the collections", s in (401, 403, 404) or (s == 200 and not items(r)), r)
+    s, r = call("GET", "/api/collections/users/records", sup, query={"perPage": 200})
+    check(O, "OpenWorks can't list accounts through the collections", s in (401, 403) or {i["id"] for i in items(r)} <= {SU.id}, [i.get("id") for i in items(r)])
+    s, r = call("GET", "/api/steady/support/staff", sup)
+    st = r.get("staff", []) if s == 200 else []
+    check(O, "OpenWorks sees the practice's staff", s == 200 and d1 in {p["id"] for p in st}, r)
+    check(O, "the staff list holds no patients", all(p.get("role") != "patient" for p in st) and a not in {p["id"] for p in st}, [p.get("role") for p in st])
+    s, r = call("GET", "/api/steady/support/staff", adm)
+    check(O, "only OpenWorks uses the OpenWorks staff list", s == 403, r)
+    s, r = call("POST", f"/api/steady/people/{a}/reset-password", sup)
+    check(O, "OpenWorks can't reset a patient's password", s in (403, 404), r)
+    s, r = call("POST", f"/api/steady/patients/{a}/remind-watch", sup)
+    check(O, "OpenWorks can't message patients", s in (403, 404), r)
+    s, r = call("POST", f"/api/steady/people/{S4.id}/reset-password", sup, {"twoStep": True})
+    check(O, "OpenWorks does a full reset after a lost phone", s == 200 and r.get("temporaryPassword"), r)
+    s, r = call("POST", f"/api/steady/admin/people/{S4.id}/active", sup, {"active": True})
+    check(O, "OpenWorks restores a stopped account", s == 200 and r.get("active") is True, r)
+    s, r = call("POST", f"/api/steady/admin/people/{MX.id}/active", sup, {"active": True})
+    check(O, "OpenWorks restores the locked master clinician", s == 200 and r.get("active") is True, r)
+    s, r = call("POST", f"/api/steady/admin/people/{SU.id}/active", adm, {"active": False})
+    check(O, "nobody in the app stops an OpenWorks account", s == 403, r)
+    s, r = call("GET", "/api/steady/feedback", sup)
+    check(O, "OpenWorks reads feedback in full", s == 200 and r.get("full") is True, r)
 
     # ---- sharing a patient with a colleague
     H = "sharing"
