@@ -40,6 +40,7 @@ main() {
   case "$action" in
     check) check ;;
     update) update ;;
+    restart) restart ;;
     stats) stats ;;
     *) echo "Unknown action: $action"; return 1 ;;
   esac
@@ -80,10 +81,17 @@ put() { # put KEY JSON
   chmod 644 "$tmp" && mv -f "$tmp" "$f"
 }
 
-# host.json, read by /api/steady/health: disk, memory, load (bytes; load averages per core)
+# host.json, read by /api/steady/health: disk, memory, load (bytes; load averages per core),
+# and the nightly backups (backup.sh; the folder is STEADY_BACKUP_DIR in .env, default
+# /srv/backups/steady): newest file's time, how many, their size
 stats() {
-  local tmp disk mem
+  local tmp disk mem bdir newest bcount bbytes
   tmp="$(mktemp "$CTL/.host.XXXXXX")"
+  bdir="$(sed -n 's/^STEADY_BACKUP_DIR=//p' "$DEPLOY/.env" 2>/dev/null | tail -1 | tr -d '"'"'"' \r')"
+  bdir="${bdir:-/srv/backups/steady}"
+  newest="$(find "$bdir" -maxdepth 1 -type f -name 'steady-*.tar.age' -printf '%T@\n' 2>/dev/null | sort -n | tail -1 | cut -d. -f1)"
+  bcount="$(find "$bdir" -maxdepth 1 -type f -name 'steady-*.tar.age' 2>/dev/null | wc -l)"
+  bbytes="$(find "$bdir" -maxdepth 1 -type f -name 'steady-*.tar.age' -printf '%s\n' 2>/dev/null | awk '{s+=$1} END{print s+0}')"
   disk="$(df -B1 --output=size,used,avail / | tail -1)"
   mem="$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print t*1024, a*1024}' /proc/meminfo)"
   jq -n --arg at "$(now)" \
@@ -91,9 +99,20 @@ stats() {
     --argjson memTotal "$(echo "$mem" | awk '{print $1}')" --argjson memAvail "$(echo "$mem" | awk '{print $2}')" \
     --argjson cpus "$(nproc)" --arg load "$(cut -d' ' -f1-3 /proc/loadavg)" \
     --argjson snapshots "$(du -sb "$SNAPS" 2>/dev/null | awk '{print $1}' || echo 0)" \
+    --argjson bnewest "${newest:-null}" --argjson bcount "${bcount:-0}" --argjson bbytes "${bbytes:-0}" \
     '{at: $at, cpus: $cpus, load: ($load | split(" ") | map(tonumber)),
       disk: {total: $total, used: $used, free: $free}, memory: {total: $memTotal, available: $memAvail},
-      snapshotsBytes: $snapshots}' > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$CTL/host.json"
+      snapshotsBytes: $snapshots,
+      backups: {newest: (if $bnewest == null then null else ($bnewest | todate) end), count: $bcount, bytes: $bbytes}}' > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$CTL/host.json"
+}
+
+# Restarts Steady's containers (the fleet view's Restart button): nothing is rebuilt or fetched.
+restart() {
+  local ok=true log="$WORK/restart.log"
+  put restarting "$(jq -n --arg at "$(now)" '{at: $at}')"
+  (cd "$DEPLOY" && docker compose restart) > "$log" 2>&1 || ok=false
+  put lastRestart "$(jq -n --arg at "$(now)" --argjson ok "$ok" --arg log "$(tail -c 2000 "$log")" '{at: $at, ok: $ok, log: $log}')"
+  put restarting null
 }
 
 app_build() { # the Android build in a version.json on stdin

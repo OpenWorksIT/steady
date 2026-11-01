@@ -41,6 +41,7 @@ STEADY_DOMAIN {
 				request>headers>Cookie delete
 				request>headers>X-Steady-Device delete
 				request>headers>X-Steady-Monitor delete
+				request>headers>X-Steady-Fleet delete
 			}
 		}
 	}

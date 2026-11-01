@@ -249,6 +249,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_devices.pb.js"));
   run(path.join(HOOKS, "steady_privacy.pb.js"));
   run(path.join(HOOKS, "steady_deletion.pb.js"));
+  run(path.join(HOOKS, "steady_fleet.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -1506,4 +1507,47 @@ test("a patient asks to delete their account; their psychologist deletes it afte
   p2.setPassword("pw-two-1234");
   assert.equal(rt.call("POST", "/api/steady/me/delete-request", { auth: p2, body: { password: "pw-two-1234" } }).status, 200);
   assert.equal(rt.call("POST", `/api/steady/patients/${p2.id}/delete-account`, { auth: master, headers: H.master }).status, 200);
+});
+
+test("fleet view: a server's state for the monitor key, and check/update/restart only with the fleet key", () => {
+  const { ctl } = distDirs();
+  const MON = "monitor-key-0123456789abcdef", FLEET = "fleet-key-0123456789abcdefgh";
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_MONITOR_KEY: MON, STEADY_FLEET_KEY: FLEET, STEADY_CTL_DIR: ctl, STEADY_DOMAIN: "vr.steadyapp.co.za" }) });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const pat = rt.makeUser({ name: "Pat Secret", role: "patient", clinician: doc.id, active: true, email: "pat@example.org" });
+  rt.makeRecord("checkins", { patient: pat.id, mood: 3, anxiety: 2, sleep: 3, energy: 3, note: "a private note" });
+  const get = (headers) => rt.call("GET", "/api/steady/fleet", { headers: headers || {} });
+  const post = (headers, action) => rt.call("POST", "/api/steady/fleet/request", { headers: headers || {}, body: { action } });
+
+  // without the right key it isn't there
+  assert.equal(get().status, 404);
+  assert.equal(get({ "X-Steady-Monitor": "wrong" }).status, 404);
+  assert.equal(get({ "X-Steady-Fleet": FLEET }).status, 404, "the fleet key alone doesn't read");
+  const r = get({ "X-Steady-Monitor": MON });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.domain, "vr.steadyapp.co.za");
+  assert.equal(r.data.counts.patients, 1);
+  assert.equal(r.data.counts.checkins7d, 1);
+  assert.equal(r.data.version.managed, false);
+  const blob = JSON.stringify(r.data);
+  assert.ok(!/Pat Secret|private note|pat@example/.test(blob), "nothing about patients");
+
+  // requests: only the fleet key, only known actions, only with server updates set up
+  assert.equal(post({ "X-Steady-Monitor": MON }, "update").status, 404, "the read-only key can't act");
+  assert.equal(post({ "X-Steady-Fleet": FLEET }, "rm -rf").status, 400);
+  assert.equal(post({ "X-Steady-Fleet": FLEET }, "update").status, 400, "not set up yet");
+  fs.writeFileSync(path.join(ctl, "status.json"), JSON.stringify({ check: { at: "2026-11-01T10:00:00Z", current: { sha: "83f8776aaaa" }, latest: { sha: "83f8776aaaa" }, behind: 0, signed: true } }));
+  const ok = post({ "X-Steady-Fleet": FLEET }, "restart");
+  assert.equal(ok.status, 200);
+  assert.equal(fs.readFileSync(path.join(ctl, "request"), "utf8"), "restart\n");
+  assert.equal(post({ "X-Steady-Fleet": FLEET }, "update").status, 400, "one request at a time");
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "fleet.restart"));
+  const r2 = get({ "X-Steady-Monitor": MON });
+  assert.equal(r2.data.version.managed, true);
+  assert.equal(r2.data.version.signed, true);
+  assert.equal(r2.data.pending, "restart");
+
+  // a short key never works
+  const weak = makeRuntime({ env: Object.assign({}, ENV, { STEADY_MONITOR_KEY: MON, STEADY_FLEET_KEY: "short", STEADY_CTL_DIR: ctl }) });
+  assert.equal(weak.call("POST", "/api/steady/fleet/request", { headers: { "X-Steady-Fleet": "short" }, body: { action: "check" } }).status, 404);
 });

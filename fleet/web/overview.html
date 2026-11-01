@@ -1,0 +1,26 @@
+{{template "top" "Servers"}}
+{{template "bar" .}}
+<main>
+<h1>Practice servers</h1>
+<p class="muted">Checked every minute; this page refreshes itself. {{.Now}} ·
+{{with index .Counts "good"}}<span class="pill good">{{.}} good</span>{{end}}
+{{with index .Counts "slow"}}<span class="pill slow">{{.}} slow</span>{{end}}
+{{with index .Counts "struggling"}}<span class="pill struggling">{{.}} struggling</span>{{end}}
+{{with index .Counts "down"}}<span class="pill down">{{.}} unreachable</span>{{end}}</p>
+{{if .ConfigError}}<p class="error">servers.json: {{.ConfigError}}</p>{{end}}
+{{if not .Rows}}<p>No servers yet: add them to servers.json (docs/FLEET.md).</p>{{end}}
+<div class="table"><table>
+<thead><tr><th>Practice</th><th>Health</th><th>Version</th><th>Disk</th><th>Backup</th><th>Patients</th><th>Staff</th><th>Check-ins (7 d)</th><th></th></tr></thead>
+<tbody>
+{{range .Rows}}<tr class="{{.Level}}">
+<td><a href="/s/{{.Index}}"><strong>{{.Name}}</strong></a><br><span class="muted">{{.Domain}}</span></td>
+<td><span class="pill {{.Level}}">{{.Level}}</span>{{if .Err}}<br><span class="muted">{{.Err}}</span>{{end}}{{if .Busy}}<br><span class="busy">{{.Busy}}</span>{{end}}</td>
+<td><code>{{.Version}}</code><br><span class="{{if .Behind}}warn{{else}}muted{{end}}">{{.VersionNote}}</span></td>
+<td class="{{if .DiskWarn}}warn{{end}}">{{.Disk}}</td>
+<td class="{{if .BackupWarn}}warn{{end}}">{{.Backup}}</td>
+<td>{{.Patients}}</td><td>{{.Staff}}</td><td>{{.Checkins}}</td>
+<td><a href="/s/{{.Index}}">Open</a></td>
+</tr>{{end}}
+</tbody></table></div>
+</main>
+{{template "end"}}

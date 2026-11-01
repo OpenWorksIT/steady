@@ -30,6 +30,7 @@ fi
 PUB=$(openssl ec -in secrets/vapid.pem -pubout -outform DER 2>/dev/null | tail -c 65 | base64 | tr '+/' '-_' | tr -d '=\n')
 SECRET=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n')
 MONITOR=$(openssl rand -base64 30 | tr '+/' '-_' | tr -d '=\n')
+FLEET=$(openssl rand -base64 30 | tr '+/' '-_' | tr -d '=\n')
 
 cat <<EOF
 
@@ -38,7 +39,9 @@ Add these to deploy/.env:
 PUSHER_SECRET=$SECRET
 STEADY_VAPID_PUBLIC_KEY=$PUB
 STEADY_MONITOR_KEY=$MONITOR
+STEADY_FLEET_KEY=$FLEET
 
 (Only replace PUSHER_SECRET if this is a new install; the server and relay must match.
-STEADY_MONITOR_KEY can be added to an existing install at any time: then docker compose up -d.)
+STEADY_MONITOR_KEY and STEADY_FLEET_KEY can be added to an existing install at any time: then
+docker compose up -d. Give both to OpenWorks IT's fleet view, see docs/FLEET.md.)
 EOF

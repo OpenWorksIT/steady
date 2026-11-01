@@ -86,6 +86,8 @@ if [ -f .env ]; then
   for k in PUSHER_SECRET STEADY_MONITOR_KEY; do
     v="$(envv "$k")"; [ "${#v}" -ge 32 ] && ok "$k is long enough" || warn "$k is missing or short (./gen-keys.sh)"
   done
+  v="$(envv STEADY_FLEET_KEY)"
+  if [ -n "$v" ]; then [ "${#v}" -ge 32 ] && ok "the fleet key is long enough" || fail "STEADY_FLEET_KEY is shorter than 32 characters"; fi
   v="$(envv STEADY_INTEGRATION_KEY)"
   if [ -n "$v" ]; then [ "${#v}" -ge 32 ] && ok "the Sorted key is long enough" || fail "STEADY_INTEGRATION_KEY is shorter than 32 characters"; fi
   [ "$(envv STEADY_DASHBOARD)" = on ] && fail "STEADY_DASHBOARD=on: the PocketBase dashboard is open; switch it off" || ok "the PocketBase dashboard is switched off"

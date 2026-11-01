@@ -10,10 +10,10 @@ updates:
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
   - package-ecosystem: gomod
-    directory: /pusher
+    directories: [/pusher, /fleet]
     schedule: { interval: weekly }
   - package-ecosystem: docker
-    directories: [/server, /pusher]
+    directories: [/server, /pusher, /fleet]
     schedule: { interval: weekly }
   # the images named in the compose files (Caddy, the mail catcher, cloudflared)
   - package-ecosystem: docker-compose
