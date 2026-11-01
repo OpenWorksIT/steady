@@ -10,8 +10,8 @@ services:
     environment:
       FLEET_ADDR: ":8080"
       FLEET_DATA: /data
-      # behind Caddy: the visitor's address is the last X-Forwarded-For entry
-      FLEET_TRUST_PROXY: "1"
+      # only Caddy's X-Forwarded-For is believed (its service name on the edge network)
+      FLEET_TRUSTED_PROXY: caddy
     volumes:
       - /var/lib/steady-fleet:/data
     read_only: true

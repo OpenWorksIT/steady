@@ -71,7 +71,7 @@ It needs `STEADY_MONITOR_KEY` in `.env` (`./gen-keys.sh` prints one; then `docke
 Disk, memory and load come from `deploy/ctl` (run `sudo ./ctl/install.sh` again after updating, to
 add the 5-minute stats timer). Limits and when to move up a server size: [CAPACITY.md](CAPACITY.md).
 
-OpenWorks IT's fleet view (docs/FLEET.md) shows every practice server on one page and can ask a server to check for updates, update or restart. It needs `STEADY_MONITOR_KEY` and `STEADY_FLEET_KEY` in `.env` (`gen-keys.sh` prints both).
+OpenWorks IT's fleet view (docs/FLEET.md) shows every practice server on one page and can ask a server to check for updates, update or restart. It needs `STEADY_FLEET_KEY` in `.env` (`gen-keys.sh` prints one), and nothing else: the monitor key stays with `health.sh`.
 
 ## 5. Accounts
 

@@ -43,5 +43,5 @@ STEADY_FLEET_KEY=$FLEET
 
 (Only replace PUSHER_SECRET if this is a new install; the server and relay must match.
 STEADY_MONITOR_KEY and STEADY_FLEET_KEY can be added to an existing install at any time: then
-docker compose up -d. Give both to OpenWorks IT's fleet view, see docs/FLEET.md.)
+docker compose up -d. Give only STEADY_FLEET_KEY to OpenWorks IT's fleet view, see docs/FLEET.md.)
 EOF

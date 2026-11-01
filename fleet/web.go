@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,15 +28,22 @@ type App struct {
 	limiter  *Limiter
 	pages    *template.Template
 	now      func() time.Time
-	// behind Caddy: the visitor's address is the last X-Forwarded-For entry
-	trustProxy bool
+	// at most two slow password checks at a time, whatever arrives
+	hashing chan struct{}
+	// the reverse proxy (Caddy) whose X-Forwarded-For is believed: a host name or an address;
+	// "" = believe nobody and use the connection's own address
+	proxy     string
+	proxyMu   sync.Mutex
+	proxyIPs  map[string]bool
+	proxySeen time.Time
 	// tests run without TLS
 	insecureCookie bool
 }
 
-func NewApp(store *Store, poller *Poller, trustProxy bool) *App {
+func NewApp(store *Store, poller *Poller, trustedProxy string) *App {
 	t := template.Must(template.New("").ParseFS(webFS, "web/*.html"))
-	return &App{store: store, poller: poller, sessions: NewSessions(), limiter: NewLimiter(), pages: t, now: time.Now, trustProxy: trustProxy}
+	return &App{store: store, poller: poller, sessions: NewSessions(), limiter: NewLimiter(), pages: t, now: time.Now,
+		hashing: make(chan struct{}, 2), proxy: trustedProxy}
 }
 
 func (a *App) Routes() http.Handler {
@@ -52,7 +60,7 @@ func (a *App) Routes() http.Handler {
 	return headers(mux)
 }
 
-// headers: nothing from elsewhere, no framing, no caching, no referrer.
+// headers: nothing from elsewhere, no framing, no caching, no referrer; forms are small.
 func headers(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hd := w.Header()
@@ -62,20 +70,50 @@ func headers(h http.Handler) http.Handler {
 		hd.Set("Referrer-Policy", "no-referrer")
 		hd.Set("Cache-Control", "no-store")
 		hd.Set("Strict-Transport-Security", "max-age=31536000")
+		if r.Method == "POST" {
+			r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		}
 		h.ServeHTTP(w, r)
 	})
 }
 
-func (a *App) clientIP(r *http.Request) string {
-	if a.trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
-			return strings.TrimSpace(parts[len(parts)-1])
-		}
+// isProxy: the connection comes from the trusted reverse proxy (its addresses looked up again
+// every minute, as container addresses can change).
+func (a *App) isProxy(ip string) bool {
+	if a.proxy == "" {
+		return false
 	}
+	a.proxyMu.Lock()
+	defer a.proxyMu.Unlock()
+	if a.proxyIPs == nil || time.Since(a.proxySeen) > time.Minute {
+		a.proxyIPs = map[string]bool{}
+		if net.ParseIP(a.proxy) != nil {
+			a.proxyIPs[net.ParseIP(a.proxy).String()] = true
+		} else if addrs, err := net.LookupHost(a.proxy); err == nil {
+			for _, x := range addrs {
+				if p := net.ParseIP(x); p != nil {
+					a.proxyIPs[p.String()] = true
+				}
+			}
+		}
+		a.proxySeen = time.Now()
+	}
+	p := net.ParseIP(ip)
+	return p != nil && a.proxyIPs[p.String()]
+}
+
+func (a *App) clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if a.isProxy(host) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			if ip := strings.TrimSpace(parts[len(parts)-1]); net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
 	}
 	return host
 }
@@ -103,7 +141,8 @@ func (a *App) signedIn(h handler) http.HandlerFunc {
 		c, err := r.Cookie(cookieName)
 		var s *Session
 		if err == nil {
-			s = a.sessions.Get(c.Value, a.now())
+			// the pages' own refresh (?auto=1) doesn't count as activity
+			s = a.sessions.Get(c.Value, a.now(), r.URL.Query().Get("auto") != "1")
 		}
 		if s != nil {
 			// someone removed from users.json is signed out at once
@@ -135,37 +174,64 @@ func (a *App) loginPage(w http.ResponseWriter, r *http.Request) {
 	a.render(w, "login.html", map[string]any{"Error": ""})
 }
 
+func (a *App) refuse(w http.ResponseWriter, status int, msg string) {
+	w.WriteHeader(status)
+	a.render(w, "login.html", map[string]any{"Error": msg})
+}
+
+const wrongSignIn = "That name, password and code didn't match."
+
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	ip := a.clientIP(r)
-	name := strings.TrimSpace(r.PostFormValue("name"))
 	now := a.now()
-	if a.limiter.Blocked(ip, name, now) {
-		a.store.Audit(name, ip, "sign-in refused", "too many wrong tries")
-		w.WriteHeader(http.StatusTooManyRequests)
-		a.render(w, "login.html", map[string]any{"Error": "Too many wrong tries. Wait 15 minutes."})
+	ipKey := addrKey(ip)
+	// the attempt takes its slot first: a burst can't all slip past the limit
+	if !a.limiter.Take(ipKey, failsPerIP, now) {
+		a.refuse(w, http.StatusTooManyRequests, "Too many wrong tries. Wait 15 minutes.")
+		return
+	}
+	name := strings.ToLower(strings.TrimSpace(r.PostFormValue("name")))
+	if validName(name) != nil {
+		a.refuse(w, http.StatusUnauthorized, wrongSignIn)
+		return
+	}
+	userKey := "user:" + name
+	if a.limiter.Blocked(userKey, failsPerUser, now) {
+		a.refuse(w, http.StatusTooManyRequests, "Too many wrong codes for this name. Wait 15 minutes.")
+		return
+	}
+	a.hashing <- struct{}{}
+	// a burst that queued here: check again now that it's this request's turn
+	if a.limiter.Blocked(userKey, failsPerUser, now) {
+		<-a.hashing
+		a.refuse(w, http.StatusTooManyRequests, "Too many wrong codes for this name. Wait 15 minutes.")
 		return
 	}
 	u, err := a.store.User(name)
+	pwOK := err == nil && PasswordOK(u, r.PostFormValue("password"))
+	<-a.hashing
 	if err != nil {
 		http.Error(w, "users.json can't be read", 500)
 		return
 	}
-	pwOK := PasswordOK(u, r.PostFormValue("password"))
-	step := int64(0)
-	if pwOK {
-		step = TOTPCheck(u, r.PostFormValue("code"), now)
-	}
-	if !pwOK || step == 0 {
-		a.limiter.Fail(ip, name, now)
-		a.store.Audit(name, ip, "sign-in failed", "")
-		w.WriteHeader(http.StatusUnauthorized)
-		a.render(w, "login.html", map[string]any{"Error": "That name, password and code didn't match."})
+	if !pwOK {
+		a.store.Audit(name, ip, "sign-in failed", "password")
+		a.refuse(w, http.StatusUnauthorized, wrongSignIn)
 		return
 	}
-	if err := a.store.UseStep(u.Name, step); err != nil {
+	// the password was right: wrong codes now count against the name too
+	ok, err := a.store.UseCode(u.Name, r.PostFormValue("code"), now)
+	if err != nil {
 		http.Error(w, "users.json can't be written", 500)
 		return
 	}
+	if !ok {
+		a.limiter.Take(userKey, failsPerUser, now)
+		a.store.Audit(u.Name, ip, "sign-in failed", "authenticator code")
+		a.refuse(w, http.StatusUnauthorized, wrongSignIn)
+		return
+	}
+	a.limiter.Give(ipKey, now)
 	id, _ := a.sessions.New(u.Name, now)
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: id, Path: "/", HttpOnly: true, Secure: !a.insecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: int(sessionMax.Seconds())})
 	a.store.Audit(u.Name, ip, "signed in", "")
@@ -191,7 +257,7 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request, s *Session) {
 		counts[row.Level]++
 		rows = append(rows, row)
 	}
-	w.Header().Set("Refresh", "60")
+	w.Header().Set("Refresh", "60; url=/?auto=1")
 	a.render(w, "overview.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Rows": rows, "ConfigError": cfgErr, "Counts": counts, "Now": now.Format("15:04")})
 }
 
@@ -211,8 +277,9 @@ func (a *App) detail(w http.ResponseWriter, r *http.Request, s *Session) {
 		return
 	}
 	now := a.now()
-	w.Header().Set("Refresh", "60")
-	a.render(w, "detail.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Row": makeRow(n, st, now), "Facts": facts(st, now), "Msg": r.URL.Query().Get("msg")})
+	msg := a.sessions.TakeFlash(s)
+	w.Header().Set("Refresh", "60; url=/s/"+strconv.Itoa(n)+"?auto=1")
+	a.render(w, "detail.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Row": makeRow(n, st, now), "Facts": facts(st, now), "Msg": msg})
 }
 
 var actions = map[string]string{"check": "check for updates", "update": "install the latest signed release", "restart": "restart Steady"}
@@ -223,6 +290,7 @@ func (a *App) action(w http.ResponseWriter, r *http.Request, s *Session) {
 		http.NotFound(w, r)
 		return
 	}
+	back := "/s/" + strconv.Itoa(n)
 	act := r.PostFormValue("action")
 	what, known := actions[act]
 	if !known {
@@ -230,7 +298,8 @@ func (a *App) action(w http.ResponseWriter, r *http.Request, s *Session) {
 		return
 	}
 	if act != "check" && r.PostFormValue("confirm") != st.Server.Name {
-		http.Redirect(w, r, "/s/"+strconv.Itoa(n)+"?msg="+urlq("Type the practice's name exactly to "+what+"."), http.StatusSeeOther)
+		a.sessions.SetFlash(s, "Type the practice's name exactly to "+what+".")
+		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
@@ -241,8 +310,9 @@ func (a *App) action(w http.ResponseWriter, r *http.Request, s *Session) {
 	if err != nil {
 		msg, detail = "Couldn't ask "+st.Server.Name+": "+err.Error(), err.Error()
 	}
+	a.sessions.SetFlash(s, msg)
 	a.store.Audit(s.User, a.clientIP(r), act, st.Server.Name+": "+detail)
-	http.Redirect(w, r, "/s/"+strconv.Itoa(n)+"?msg="+urlq(msg), http.StatusSeeOther)
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 func (a *App) audit(w http.ResponseWriter, r *http.Request, s *Session) {

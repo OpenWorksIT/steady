@@ -1,5 +1,5 @@
 // Asks every practice server for its state once a minute (GET /api/steady/fleet with its
-// monitor key) and keeps the latest answer. Never anything about patients: the servers only
+// fleet key) and keeps the latest answer. Never anything about patients: the servers only
 // send versions, health, counts and backup age.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
@@ -34,7 +34,9 @@ type Poller struct {
 }
 
 func NewPoller(store *Store) *Poller {
-	return &Poller{store: store, client: &http.Client{Timeout: 15 * time.Second}, last: map[string]*Status{}}
+	// never follow a redirect: the key would go along to wherever it points
+	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return &Poller{store: store, client: client, last: map[string]*Status{}}
 }
 
 func (p *Poller) fetch(ctx context.Context, sv Server) *Status {
@@ -44,7 +46,7 @@ func (p *Poller) fetch(ctx context.Context, sv Server) *Status {
 		st.Err = err.Error()
 		return st
 	}
-	req.Header.Set("X-Steady-Monitor", sv.MonitorKey)
+	req.Header.Set("X-Steady-Fleet", sv.FleetKey)
 	t0 := time.Now()
 	res, err := p.client.Do(req)
 	st.Latency = time.Since(t0)
@@ -55,7 +57,11 @@ func (p *Poller) fetch(ctx context.Context, sv Server) *Status {
 	defer res.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if res.StatusCode == 404 {
-		st.Err = "the server doesn't know this monitor key (or runs a Steady older than 1.0.3)"
+		st.Err = "the server doesn't know this fleet key (or runs a Steady older than 1.0.3)"
+		return st
+	}
+	if res.StatusCode >= 300 && res.StatusCode < 400 {
+		st.Err = "the server sent a redirect (not followed): check its address in servers.json"
 		return st
 	}
 	if res.StatusCode != 200 {
@@ -140,9 +146,6 @@ func (p *Poller) Snapshot() ([]*Status, string) {
 
 // Request asks a server to check for updates, update or restart (POST /api/steady/fleet/request).
 func (p *Poller) Request(ctx context.Context, sv Server, action string) error {
-	if sv.FleetKey == "" {
-		return errors.New("this server has no fleet key in servers.json, so the fleet view can only look")
-	}
 	body, _ := json.Marshal(map[string]string{"action": action})
 	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(sv.URL, "/")+"/api/steady/fleet/request", bytes.NewReader(body))
 	if err != nil {

@@ -17,15 +17,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 )
-
-func urlq(s string) string { return url.QueryEscape(s) }
 
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
@@ -89,7 +86,9 @@ func serve(store *Store) error {
 	defer stop()
 	poller := NewPoller(store)
 	go poller.Run(ctx, time.Minute)
-	app := NewApp(store, poller, env("FLEET_TRUST_PROXY", "1") == "1")
+	// FLEET_TRUSTED_PROXY: the reverse proxy's host name (e.g. caddy) or address. Only its
+	// X-Forwarded-For is believed; unset, every visitor is taken at the connection's address.
+	app := NewApp(store, poller, strings.TrimSpace(os.Getenv("FLEET_TRUSTED_PROXY")))
 	srv := &http.Server{Addr: env("FLEET_ADDR", ":8080"), Handler: app.Routes(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
 	go func() {
 		<-ctx.Done()
@@ -117,9 +116,16 @@ func readPassword() (string, error) {
 	return pw, nil
 }
 
+// validName: plain lowercase ASCII (a-z, 0-9, . _ -), up to 40 characters, so names can't
+// look alike in another script or fill the logs.
 func validName(name string) error {
-	if name == "" || len(name) > 40 || strings.ContainsAny(name, " \t\r\n/\\\"'<>") {
-		return fmt.Errorf("give a short name without spaces, e.g. tiaan")
+	if name == "" || len(name) > 40 {
+		return fmt.Errorf("give a short name: a-z, 0-9, dot, dash or underscore, e.g. jane")
+	}
+	for _, c := range name {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
+			return fmt.Errorf("give a short name: a-z, 0-9, dot, dash or underscore, e.g. jane")
+		}
 	}
 	return nil
 }
@@ -131,24 +137,25 @@ func showTOTP(u User) {
 }
 
 func addUser(store *Store, name string) error {
+	name = strings.ToLower(name)
 	if err := validName(name); err != nil {
 		return err
 	}
-	all, err := store.Users()
-	if err != nil {
-		return err
-	}
-	for _, u := range all {
-		if strings.EqualFold(u.Name, name) {
-			return fmt.Errorf("%s already exists", name)
-		}
-	}
+	// the password is asked first, outside the lock on users.json
 	pw, err := readPassword()
 	if err != nil {
 		return err
 	}
 	u := NewUser(name, pw)
-	if err := store.SaveUsers(append(all, u)); err != nil {
+	err = store.UpdateUsers(func(all []User) ([]User, error) {
+		for _, x := range all {
+			if sameName(x.Name, name) {
+				return nil, fmt.Errorf("%s already exists", name)
+			}
+		}
+		return append(all, u), nil
+	})
+	if err != nil {
 		return err
 	}
 	showTOTP(u)
@@ -157,50 +164,51 @@ func addUser(store *Store, name string) error {
 }
 
 func changeUser(store *Store, name string, password, totp bool) error {
-	all, err := store.Users()
+	fresh := NewUser(name, "unused")
+	if password {
+		pw, err := readPassword()
+		if err != nil {
+			return err
+		}
+		fresh = NewUser(name, pw)
+	}
+	var changed User
+	err := store.UpdateUsers(func(all []User) ([]User, error) {
+		for i := range all {
+			if sameName(all[i].Name, name) {
+				if password {
+					all[i].Salt, all[i].Hash, all[i].Iter = fresh.Salt, fresh.Hash, fresh.Iter
+				}
+				if totp {
+					all[i].TOTP, all[i].LastStep = fresh.TOTP, 0
+				}
+				changed = all[i]
+				return all, nil
+			}
+		}
+		return nil, fmt.Errorf("no user called %s", name)
+	})
 	if err != nil {
 		return err
 	}
-	for i := range all {
-		if strings.EqualFold(all[i].Name, name) {
-			fresh := NewUser(all[i].Name, "unused")
-			if password {
-				pw, err := readPassword()
-				if err != nil {
-					return err
-				}
-				fresh = NewUser(all[i].Name, pw)
-				all[i].Salt, all[i].Hash, all[i].Iter = fresh.Salt, fresh.Hash, fresh.Iter
-			}
-			if totp {
-				all[i].TOTP, all[i].LastStep = fresh.TOTP, 0
-			}
-			if err := store.SaveUsers(all); err != nil {
-				return err
-			}
-			if totp {
-				showTOTP(all[i])
-			}
-			fmt.Println("Changed", all[i].Name+". Anyone signed in keeps their session until it ends (restart the fleet view to end them now).")
-			return nil
-		}
+	if totp {
+		showTOTP(changed)
 	}
-	return fmt.Errorf("no user called %s", name)
+	fmt.Println("Changed", changed.Name+". Anyone signed in keeps their session until it ends (restart the fleet view to end them now).")
+	return nil
 }
 
 func delUser(store *Store, name string) error {
-	all, err := store.Users()
-	if err != nil {
-		return err
-	}
-	var keep []User
-	for _, u := range all {
-		if !strings.EqualFold(u.Name, name) {
-			keep = append(keep, u)
+	return store.UpdateUsers(func(all []User) ([]User, error) {
+		var keep []User
+		for _, u := range all {
+			if !sameName(u.Name, name) {
+				keep = append(keep, u)
+			}
 		}
-	}
-	if len(keep) == len(all) {
-		return fmt.Errorf("no user called %s", name)
-	}
-	return store.SaveUsers(keep)
+		if len(keep) == len(all) {
+			return nil, fmt.Errorf("no user called %s", name)
+		}
+		return keep, nil
+	})
 }

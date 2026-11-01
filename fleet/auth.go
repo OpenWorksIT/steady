@@ -14,6 +14,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -124,12 +125,14 @@ func OTPAuthURI(u User) string {
 	return "otpauth://totp/" + label + "?secret=" + u.TOTP + "&issuer=" + url.QueryEscape("Steady fleet") + "&algorithm=SHA1&digits=6&period=30"
 }
 
-// Session is one signed-in browser.
+// Session is one signed-in browser. Flash is a message for the next page (kept here, not in
+// the address, so nobody can put words on the page with a link).
 type Session struct {
 	User    string
 	CSRF    string
 	Started time.Time
 	Seen    time.Time
+	Flash   string
 }
 
 // Sessions are kept in memory: a restart signs everyone out, which is fine for a few people.
@@ -149,7 +152,9 @@ func (s *Sessions) New(user string, now time.Time) (string, *Session) {
 	return id, ss
 }
 
-func (s *Sessions) Get(id string, now time.Time) *Session {
+// Get returns a live session. touch=false (the pages' own auto-refresh) doesn't count as
+// activity, so an unattended tab still signs out after sessionIdle.
+func (s *Sessions) Get(id string, now time.Time, touch bool) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ss := s.m[id]
@@ -160,8 +165,24 @@ func (s *Sessions) Get(id string, now time.Time) *Session {
 		delete(s.m, id)
 		return nil
 	}
-	ss.Seen = now
+	if touch {
+		ss.Seen = now
+	}
 	return ss
+}
+
+func (s *Sessions) SetFlash(ss *Session, msg string) {
+	s.mu.Lock()
+	ss.Flash = msg
+	s.mu.Unlock()
+}
+
+func (s *Sessions) TakeFlash(ss *Session) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := ss.Flash
+	ss.Flash = ""
+	return m
 }
 
 func (s *Sessions) End(id string) {
@@ -170,7 +191,8 @@ func (s *Sessions) End(id string) {
 	s.mu.Unlock()
 }
 
-// Limiter counts wrong sign-ins per address and per name.
+// Limiter counts sign-in attempts per address and wrong codes per name. An attempt takes its
+// slot before the (slow) password check, so a burst of requests can't all slip through.
 type Limiter struct {
 	mu    sync.Mutex
 	fails map[string][]time.Time
@@ -185,29 +207,66 @@ func (l *Limiter) recent(key string, now time.Time) []time.Time {
 			keep = append(keep, t)
 		}
 	}
-	l.fails[key] = keep
+	if len(keep) == 0 {
+		delete(l.fails, key)
+	} else {
+		l.fails[key] = keep
+	}
 	return keep
 }
 
-// Blocked is true while an address or a name has too many recent failures.
-func (l *Limiter) Blocked(ip, user string, now time.Time) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return len(l.recent("ip:"+ip, now)) >= failsPerIP || len(l.recent("user:"+strings.ToLower(user), now)) >= failsPerUser
-}
-
-func (l *Limiter) Fail(ip, user string, now time.Time) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	// many different names or addresses: drop the ones with nothing recent
+func (l *Limiter) sweep(now time.Time) {
 	if len(l.fails) > 5000 {
 		for k := range l.fails {
-			if len(l.recent(k, now)) == 0 {
-				delete(l.fails, k)
-			}
+			l.recent(k, now)
 		}
 	}
-	l.fails["ip:"+ip] = append(l.recent("ip:"+ip, now), now)
-	k := "user:" + strings.ToLower(user)
-	l.fails[k] = append(l.recent(k, now), now)
+}
+
+// Take records an attempt for key, unless it already has limit recent ones (false).
+func (l *Limiter) Take(key string, limit int, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.sweep(now)
+	r := l.recent(key, now)
+	if len(r) >= limit {
+		return false
+	}
+	l.fails[key] = append(r, now)
+	return true
+}
+
+// Give takes back the attempt recorded at t (a sign-in that worked).
+func (l *Limiter) Give(key string, t time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	r := l.fails[key]
+	for i := range r {
+		if r[i].Equal(t) {
+			l.fails[key] = append(r[:i], r[i+1:]...)
+			return
+		}
+	}
+}
+
+// Blocked is true while key has limit or more recent attempts.
+func (l *Limiter) Blocked(key string, limit int, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.recent(key, now)) >= limit
+}
+
+// addrKey groups IPv6 addresses by their /64, the block one customer usually gets.
+func addrKey(ip string) string {
+	a := net.ParseIP(ip)
+	if a == nil {
+		if len(ip) > 64 {
+			ip = ip[:64]
+		}
+		return "ip:" + ip
+	}
+	if a.To4() == nil {
+		return "ip:" + a.Mask(net.CIDRMask(64, 128)).String() + "/64"
+	}
+	return "ip:" + a.String()
 }

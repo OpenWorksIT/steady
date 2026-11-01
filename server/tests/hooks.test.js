@@ -1509,21 +1509,22 @@ test("a patient asks to delete their account; their psychologist deletes it afte
   assert.equal(rt.call("POST", `/api/steady/patients/${p2.id}/delete-account`, { auth: master, headers: H.master }).status, 200);
 });
 
-test("fleet view: a server's state for the monitor key, and check/update/restart only with the fleet key", () => {
+test("fleet view: a server's state and check/update/restart, only with the fleet key", () => {
   const { ctl } = distDirs();
   const MON = "monitor-key-0123456789abcdef", FLEET = "fleet-key-0123456789abcdefgh";
   const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_MONITOR_KEY: MON, STEADY_FLEET_KEY: FLEET, STEADY_CTL_DIR: ctl, STEADY_DOMAIN: "vr.steadyapp.co.za" }) });
   const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
   const pat = rt.makeUser({ name: "Pat Secret", role: "patient", clinician: doc.id, active: true, email: "pat@example.org" });
   rt.makeRecord("checkins", { patient: pat.id, mood: 3, anxiety: 2, sleep: 3, energy: 3, note: "a private note" });
+  const F = { "X-Steady-Fleet": FLEET };
   const get = (headers) => rt.call("GET", "/api/steady/fleet", { headers: headers || {} });
   const post = (headers, action) => rt.call("POST", "/api/steady/fleet/request", { headers: headers || {}, body: { action } });
 
-  // without the right key it isn't there
+  // without the right key it isn't there; the monitor key (which reads feedback) isn't it
   assert.equal(get().status, 404);
-  assert.equal(get({ "X-Steady-Monitor": "wrong" }).status, 404);
-  assert.equal(get({ "X-Steady-Fleet": FLEET }).status, 404, "the fleet key alone doesn't read");
-  const r = get({ "X-Steady-Monitor": MON });
+  assert.equal(get({ "X-Steady-Fleet": "wrong" }).status, 404);
+  assert.equal(get({ "X-Steady-Monitor": MON }).status, 404, "the monitor key doesn't work here");
+  const r = get(F);
   assert.equal(r.status, 200);
   assert.equal(r.data.domain, "vr.steadyapp.co.za");
   assert.equal(r.data.counts.patients, 1);
@@ -1531,24 +1532,44 @@ test("fleet view: a server's state for the monitor key, and check/update/restart
   assert.equal(r.data.version.managed, false);
   const blob = JSON.stringify(r.data);
   assert.ok(!/Pat Secret|private note|pat@example/.test(blob), "nothing about patients");
+  // and the fleet key reads nothing else
+  assert.equal(rt.call("GET", "/api/steady/feedback", { headers: F }).status >= 400, true, "the fleet key can't read feedback");
 
   // requests: only the fleet key, only known actions, only with server updates set up
-  assert.equal(post({ "X-Steady-Monitor": MON }, "update").status, 404, "the read-only key can't act");
-  assert.equal(post({ "X-Steady-Fleet": FLEET }, "rm -rf").status, 400);
-  assert.equal(post({ "X-Steady-Fleet": FLEET }, "update").status, 400, "not set up yet");
-  fs.writeFileSync(path.join(ctl, "status.json"), JSON.stringify({ check: { at: "2026-11-01T10:00:00Z", current: { sha: "83f8776aaaa" }, latest: { sha: "83f8776aaaa" }, behind: 0, signed: true } }));
-  const ok = post({ "X-Steady-Fleet": FLEET }, "restart");
+  assert.equal(post({ "X-Steady-Monitor": MON }, "update").status, 404, "the monitor key can't act");
+  assert.equal(post(F, "rm -rf").status, 400);
+  assert.equal(post(F, "update").status, 400, "not set up yet");
+  const status = (extra) => fs.writeFileSync(path.join(ctl, "status.json"), JSON.stringify(Object.assign({ check: { at: "2026-11-01T10:00:00Z", current: { sha: "83f8776aaaa" }, latest: { sha: "83f8776aaaa" }, behind: 0, signed: true } }, extra || {})));
+  status();
+  const ok = post(F, "restart");
   assert.equal(ok.status, 200);
   assert.equal(fs.readFileSync(path.join(ctl, "request"), "utf8"), "restart\n");
-  assert.equal(post({ "X-Steady-Fleet": FLEET }, "update").status, 400, "one request at a time");
-  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "fleet.restart"));
-  const r2 = get({ "X-Steady-Monitor": MON });
+  assert.equal(post(F, "update").status, 400, "one request at a time");
+  const a = rt.store.auditlog.find((x) => x.getString("action") === "fleet.restart");
+  assert.ok(a, "audited");
+  const r2 = get(F);
   assert.equal(r2.data.version.managed, true);
   assert.equal(r2.data.version.signed, true);
   assert.equal(r2.data.pending, "restart");
 
+  // ctl did it: no second update or restart for 5 minutes (checks are fine)
+  fs.unlinkSync(path.join(ctl, "request"));
+  status({ lastRestart: { at: new Date(rt.now() - 60000).toISOString(), ok: true } });
+  const soon = post(F, "update");
+  assert.equal(soon.status, 400);
+  assert.match(soon.error, /Try again in [45] minutes/);
+  assert.equal(post(F, "check").status, 200);
+  fs.unlinkSync(path.join(ctl, "request"));
+  status({ restarting: { at: new Date(rt.now()).toISOString() } });
+  assert.equal(post(F, "restart").status, 400, "busy");
+  status({ lastUpdate: { at: new Date(rt.now() + 3 * 86400000).toISOString(), ok: true } });
+  assert.match(post(F, "update").error, /in 5 minutes/, "a clock ahead never means a longer wait");
+  status({ lastUpdate: { at: new Date(rt.now() - 6 * 60000).toISOString(), ok: true } });
+  assert.equal(post(F, "update").status, 200, "fine after 5 minutes");
+
   // a short key never works
-  const weak = makeRuntime({ env: Object.assign({}, ENV, { STEADY_MONITOR_KEY: MON, STEADY_FLEET_KEY: "short", STEADY_CTL_DIR: ctl }) });
+  const weak = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: "short", STEADY_CTL_DIR: ctl }) });
+  assert.equal(weak.call("GET", "/api/steady/fleet", { headers: { "X-Steady-Fleet": "short" } }).status, 404);
   assert.equal(weak.call("POST", "/api/steady/fleet/request", { headers: { "X-Steady-Fleet": "short" }, body: { action: "check" } }).status, 404);
 });
 

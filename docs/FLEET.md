@@ -13,20 +13,22 @@ The code is in `fleet/` (Go, standard library only). It runs on OpenWorks' own s
 
 ## How it works
 
-- Every minute the fleet view asks each server for `GET /api/steady/fleet`, sending that
-  server's `STEADY_MONITOR_KEY`. That key can only read.
-- The buttons send `POST /api/steady/fleet/request` with the server's `STEADY_FLEET_KEY`. That
-  key can only ask the server to check, update or restart; it can't read anything.
+- Every minute the fleet view asks each server for `GET /api/steady/fleet`, and the buttons send
+  `POST /api/steady/fleet/request`, both with that server's `STEADY_FLEET_KEY`. That key opens
+  those two routes and nothing else. (Not the monitor key: that one also reads feedback, which
+  can hold screenshots.)
 - The server leaves the request for `deploy/ctl/steady-ctl.sh`, which does the work as root.
   **Update** first saves a copy of the data, then installs the newest release signed by
   OpenWorks (servers with `secrets/allowed_signers`). **Restart** restarts Steady's containers,
   not the whole machine.
 - Without the right key, both routes answer 404, as if they weren't there.
+- After an update or restart, the server refuses another for 5 minutes (checks are fine).
+- The fleet view never follows a redirect, so a server's key can't be sent somewhere else.
 - Sign-ins (and failed ones) and every button press go to the fleet view's audit log.
 
 ## On each practice server
 
-1. Make a fleet key (the monitor key is already there from `gen-keys.sh`):
+1. Make a fleet key (new installs already have one from `gen-keys.sh`):
    ```bash
    cd /opt/steady/deploy
    echo "STEADY_FLEET_KEY=$(openssl rand -base64 30 | tr '+/' '-_' | tr -d '=\n')" | sudo tee -a .env
@@ -35,8 +37,8 @@ The code is in `fleet/` (Go, standard library only). It runs on OpenWorks' own s
 2. In-app updates must be set up (`sudo ./ctl/install.sh`), or the buttons can't do anything.
 3. Backups: the fleet view shows the newest file in `/srv/backups/steady` (set
    `STEADY_BACKUP_DIR` in `.env` if they go elsewhere).
-4. Give OpenWorks the server's address, `STEADY_MONITOR_KEY` and `STEADY_FLEET_KEY`, through
-   a password manager, not email.
+4. Give OpenWorks the server's address and `STEADY_FLEET_KEY` (only that one) through a
+   password manager, not email.
 
 The fleet route needs Steady 1.0.3 or newer.
 
@@ -47,27 +49,28 @@ The fleet route needs Steady 1.0.3 or newer.
    ```bash
    sudo install -d -m 700 -o 65532 -g 65532 /var/lib/steady-fleet
    ```
-3. `/var/lib/steady-fleet/servers.json`, one entry per practice (`fleetKey` is optional; without
-   it the fleet view only looks):
+3. `/var/lib/steady-fleet/servers.json`, one entry per practice (addresses must be `https://`):
    ```json
    [
-     {"name": "VR Clinical Psychology", "url": "https://vr.steadyapp.co.za",
-      "monitorKey": "...", "fleetKey": "..."}
+     {"name": "VR Clinical Psychology", "url": "https://vr.steadyapp.co.za", "fleetKey": "..."}
    ]
    ```
    Then `sudo chown 65532:65532 /var/lib/steady-fleet/servers.json && sudo chmod 600 /var/lib/steady-fleet/servers.json`.
    Changes are picked up within a minute; no restart needed.
-4. Start it on the shared `edge` network, and add its site to the Caddy that owns ports 80/443:
+4. Start it on the shared `edge` network, and add its site to the Caddy that owns ports 80/443.
+   `compose.yml` sets `FLEET_TRUSTED_PROXY: caddy`, the Caddy container's name on that network:
+   only its `X-Forwarded-For` is believed, so nobody else can pretend to be a new address on
+   every try. If the Caddy service has another name there, change it.
    ```bash
    cd /opt/steady
    sudo docker compose -f fleet/compose.yml up -d --build
    sudo cp fleet/fleet.caddy /opt/shap/deploy/vps/sites/fleet.caddy
    cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
    ```
-5. Add yourself. It asks for a password (14 characters or more) and prints the key for your
-   authenticator app:
+5. Add yourself (a name of a-z, 0-9, `.`, `-` or `_`). It asks for a password (14 characters
+   or more) and prints the key for your authenticator app:
    ```bash
-   cd /opt/steady && sudo docker compose -f fleet/compose.yml run --rm fleet adduser tiaan
+   cd /opt/steady && sudo docker compose -f fleet/compose.yml run --rm fleet adduser <name>
    ```
 
 Other commands, the same way: `passwd <name>`, `resettotp <name>` (a lost phone),
@@ -84,8 +87,12 @@ cd /opt/steady && git pull && sudo docker compose -f fleet/compose.yml up -d --b
 - The keys in `servers.json` let the fleet view read health and ask for updates or restarts on
   every practice server, so the file and the vps1 account that can read it matter. Keep SSH to
   vps1 key-only, as on the practice servers.
-- Wrong sign-ins are limited per address and per name (a 15-minute pause); a code from the
-  authenticator app works only once.
-- Sessions end after 30 minutes idle or 8 hours, and when the fleet view restarts.
+- Sign-in tries are limited to 8 per address (IPv6: per /64) per 15 minutes. Wrong
+  authenticator codes after a right password are limited to 10 per name, so someone without the
+  password can't lock you out. A code works only once.
+- Sessions end after 30 minutes without a click (the pages' own refresh doesn't count), after
+  8 hours, and when the fleet view restarts.
+- Pages aren't compressed (the Caddy site has no `encode`), so the form tokens can't be guessed
+  through compression.
 - A leaked fleet key lets someone restart a server or install a release OpenWorks has already
   signed, nothing more. Replace it in `.env` and `servers.json` if it ever leaks.

@@ -21,6 +21,6 @@
 <label><span>To confirm, type <strong>{{.Row.Name}}</strong></span><input name="confirm" autocomplete="off" required></label>
 <button class="danger">Restart Steady</button><span class="muted">Restarts Steady's containers on that server (not the whole server). Under a minute.</span></form>
 </div>
-{{else}}<p class="muted">This server has no fleet key in servers.json, so the fleet view can only look.</p>{{end}}
+{{else if .Row.Err}}<p class="muted">The buttons come back once the server answers.</p>{{else}}<p class="muted">In-app updates aren't set up on this server (sudo ./ctl/install.sh in its deploy folder), so the fleet view can only look.</p>{{end}}
 </main>
 {{template "end"}}

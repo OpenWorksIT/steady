@@ -91,7 +91,7 @@ func bytesText(b float64) string {
 }
 
 func makeRow(i int, st *Status, now time.Time) Row {
-	r := Row{Index: i, Name: st.Server.Name, URL: st.Server.URL, CanAct: st.Server.FleetKey != ""}
+	r := Row{Index: i, Name: st.Server.Name, URL: st.Server.URL}
 	r.Domain = strings.TrimPrefix(strings.TrimPrefix(st.Server.URL, "https://"), "http://")
 	r.Checked = ago(st.At, now)
 	if st.Err != "" || st.Data == nil {
@@ -123,6 +123,8 @@ func makeRow(i int, st *Status, now time.Time) Row {
 		code = "?"
 	}
 	r.Version = code
+	// the buttons need the server's in-app updates (deploy/ctl/install.sh)
+	r.CanAct = get(d, "version", "managed") == true
 	if b, ok := num(get(d, "version", "behind")); ok && b > 0 {
 		r.Behind = true
 		r.VersionNote = fmt.Sprintf("%d change(s) behind", int(b))

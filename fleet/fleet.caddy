@@ -1,7 +1,7 @@
 # The fleet view's site for the Caddy on vps1 (copy into its sites folder; docs/FLEET.md).
 # SPDX-License-Identifier: AGPL-3.0-or-later
 fleet.steadyapp.co.za {
-	encode gzip
+	# no compression: pages carry a CSRF token (BREACH)
 	reverse_proxy fleet:8080
 	header {
 		-Server
