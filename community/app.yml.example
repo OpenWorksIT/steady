@@ -1,0 +1,125 @@
+## Steady community forum: discourse_docker "standalone" container
+##
+## Copy to /var/discourse/containers/app.yml on the community server, fill in the
+## values marked CHANGE, then:   cd /var/discourse && sudo ./launcher rebuild app
+## Full steps: docs/COMMUNITY.md in the Steady repository.
+##
+## Based on samples/standalone.yml from https://github.com/discourse/discourse_docker
+## YAML is strict about spaces. Indent with spaces only, never tabs.
+## Keep this file readable by root only: sudo chmod 600 containers/app.yml
+
+templates:
+  - "templates/postgres.template.yml"
+  - "templates/redis.template.yml"
+  - "templates/web.template.yml"
+  - "templates/web.ratelimited.template.yml"
+  ## HTTPS with a free Let's Encrypt certificate (needs ports 80 and 443 open and DNS in place)
+  - "templates/web.ssl.template.yml"
+  - "templates/web.letsencrypt.ssl.template.yml"
+
+expose:
+  - "80:80"   # http, redirects to https and answers Let's Encrypt
+  - "443:443" # https
+
+params:
+  db_default_text_search_config: "pg_catalog.english"
+  ## Set automatically from the server's RAM at bootstrap. Override only if needed (max 25% of RAM).
+  #db_shared_buffers: "256MB"
+  ## Which Discourse version to build (default: latest)
+  #version: latest
+
+env:
+  LC_ALL: en_US.UTF-8
+  LANG: en_US.UTF-8
+  LANGUAGE: en_US.UTF-8
+  DISCOURSE_DEFAULT_LOCALE: en_GB
+
+  ## Set automatically from the CPU count at bootstrap.
+  #UNICORN_WORKERS: 2
+
+  ## The forum's address. Discourse will not work on a bare IP address.
+  DISCOURSE_HOSTNAME: "community.steadyapp.co.za"
+
+  ## The community lead's address. An account with this email is made admin (and
+  ## "developer") when it is confirmed. OpenWorks IT's address does NOT go here: OpenWorks
+  ## makes its install-time admin with `rake admin:create` and hands over (docs/COMMUNITY.md).
+  DISCOURSE_DEVELOPER_EMAILS: "kempie@vrpsych.co.za"
+
+  ## Mail: the steadyapp.co.za mailbox on the domains.co.za cPanel host.
+  ## Port 465 (SSL from the start) is set below. For 587 with STARTTLS instead, set
+  ## DISCOURSE_SMTP_PORT: 587, DISCOURSE_SMTP_ENABLE_START_TLS: true and remove
+  ## DISCOURSE_SMTP_FORCE_TLS.
+  DISCOURSE_SMTP_ADDRESS: mail.steadyapp.co.za
+  DISCOURSE_SMTP_PORT: 465
+  DISCOURSE_SMTP_FORCE_TLS: true
+  DISCOURSE_SMTP_ENABLE_START_TLS: false
+  DISCOURSE_SMTP_USER_NAME: community@steadyapp.co.za
+  ## CHANGE. Keep the quotes: a '#' or '$' in a password breaks it otherwise.
+  DISCOURSE_SMTP_PASSWORD: "CHANGE-ME-mailbox-password"
+  DISCOURSE_SMTP_DOMAIN: steadyapp.co.za
+  #DISCOURSE_SMTP_AUTHENTICATION: plain # plain|login|cram_md5
+  ## The From address for everything the forum sends.
+  DISCOURSE_NOTIFICATION_EMAIL: community@steadyapp.co.za
+
+  ## Let's Encrypt: discourse_docker stopped using LETSENCRYPT_ACCOUNT_EMAIL in January 2026
+  ## (Let's Encrypt no longer sends expiry emails), so the current template ignores it. It is
+  ## kept here, commented out, only so older copies of this file make sense.
+  #LETSENCRYPT_ACCOUNT_EMAIL: support@openworks.co.za
+
+  ## ------------------------------------------------------------------------------------
+  ## Hard rules, pinned. Any DISCOURSE_<site setting> line fixes that setting for the whole
+  ## site and hides it from the admin pages, so nobody can switch it off by accident from
+  ## the browser. Changing one needs this file and a rebuild. See docs/COMMUNITY.md.
+  ## ------------------------------------------------------------------------------------
+  ## Sign in to see anything; join by invitation only.
+  DISCOURSE_LOGIN_REQUIRED: true
+  DISCOURSE_INVITE_ONLY: true
+  ## Two-step sign-in (authenticator app code) for every account, staff or not.
+  DISCOURSE_ENFORCE_SECOND_FACTOR: all
+  ## Sign-in is username or email + password + authenticator code, nothing else:
+  ## no emailed one-click login links, no passkey-only login, no single sign-on.
+  DISCOURSE_ENABLE_LOCAL_LOGINS_VIA_EMAIL: false
+  DISCOURSE_ENABLE_PASSKEYS: false
+  DISCOURSE_ENABLE_DISCOURSE_CONNECT: false
+  DISCOURSE_ENABLE_DISCOURSE_ID: false
+  ## No social or third-party logins (core and bundled plugins).
+  DISCOURSE_ENABLE_GOOGLE_OAUTH2_LOGINS: false
+  DISCOURSE_ENABLE_GITHUB_LOGINS: false
+  DISCOURSE_ENABLE_TWITTER_LOGINS: false
+  DISCOURSE_ENABLE_FACEBOOK_LOGINS: false
+  DISCOURSE_ENABLE_DISCORD_LOGINS: false
+  DISCOURSE_ENABLE_LINKEDIN_OIDC_LOGINS: false
+  DISCOURSE_SIGN_IN_WITH_APPLE_ENABLED: false
+  DISCOURSE_MICROSOFT_AUTH_ENABLED: false
+  DISCOURSE_OPENID_CONNECT_ENABLED: false
+  DISCOURSE_OAUTH2_ENABLED: false
+  DISCOURSE_ENABLE_LOGIN_WITH_AMAZON: false
+  DISCOURSE_LTI_ENABLED: false
+  DISCOURSE_PATREON_LOGIN_ENABLED: false
+  ## Nothing about the forum leaves the server: no usage statistics to Discourse (this also
+  ## closes /site/statistics.json, which otherwise answers without signing in), no listing on
+  ## Discourse Discover, and no AI features (they send posts to an outside language model).
+  DISCOURSE_SHARE_ANONYMIZED_STATISTICS: false
+  DISCOURSE_INCLUDE_IN_DISCOURSE_DISCOVER: false
+  DISCOURSE_DISCOURSE_AI_ENABLED: false
+
+## The container keeps nothing itself; everything (database, uploads, backups) is in /shared.
+volumes:
+  - volume:
+      host: /var/discourse/shared/standalone
+      guest: /shared
+  - volume:
+      host: /var/discourse/shared/standalone/log/var-log
+      guest: /var/log
+
+## Plugins. docker_manager is the one in the official sample (update page in Admin).
+hooks:
+  after_code:
+    - exec:
+        cd: $home/plugins
+        cmd:
+          - git clone https://github.com/discourse/docker_manager.git
+
+run:
+  - exec: echo "Beginning of custom commands"
+  - exec: echo "End of custom commands"
