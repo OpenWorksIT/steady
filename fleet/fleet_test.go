@@ -475,3 +475,62 @@ func TestUsersFileStaysWhole(t *testing.T) {
 		t.Fatalf("users.json mode %v", fi.Mode().Perm())
 	}
 }
+
+func TestCommunityCountsOnly(t *testing.T) {
+	var gotKey string
+	forum := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("Api-Key")
+		if r.URL.Path != "/about.json" || gotKey != strings.Repeat("s", 40) {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		w.Write([]byte(`{"about":{"title":"Steady Community","admins":[{"username":"kempie"}],"stats":{"users_count":4,"active_users_7_days":3,"participating_users_7_days":2,"topics_count":12,"topics_7_days":3,"posts_count":80,"posts_7_days":9,"secret_title":"A private topic"}}}`))
+	}))
+	defer forum.Close()
+	dir := t.TempDir()
+	s := NewStore(dir)
+	if c, err := s.Community(); c != nil || err != nil {
+		t.Fatal("no community.json should mean no forum")
+	}
+	p := NewPoller(s)
+	writeJSON(dir+"/community.json", Community{URL: "http://x", StatsKey: strings.Repeat("s", 40)})
+	if st := p.fetchCommunity(context.Background()); st == nil || !strings.Contains(st.Err, "https") {
+		t.Fatalf("http forum: %+v", st)
+	}
+	tls := httptest.NewTLSServer(forum.Config.Handler)
+	defer tls.Close()
+	writeJSON(dir+"/community.json", Community{URL: tls.URL, StatsKey: strings.Repeat("s", 40)})
+	p.client = tls.Client()
+	p.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	p.PollCommunity(context.Background())
+	st := p.CommunitySnapshot()
+	if st.Err != "" || st.Counts["users_count"] != 4 || len(st.Counts) != 7 {
+		t.Fatalf("counts: %+v", st)
+	}
+	v := makeCommunity(st, time.Now())
+	if v.Members != "4" || v.Topics != "12 (3 this week)" || v.Posts != "80 (9 this week)" {
+		t.Fatalf("view: %+v", v)
+	}
+	if b, _ := json.Marshal(st); strings.Contains(string(b), "private topic") || strings.Contains(string(b), "kempie") {
+		t.Fatal("kept more than numbers")
+	}
+	// a revoked key: the forum sends people to sign in
+	writeJSON(dir+"/community.json", Community{URL: tls.URL, StatsKey: strings.Repeat("r", 40)})
+	p.PollCommunity(context.Background())
+	if st := p.CommunitySnapshot(); !strings.Contains(st.Err, "wasn't accepted") {
+		t.Fatalf("revoked key: %+v", st)
+	}
+}
+
+func TestOverviewShowsTheForum(t *testing.T) {
+	app, site, _, u, _ := setup(t)
+	app.poller.community = &CommunityStatus{URL: "https://community.steadyapp.co.za", At: time.Now(), Counts: map[string]float64{"users_count": 4, "topics_count": 12, "topics_7_days": 3}}
+	c := signIn(t, site, u, time.Now())
+	res, _ := c.Get(site.URL + "/")
+	page := body(t, res)
+	for _, want := range []string{"Community forum", "community.steadyapp.co.za", "12 (3 this week)"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("overview lacks %q", want)
+		}
+	}
+}

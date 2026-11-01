@@ -67,7 +67,14 @@ The fleet route needs Steady 1.0.3 or newer.
    sudo cp fleet/fleet.caddy /opt/shap/deploy/vps/sites/fleet.caddy
    cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
    ```
-5. Add yourself (a name of a-z, 0-9, `.`, `-` or `_`). It asks for a password (14 characters
+5. Once the community forum is up (docs/COMMUNITY.md), its numbers can show on the overview too.
+   `/var/lib/steady-fleet/community.json`, same owner and mode as servers.json:
+   ```json
+   {"url": "https://community.steadyapp.co.za", "statsKey": "<the openworks-stats key>"}
+   ```
+   The fleet view asks the forum every 10 minutes and keeps only the counts (members, active
+   this week, topics, posts), never titles, names or text.
+6. Add yourself (a name of a-z, 0-9, `.`, `-` or `_`). It asks for a password (14 characters
    or more) and prints the key for your authenticator app:
    ```bash
    cd /opt/steady && sudo docker compose -f fleet/compose.yml run --rm fleet adduser <name>

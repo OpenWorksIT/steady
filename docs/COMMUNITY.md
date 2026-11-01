@@ -297,7 +297,8 @@ DISCOURSE_STATS_KEY=<key> python3 community/stats.py
 python3 community/stats.py --key-file /etc/openworks/community-stats.key   # chmod 600
 ```
 
-Keep the key in the fleet view's secrets, never in git. To replace it, make a new one
+Keep the key in the fleet view's secrets, never in git: the fleet view reads the same counts
+itself from `community.json` ([FLEET.md](FLEET.md), step 5), so `stats.py` is for checking by hand. To replace it, make a new one
 (`setup.py --stats-account --new-stats-key` or by hand), then revoke the old one in
 Admin > Advanced > API keys. The community lead can see and revoke it there at any time.
 

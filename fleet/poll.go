@@ -27,10 +27,11 @@ type Status struct {
 }
 
 type Poller struct {
-	store  *Store
-	client *http.Client
-	mu     sync.Mutex
-	last   map[string]*Status // by URL
+	store     *Store
+	client    *http.Client
+	mu        sync.Mutex
+	last      map[string]*Status // by URL
+	community *CommunityStatus   // nil: no community.json
 }
 
 func NewPoller(store *Store) *Poller {
@@ -111,16 +112,21 @@ func (p *Poller) PollAll(ctx context.Context) {
 }
 
 // Run polls now and then every interval until ctx ends.
+// The forum's counts are asked for every tenth time.
 func (p *Poller) Run(ctx context.Context, every time.Duration) {
 	p.PollAll(ctx)
+	p.PollCommunity(ctx)
 	t := time.NewTicker(every)
 	defer t.Stop()
-	for {
+	for n := 1; ; n++ {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 			p.PollAll(ctx)
+			if n%10 == 0 {
+				p.PollCommunity(ctx)
+			}
 		}
 	}
 }

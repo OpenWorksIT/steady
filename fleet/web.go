@@ -258,7 +258,8 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request, s *Session) {
 		rows = append(rows, row)
 	}
 	w.Header().Set("Refresh", "60; url=/?auto=1")
-	a.render(w, "overview.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Rows": rows, "ConfigError": cfgErr, "Counts": counts, "Now": now.Format("15:04")})
+	a.render(w, "overview.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Rows": rows, "ConfigError": cfgErr, "Counts": counts, "Now": now.Format("15:04"),
+		"Community": makeCommunity(a.poller.CommunitySnapshot(), now)})
 }
 
 func (a *App) server(r *http.Request) (*Status, int, bool) {

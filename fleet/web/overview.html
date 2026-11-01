@@ -22,5 +22,11 @@
 <td><a href="/s/{{.Index}}">Open</a></td>
 </tr>{{end}}
 </tbody></table></div>
+{{with .Community}}
+<h2>Community forum</h2>
+<p class="muted">{{.Domain}} · checked {{.Checked}} · numbers only, for the whole forum (Discourse updates them about every 30 minutes)</p>
+{{if .Err}}<p class="error">{{.Err}}</p>{{else}}
+<dl><dt>Members</dt><dd>{{.Members}}</dd><dt>Active this week</dt><dd>{{.Active7d}}</dd><dt>Posted or liked this week</dt><dd>{{.Participating7d}}</dd><dt>Topics</dt><dd>{{.Topics}}</dd><dt>Posts</dt><dd>{{.Posts}}</dd></dl>
+{{end}}{{end}}
 </main>
 {{template "end"}}
