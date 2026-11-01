@@ -37,7 +37,9 @@ routerAdd("GET", "/api/steady/config", (e) => {
     // staff sign in only from devices they've linked with a code by email
     deviceLink: require(`${__hooks}/lib/devices.js`).required(),
     // the newest Android build on this server, so older copies can offer the update
-    app: require(`${__hooks}/lib/dist.js`).appInfo(s.publicDir())
+    app: require(`${__hooks}/lib/dist.js`).appInfo(s.publicDir()),
+    // the Steady community for psychologists (docs/COMMUNITY.md), shown to them in Settings
+    communityUrl: /^https:\/\/[a-z0-9.-]+(\/[^\s"'<>]*)?$/i.test(s.env("STEADY_COMMUNITY_URL", "")) ? s.env("STEADY_COMMUNITY_URL", "") : ""
   });
 });
 

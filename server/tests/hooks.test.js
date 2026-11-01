@@ -1551,3 +1551,13 @@ test("fleet view: a server's state for the monitor key, and check/update/restart
   const weak = makeRuntime({ env: Object.assign({}, ENV, { STEADY_MONITOR_KEY: MON, STEADY_FLEET_KEY: "short", STEADY_CTL_DIR: ctl }) });
   assert.equal(weak.call("POST", "/api/steady/fleet/request", { headers: { "X-Steady-Fleet": "short" }, body: { action: "check" } }).status, 404);
 });
+
+test("config: the community link is passed on only as an https address", () => {
+  const ok = makeRuntime({ env: Object.assign({}, ENV, { STEADY_COMMUNITY_URL: "https://community.steadyapp.co.za" }) });
+  assert.equal(ok.call("GET", "/api/steady/config").data.communityUrl, "https://community.steadyapp.co.za");
+  for (const bad of ["javascript:alert(1)", "http://community.steadyapp.co.za", "https://x.example/\"><script>"]) {
+    const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_COMMUNITY_URL: bad }) });
+    assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "", bad);
+  }
+  assert.equal(makeRuntime({ env: ENV }).call("GET", "/api/steady/config").data.communityUrl, "");
+});
