@@ -46,7 +46,11 @@ class AppConfig {
   /// The practice's look, installed on its server by OpenWorks IT: a tagline, an accent
   /// colour like '#B0690C' and the logo's address on the server ('' when not set: plain Steady).
   final String brandTagline, brandAccent, brandLogo;
+
+  /// The Steady community for psychologists ('' when this server has none).
+  final String communityUrl;
   AppConfig({
+    this.communityUrl = '',
     required this.practiceName,
     required this.crisisNotice,
     required this.consentVersion,
@@ -89,6 +93,7 @@ class AppConfig {
         brandTagline: '${asMap(j['brand'])['tagline'] ?? ''}',
         brandAccent: '${asMap(j['brand'])['accent'] ?? ''}',
         brandLogo: '${asMap(j['brand'])['logo'] ?? ''}',
+        communityUrl: '${j['communityUrl'] ?? ''}'.startsWith('https://') ? '${j['communityUrl']}' : '',
       );
 }
 

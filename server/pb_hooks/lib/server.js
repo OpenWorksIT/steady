@@ -178,6 +178,13 @@ function monitorKeyOk(e) {
   return key.length >= 24 && given.length > 0 && $security.equal(given, key);
 }
 
+/** OpenWorks' fleet view (fleet/): its own key, which reads only the fleet route. */
+function fleetKeyOk(e) {
+  var key = $os.getenv("STEADY_FLEET_KEY") || "";
+  var given = String(e.request.header.get("X-Steady-Fleet") || "");
+  return key.length >= 24 && given.length > 0 && $security.equal(given, key);
+}
+
 /** The master psychologist, OpenWorks support and server admins, or the monitor key.
  *  opts.practiceAdmin: the practice admin may see it too (server health). */
 function requireUpdaterOrMonitor(e, what, opts) {
@@ -568,6 +575,7 @@ module.exports = {
   requireServerAdmin: requireServerAdmin,
   canUpdate: canUpdate,
   monitorKeyOk: monitorKeyOk,
+  fleetKeyOk: fleetKeyOk,
   requireUpdaterOrMonitor: requireUpdaterOrMonitor,
   requireSupportOrMonitor: requireSupportOrMonitor,
   query: query,

@@ -1,0 +1,29 @@
+# Steady fleet view on OpenWorks' own server (vps1), behind the Caddy that already owns ports
+# 80/443 there, on the shared "edge" network. See docs/FLEET.md.
+#   sudo install -d -m 700 -o 65532 -g 65532 /var/lib/steady-fleet
+#   sudo docker compose -f fleet/compose.yml up -d --build
+# SPDX-License-Identifier: AGPL-3.0-or-later
+services:
+  fleet:
+    build: .
+    restart: unless-stopped
+    environment:
+      FLEET_ADDR: ":8080"
+      FLEET_DATA: /data
+      # only Caddy's X-Forwarded-For is believed (its service name on the edge network)
+      FLEET_TRUSTED_PROXY: caddy
+    volumes:
+      - /var/lib/steady-fleet:/data
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "/fleet", "healthz"]
+      interval: 1m
+      timeout: 5s
+
+networks:
+  edge:
+    external: true

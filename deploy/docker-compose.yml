@@ -43,6 +43,8 @@ services:
       STEADY_BRAND_DIR: /pb/brand
       # lets deploy/health.sh and a central dashboard read /api/steady/health
       STEADY_MONITOR_KEY: ${STEADY_MONITOR_KEY:-}
+      STEADY_FLEET_KEY: ${STEADY_FLEET_KEY:-}
+      STEADY_COMMUNITY_URL: ${STEADY_COMMUNITY_URL:-}
       STEADY_CONSENT_VERSION: ${STEADY_CONSENT_VERSION}
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}

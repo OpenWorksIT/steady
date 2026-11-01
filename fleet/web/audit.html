@@ -1,0 +1,10 @@
+{{template "top" "Audit log"}}
+{{template "bar" .}}
+<main>
+<h1>Audit log</h1>
+<p class="muted">Sign-ins and every action, newest first (the last 200).</p>
+<div class="table"><table><thead><tr><th>When (UTC)</th><th>Who</th><th>From</th><th>What</th><th>Detail</th></tr></thead><tbody>
+{{range .Lines}}<tr><td>{{index . "at"}}</td><td>{{index . "who"}}</td><td>{{index . "ip"}}</td><td>{{index . "what"}}</td><td>{{index . "detail"}}</td></tr>{{end}}
+</tbody></table></div>
+</main>
+{{template "end"}}
