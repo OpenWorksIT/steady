@@ -1,0 +1,19 @@
+# The community forum's site for the Caddy on vps1 (copy into its sites folder; docs/COMMUNITY.md).
+# Discourse runs as the container "community" on the edge network.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+community.steadyapp.co.za {
+	reverse_proxy community:80
+	header {
+		-Server
+		X-Robots-Tag "noindex, nofollow"
+	}
+	log {
+		format filter {
+			wrap json
+			fields {
+				request>headers>Cookie delete
+				request>headers>Api-Key delete
+			}
+		}
+	}
+}

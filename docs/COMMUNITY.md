@@ -13,7 +13,8 @@ The kit is in `community/`:
 
 | File | What it is |
 |---|---|
-| `app.yml.example` | The Discourse container settings: address, mail, HTTPS, and the hard rules pinned so no admin can switch them off by accident. |
+| `community.yml.example` | The Discourse container settings: address, mail, and the hard rules pinned so no admin can switch them off by accident. |
+| `community.caddy` | The forum's site for the Caddy in front of it (HTTPS). |
 | `setup.py` | Sets up groups, categories, permissions, site settings and the welcome post through the Discourse API. Safe to run again. |
 | `stats.py` | Prints the forum's activity counts for OpenWorks IT. Numbers only. |
 
@@ -67,71 +68,74 @@ clinical areas. They can't keep out someone who reads the database directly.
 
 ## Server
 
-Discourse's own guidance ([INSTALL-cloud.md](https://github.com/discourse/discourse/blob/main/docs/INSTALL-cloud.md)):
-at least 1 GB RAM with swap, 1 CPU core and 10 GB disk; 2 GB RAM or more, 2 cores and 20 GB disk recommended.
+For now the forum shares **vps1** with Shap, the Steady beta and the fleet view, behind the
+Caddy that already owns ports 80/443 there. Caddy does HTTPS and passes the forum on to the
+Discourse container, `community`, on the shared `edge` Docker network. Discourse publishes
+no ports of its own.
 
-For this forum: **2 vCPU, 2 GB RAM plus 2 GB swap, 40 GB disk, Debian 13**. The extra disk is
-for a week of daily backups and uploads. Host it in South Africa, like the Steady servers.
-One server, one forum. Don't run anything else on it.
+Discourse needs about 1 GB of memory while running and more while rebuilding
+([INSTALL-cloud.md](https://github.com/discourse/discourse/blob/main/docs/INSTALL-cloud.md):
+2 GB RAM, 2 cores and 20 GB disk recommended for a server of its own). Before installing,
+check vps1 has room (`free -h`, `df -h /var`): at least 1.5 GB available memory, 2 GB swap and
+15 GB free disk.
+
+Later the forum can move to a server of its own: restore a backup there (see "Backups") with
+the changes at the top of `community.yml.example`.
 
 ## 1. Before you start
 
-- **DNS**: an A record `community.steadyapp.co.za` pointing at the server's IP address (and an
-  AAAA record if it has IPv6). Let's Encrypt needs this before the first build.
-- **Mailbox**: create `community@steadyapp.co.za` in the steadyapp.co.za cPanel (domains.co.za).
-  It sends through the same mail server as Steady's sign-in codes, so it needs the same SPF,
-  DKIM and DMARC records for steadyapp.co.za ([DEPLOY.md](DEPLOY.md), step 5a). Add those
+- **DNS**: an A record `community.steadyapp.co.za` pointing at vps1 (102.206.117.135).
+- **Mail**: the forum sends from `noreply@steadyapp.co.za`, the mailbox that already sends
+  Steady's sign-in codes. Invitations, password resets and notifications come from it. Sign-in
+  codes on the forum come from each person's authenticator app, not email. It needs the SPF,
+  DKIM and DMARC records for steadyapp.co.za ([DEPLOY.md](DEPLOY.md), step 5a): add those
   first, or invitations land in spam.
 - **The Steady repository** on your own computer, for `community/`.
 
 ## 2. Prepare the server
 
-As root (or with sudo) on the new VPS:
+Check the name of the Docker network Caddy is on (the fleet view uses the same one):
 
 ```bash
-apt update && apt full-upgrade -y
-apt install -y git curl ufw unattended-upgrades
-
-# Firewall: SSH, HTTP and HTTPS only
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw enable
-
-# 2 GB swap (Discourse needs it on 2 GB RAM, above all while rebuilding)
-fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
-
-# Automatic security updates
-dpkg-reconfigure -plow unattended-upgrades
-
-# Docker (the same script Discourse's own installer uses)
-curl -fsSL https://get.docker.com | sh
+docker inspect shap-caddy-1 -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
 ```
 
-Also do the hardening from [DEPLOY.md](DEPLOY.md), step 6, that applies here: SSH with keys
-only and an encrypted disk if the provider offers it. Docker opens
-the ports it publishes (80 and 443) itself, so keep ufw for everything else.
+If it isn't `edge`, change `--network edge` in `community.yml` to that name.
+
+Swap, if vps1 has none yet (`swapon --show` prints nothing):
+
+```bash
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
 
 ## 3. Install Discourse
 
 ```bash
-git clone https://github.com/discourse/discourse_docker.git /var/discourse
+sudo git clone https://github.com/discourse/discourse_docker.git /var/discourse
 ```
 
-From your own computer, copy the settings file across:
+From your own computer, copy the settings file across. Its name becomes the container's name,
+so it must be `community.yml` (`app` is already Shap's on the edge network):
 
 ```bash
-scp community/app.yml.example root@community.steadyapp.co.za:/var/discourse/containers/app.yml
+scp community/community.yml.example vps1:/tmp/community.yml
 ```
 
-On the server:
+On vps1:
 
 ```bash
 cd /var/discourse
-chmod 600 containers/app.yml
-nano containers/app.yml       # put the mailbox password in DISCOURSE_SMTP_PASSWORD
-./launcher rebuild app        # 10 to 15 minutes the first time
+sudo install -m 600 /tmp/community.yml containers/community.yml && rm /tmp/community.yml
+sudo nano containers/community.yml       # the noreply mailbox password in DISCOURSE_SMTP_PASSWORD
+sudo ./launcher rebuild community        # 10 to 15 minutes the first time
+```
+
+Then Caddy's site for it:
+
+```bash
+sudo cp /opt/steady/community/community.caddy /opt/shap/deploy/vps/sites/community.caddy
+cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
 Check `https://community.steadyapp.co.za` shows a sign-in page with a padlock. It shows only
@@ -140,9 +144,12 @@ Check `https://community.steadyapp.co.za` shows a sign-in page with a padlock. I
 **Mail port.** The file uses port 465 (SSL from the start). For port 587 with STARTTLS, change
 it as the comment in the file says, then rebuild.
 
-**Pinned settings.** The lines under "Hard rules, pinned" in `app.yml` fix those settings and
-hide them from the admin pages. To change one, edit `app.yml` and run `./launcher rebuild app`.
-That needs root on the server, which is the point.
+**Pinned settings.** The lines under "Hard rules, pinned" in `community.yml` fix those settings
+and hide them from the admin pages. To change one, edit `community.yml` and run
+`./launcher rebuild community`. That needs root on the server, which is the point.
+
+**Real addresses.** Caddy passes each visitor's address on, and the forum believes it only from
+Docker's private networks, so its sign-in limits count visitors, not Caddy.
 
 ## 4. Create the first admin
 
@@ -150,7 +157,7 @@ OpenWorks IT creates the first admin account, on the server, for the setup only:
 
 ```bash
 cd /var/discourse
-./launcher enter app
+./launcher enter community
 rake admin:create            # an OpenWorks address, a long password; answer Y to "grant Admin"
 exit
 ```
@@ -194,7 +201,7 @@ It:
   "Activity counts for OpenWorks")
 
 Run it again any time. It changes only what differs. Lines marked `WRONG` need fixing in
-`app.yml`. To add a practice's private group and category at the same time, add
+`community.yml`. To add a practice's private group and category at the same time, add
 `--practice vr="VR Clinical Psychology"`.
 
 ## 6. Invite the psychologists
@@ -336,7 +343,7 @@ Test a restore at least once, on a spare server set up the same way:
 
 ```bash
 age -d -i backup-key.txt <file>.tar.gz.age > /var/discourse/shared/standalone/backups/default/<file>.tar.gz
-cd /var/discourse && ./launcher enter app
+cd /var/discourse && ./launcher enter community
 discourse enable_restore
 discourse restore <file>.tar.gz
 discourse disable_restore
@@ -348,7 +355,7 @@ exit
 ```bash
 cd /var/discourse
 git pull
-./launcher rebuild app
+./launcher rebuild community
 ```
 
 Do it monthly, and soon after Discourse announces a security release (admins get an email).
@@ -365,16 +372,17 @@ update Discourse from the browser between rebuilds. Debian keeps itself patched 
   (Admin > Users > their account), after checking it's really them (for example by phone).
   They set it up again at their next sign-in.
 - If the only admin is locked out, OpenWorks can do it on the server:
-  `./launcher enter app`, then `rake "users:disable_2fa[<username>]"`.
+  `./launcher enter community`, then `rake "users:disable_2fa[<username>]"`.
 - Passkeys are switched off (pinned), so every sign-in is password plus authenticator code.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
-| No invitation or notification emails | `./launcher logs app`. Port 465 needs `DISCOURSE_SMTP_FORCE_TLS: true`; 587 needs STARTTLS and no FORCE_TLS. Keep the password in quotes. Admin > Emails > Logs shows what was sent. |
-| No HTTPS certificate | DNS must point at the server, and port 80 must be open, before `./launcher rebuild app`. |
+| No invitation or notification emails | `./launcher logs community`. Port 465 needs `DISCOURSE_SMTP_FORCE_TLS: true`; 587 needs STARTTLS and no FORCE_TLS. Keep the password in quotes. Admin > Emails > Logs shows what was sent. |
+| No HTTPS certificate | DNS must point at vps1; then `docker compose logs caddy` in /opt/shap/deploy/vps. |
+| 502 from Caddy | The `community` container isn't running (`sudo ./launcher start community`) or isn't on Caddy's network (step 2). |
 | Rebuild stops with out-of-memory errors | Check swap is on (`swapon --show`). |
-| A setting can't be changed in Admin | It is pinned in `app.yml`. Change it there and rebuild. |
+| A setting can't be changed in Admin | It is pinned in `community.yml`. Change it there and rebuild. |
 | `setup.py` says HTTP 403 | Wrong key or username, or the key isn't Global, or it was revoked. |
 | `stats.py` says the key was refused | The key was revoked, or the `openworks-stats` account was suspended or deleted. |
