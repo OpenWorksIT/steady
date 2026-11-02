@@ -88,7 +88,9 @@ class _StaffLockState extends State<StaffLock> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState s) {
     if (s == AppLifecycleState.inactive && !_prompting && !_covered) setState(() => _covered = true);
     if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
-      if (!_prompting) _away ??= DateTime.now();
+      // counted during a screen-lock prompt too: the prompt itself takes seconds, but someone
+      // who leaves the app while it's open must still find it locked when they come back
+      _away ??= DateTime.now();
     } else if (s == AppLifecycleState.resumed) {
       if (_covered) setState(() => _covered = false);
       final away = _away;
