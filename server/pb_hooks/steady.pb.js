@@ -195,7 +195,8 @@ routerAdd("GET", "/api/steady/overview", (e) => {
   // most in need of attention first: the most serious unreviewed flag or the RADR level, then
   // the most recent, then the name; patients marked stable at the bottom (core.attention)
   s.core.sortByAttention(out);
-  s.audit($app, e, "patients.overview", "count:" + out.length, "");
+  // a look at every patient on it (once a day each), written before the answer goes out
+  s.auditOverview($app, e, out.map((row) => row.id));
   return e.json(200, { patients: out, generatedAt: s.nowMs() });
 }, $apis.requireAuth());
 
@@ -204,7 +205,7 @@ routerAdd("GET", "/api/steady/patients/{id}/summary", (e) => {
   s.requireRole(e, "clinician");
   const v = s.viewablePatient($app, e.auth.id, e.request.pathValue("id"));
   const p = v.patient;
-  s.audit($app, e, "patient.summary", "user:" + p.id + (v.own ? "" : " shared"), p.id);
+  s.audit($app, e, "patient.summary", "user:" + p.id + (v.own ? "" : " shared"), p.id, true);
   const out = s.patientSummary($app, p, e.auth.getInt("tzOffset"));
   if (!v.own) { out.shared = true; out.owner = s.clinicianName($app, p.getString("clinician"), {}); }
   return e.json(200, out);
@@ -531,6 +532,8 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
 
 // kind "privacy": anyone acknowledges the privacy notice shown on first launch.
 // kind "wearable": a patient agrees (or stops agreeing) to share watch data.
+// kind "consent": a patient agrees to the practice's consent statement as it stands now (the
+// practice changed it after they joined); only the current version can be agreed to.
 routerAdd("POST", "/api/steady/consent", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   if (!e.auth) throw new UnauthorizedError("Please sign in.");
@@ -552,13 +555,20 @@ routerAdd("POST", "/api/steady/consent", (e) => {
       user.set("wearableConsentAt", "");
       user.set("wearableConsentVersion", "");
     }
+  } else if (b.kind === "consent") {
+    if (user.getString("role") !== "patient") throw s.badRequest("Only patients agree to the practice's consent statement.");
+    if (version !== require(`${__hooks}/lib/brand.js`).consent().version) {
+      throw s.badRequest("The consent statement has changed again. Close Steady, open it again and read the new one.");
+    }
+    user.set("consentAt", new DateTime());
+    user.set("consentVersion", version);
   } else {
-    throw s.badRequest("kind must be 'privacy' or 'wearable'.");
+    throw s.badRequest("kind must be 'privacy', 'wearable' or 'consent'.");
   }
   $app.save(user);
-  s.audit($app, e, "consent." + b.kind + (b.kind === "wearable" && b.accepted !== true ? ".withdrawn" : ""), "version:" + version,
-    user.getString("role") === "patient" ? user.id : "");
-  return e.json(200, { kind: b.kind, version: version, accepted: b.kind === "privacy" || b.accepted === true });
+  const what = b.kind === "consent" ? "statement" : b.kind + (b.kind === "wearable" && b.accepted !== true ? ".withdrawn" : "");
+  s.audit($app, e, "consent." + what, "version:" + version, user.getString("role") === "patient" ? user.id : "");
+  return e.json(200, { kind: b.kind, version: version, accepted: b.kind !== "wearable" || b.accepted === true });
 }, $apis.requireAuth());
 
 /* =====================================================================
@@ -630,7 +640,7 @@ routerAdd("GET", "/api/steady/patients/{id}/biometrics", (e) => {
   const byDay = {};
   recs.forEach((r) => { byDay[r.getString("day")] = s.readJson(r, "values") || {}; });
   const days = Object.keys(byDay).filter((d) => d >= from && d <= to).sort().map((d) => ({ day: d, values: byDay[d] }));
-  s.audit($app, e, "patient.biometrics", "user:" + p.id + " " + from + ".." + to, p.id);
+  s.audit($app, e, "patient.biometrics", "user:" + p.id + " " + from + ".." + to, p.id, true);
   return e.json(200, {
     from: from,
     to: to,
@@ -728,6 +738,7 @@ onRecordAfterCreateSuccess((e) => {
 // Access logging: record each time a clinician reads patient data. Written from the records
 // actually returned (one row per patient), before the answer goes out, and if a row can't be
 // written the read is refused: the filter's text is never trusted to say whose data it was.
+// Notifications count: a psychologist's carry the patient's name and mood and anxiety ratings.
 onRecordsListRequest((e) => {
   if (e.auth && e.auth.getString("role") === "clinician") {
     const s = require(`${__hooks}/lib/server.js`);
@@ -744,7 +755,7 @@ onRecordsListRequest((e) => {
     ids.forEach((p) => s.audit(e.app, e, "list." + e.collection.name, (target ? target + " " : "") + "rows:" + seen[p], p, true));
   }
   e.next();
-}, "checkins", "assignments", "biometrics");
+}, "checkins", "assignments", "biometrics", "notifications");
 
 onRecordViewRequest((e) => {
   if (e.auth && e.auth.getString("role") === "clinician") {
@@ -752,7 +763,7 @@ onRecordViewRequest((e) => {
     s.audit(e.app, e, "view." + e.collection.name, e.collection.name + ":" + e.record.id, e.record.getString("patient"), true);
   }
   e.next();
-}, "checkins", "assignments", "biometrics");
+}, "checkins", "assignments", "biometrics", "notifications");
 
 // Live updates carry the same records: each one a clinician receives is logged too.
 onRecordEnrich((e) => {
@@ -763,7 +774,7 @@ onRecordEnrich((e) => {
     s.audit(e.app, { auth: auth }, "live." + e.record.collection().name, e.record.collection().name + ":" + e.record.id, e.record.getString("patient"), true);
   }
   e.next();
-}, "checkins", "assignments", "biometrics");
+}, "checkins", "assignments", "biometrics", "notifications");
 
 /* ---------- accounts and devices ---------- */
 

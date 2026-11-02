@@ -19,7 +19,7 @@ routerAdd("GET", "/api/steady/patients/{id}/radr", (e) => {
   const to = w.localDay(s.nowMs(), tz);
   const from = R.addDays(to, -(days - 1));
   const out = require(`${__hooks}/lib/radr_data.js`).forPatient($app, p, from, to);
-  s.audit($app, e, "patient.radr", "user:" + p.id + " " + from + ".." + to + (v.own ? "" : " shared"), p.id);
+  s.audit($app, e, "patient.radr", "user:" + p.id + " " + from + ".." + to + (v.own ? "" : " shared"), p.id, true);
   return e.json(200, out);
 }, $apis.requireAuth());
 

@@ -454,6 +454,11 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   assert.equal(p0.mood.length, 14);
   assert.equal(p0.mood[13], 2);
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "patients.overview"));
+  // a row for each patient on the overview, once a day: opening it again adds none
+  const ovRows = () => rt.store.auditlog.filter((a) => a.getString("action") === "patients.overview" && a.getString("patientRef") === pat.id).length;
+  assert.equal(ovRows(), 1);
+  rt.call("GET", "/api/steady/overview", { auth: doc });
+  assert.equal(ovRows(), 1, "the same day: no second row");
 
   // patient can't see the overview; other clinician can't see the patient
   assert.equal(rt.call("GET", "/api/steady/overview", { auth: pat }).status, 403);
@@ -683,6 +688,15 @@ test("security: clinician reads of watch data are audited", () => {
   rt.app.save = save;
   assert.equal(refused, 500);
   assert.equal(shown, false);
+  // a psychologist's notifications carry the patient's name and ratings: their reads count too
+  assert.equal(typeof rt.hooks.list.notifications, "function");
+  before = rt.store.auditlog.length;
+  let sentN = false;
+  rt.hooks.list.notifications({ auth: doc, app: rt.app, collection: { name: "notifications" }, records: [row(p2.id)], realIP: () => "127.0.0.1",
+    requestInfo: () => ({ query: {} }), next() { sentN = true; } });
+  assert.ok(sentN);
+  const nrows = rt.store.auditlog.slice(before);
+  assert.deepEqual(nrows.map((r) => [r.getString("action"), r.getString("patient")]), [["list.notifications", p2.id]]);
 });
 
 test("names: the psychologist can rename a patient on their own screens only", () => {
@@ -812,6 +826,16 @@ test("consent: the practice's own statement from its brand folder; Steady's draf
   // placeholders left in the practice's statement still count as a draft
   fs.writeFileSync(path.join(dir, "consent.md"), "Contact\n[Practice name, Information Officer, email, phone]");
   assert.equal(rt.call("GET", "/api/steady/config").data.consentDraft, true);
+  // a patient who joined under an earlier statement agrees to the current one (the app asks)
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: doc.id, email: "p@example.org", consentVersion: "draft-1" });
+  const now = rt.call("GET", "/api/steady/config").data.consentVersion;
+  assert.notEqual(pat.getString("consentVersion"), now);
+  assert.equal(rt.call("POST", "/api/steady/consent", { auth: pat, body: { kind: "consent", version: "draft-1" } }).status, 400, "only the current one");
+  assert.equal(rt.call("POST", "/api/steady/consent", { auth: doc, body: { kind: "consent", version: now } }).status, 400, "patients only");
+  assert.equal(rt.call("POST", "/api/steady/consent", { auth: pat, body: { kind: "consent", version: now } }).status, 200);
+  assert.equal(rt.app.findRecordById("users", pat.id).getString("consentVersion"), now);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "consent.statement" && a.getString("patient") === pat.id));
 });
 
 test("signing out ends the session on the server; the relay can only remove the devices it was sent", () => {

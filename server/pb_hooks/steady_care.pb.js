@@ -17,7 +17,7 @@ routerAdd("GET", "/api/steady/patients/{id}/notes", (e) => {
   const notes = $app.findRecordsByFilter("notes", "patient = {:p}", "-created", 500, 0, { p: p.id }).map((n) => ({
     id: n.id, text: n.getString("text"), by: n.getString("authorName"), at: s.toMs(n, "created")
   }));
-  s.audit($app, e, "patient.notes", "user:" + p.id + (v.own ? "" : " shared"), p.id);
+  s.audit($app, e, "patient.notes", "user:" + p.id + (v.own ? "" : " shared"), p.id, true);
   return e.json(200, { notes: notes });
 }, $apis.requireAuth());
 

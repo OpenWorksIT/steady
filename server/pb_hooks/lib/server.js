@@ -241,6 +241,34 @@ function audit(app, e, action, target, patientId, strict) {
   }
 }
 
+/**
+ * The patient overview shows each patient's latest check-in, flags and scores: a look at each
+ * of them. Written once a day per psychologist and patient (the overview opens many times a
+ * day), before the answer goes out; which ones are already written today is remembered in
+ * memory, so a restart costs at most one more row per patient.
+ */
+function auditOverview(app, e, patientIds) {
+  var day = new Date(nowMs()).toISOString().slice(0, 10);
+  var key = "steady.overview." + (e && e.auth ? e.auth.id : "");
+  var seen = {};
+  var mem = null;
+  try { mem = app.store(); } catch (err) { mem = null; }
+  if (mem) {
+    try {
+      var prev = JSON.parse(String(mem.get(key) || "{}"));
+      if (prev && prev.d === day && prev.ids) seen = prev.ids;
+    } catch (err) { seen = {}; }
+  }
+  var todo = (patientIds || []).filter(function (id) { return id && !seen[id]; });
+  if (!(patientIds || []).length) audit(app, e, "patients.overview", "count:0", "", true);
+  if (!todo.length) return;
+  app.runInTransaction(function (tx) {
+    todo.forEach(function (id) { audit(tx, e, "patients.overview", "daily", id, true); });
+  });
+  todo.forEach(function (id) { seen[id] = 1; });
+  if (mem) mem.set(key, JSON.stringify({ d: day, ids: seen }));
+}
+
 /* ---------- invites ---------- */
 
 /** A new 8-character invite for clinicianId, valid for 7 days. */
@@ -615,6 +643,7 @@ module.exports = {
   createInvite: createInvite,
   env: env,
   audit: audit,
+  auditOverview: auditOverview,
   ownPatient: ownPatient,
   displayName: displayName,
   instrumentDef: instrumentDef,

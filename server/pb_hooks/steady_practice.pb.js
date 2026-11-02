@@ -648,7 +648,7 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
   const joined = s.toMs(p, "created");
   const span = r.range(q, 3660, Math.ceil((s.nowMs() - joined) / s.core.DAY) + 1);
   const rec = r.patientRecord($app, p, span[0], span[1], { answers: true, radr: true, clinical: true });
-  s.audit($app, e, "patient.export", "user:" + p.id + " " + rec.from.slice(0, 10) + ".." + rec.to.slice(0, 10), p.id);
+  s.audit($app, e, "patient.export", "user:" + p.id + " " + rec.from.slice(0, 10) + ".." + rec.to.slice(0, 10), p.id, true);
   return e.json(200, {
     practice: require(`${__hooks}/lib/brand.js`).current().name,
     clinician: e.auth.getString("name"),
@@ -682,7 +682,7 @@ routerAdd("POST", "/api/steady/patients/{id}/heidi-export", (e) => {
   const mark = { at: s.nowMs(), from: String(b.from), to: String(b.to), part: part, by: e.auth.getString("name"), radr: require(`${__hooks}/lib/radr.js`).VERSION };
   p.set("lastHeidiExport", mark);
   $app.unsafeWithoutHooks().save(p);
-  s.audit($app, e, "patient.export.heidi", "user:" + p.id + " " + mark.from + ".." + mark.to + " part:" + part, p.id);
+  s.audit($app, e, "patient.export.heidi", "user:" + p.id + " " + mark.from + ".." + mark.to + " part:" + part, p.id, true);
   return e.json(200, mark);
 }, $apis.requireAuth());
 
@@ -706,7 +706,11 @@ routerAdd("GET", "/api/steady/export", (e) => {
   // (each patient's own export still has it)
   const radr = list.length <= EXPORT_RADR;
   const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true, radr: radr, clinical: true }));
-  s.audit($app, e, "patients.export", "count:" + out.length, "");
+  // one row per patient in it: an export of everyone is a look at each of them
+  if (!list.length) s.audit($app, e, "patients.export", "count:0", "", true);
+  $app.runInTransaction((tx) => {
+    list.forEach((p) => s.audit(tx, e, "patients.export", "count:" + out.length, p.id, true));
+  });
   return e.json(200, {
     practice: require(`${__hooks}/lib/brand.js`).current().name,
     clinician: e.auth.getString("name"),
@@ -738,7 +742,7 @@ routerAdd("GET", "/api/steady/integration/patients/{id}/feed", (e) => {
   const p = s.ownPatient($app, c.id, e.request.pathValue("id"));
   const span = r.range(e.requestInfo().query || {}, 400, 28);
   const feed = r.patientRecord($app, p, span[0], span[1], { answers: false });
-  s.audit($app, { auth: null, realIP: () => e.realIP() }, "integration.feed", "clinician:" + c.id + " " + feed.from.slice(0, 10) + ".." + feed.to.slice(0, 10), p.id);
+  s.audit($app, { auth: null, realIP: () => e.realIP() }, "integration.feed", "clinician:" + c.id + " " + feed.from.slice(0, 10) + ".." + feed.to.slice(0, 10), p.id, true);
   return e.json(200, feed);
 });
 
