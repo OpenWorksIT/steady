@@ -28,8 +28,9 @@ type App struct {
 	limiter  *Limiter
 	pages    *template.Template
 	now      func() time.Time
-	// at most two slow password checks at a time, whatever arrives
-	hashing chan struct{}
+	// at most two slow password checks at a time, whatever arrives; the rest wait hashWait
+	hashing  chan struct{}
+	hashWait time.Duration
 	// the reverse proxy (Caddy) whose X-Forwarded-For is believed: a host name or an address;
 	// "" = believe nobody and use the connection's own address
 	proxy     string
@@ -43,7 +44,7 @@ type App struct {
 func NewApp(store *Store, poller *Poller, trustedProxy string) *App {
 	t := template.Must(template.New("").ParseFS(webFS, "web/*.html"))
 	return &App{store: store, poller: poller, sessions: NewSessions(), limiter: NewLimiter(), pages: t, now: time.Now,
-		hashing: make(chan struct{}, 2), proxy: trustedProxy}
+		hashing: make(chan struct{}, 2), hashWait: 10 * time.Second, proxy: trustedProxy}
 }
 
 func (a *App) Routes() http.Handler {
@@ -160,7 +161,9 @@ func (a *App) signedIn(h handler) http.HandlerFunc {
 			return
 		}
 		if r.Method != "GET" {
-			if r.Header.Get("Sec-Fetch-Site") == "cross-site" ||
+			// forms come only from this site's own pages (browsers say same-origin; none is
+			// typed or bookmarked; old browsers send nothing): not from a sibling subdomain
+			if sfs := r.Header.Get("Sec-Fetch-Site"); (sfs != "" && sfs != "same-origin" && sfs != "none") ||
 				subtle.ConstantTimeCompare([]byte(r.PostFormValue("csrf")), []byte(s.CSRF)) != 1 {
 				http.Error(w, "This form has expired: go back, reload and try again.", http.StatusForbidden)
 				return
@@ -200,7 +203,15 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		a.refuse(w, http.StatusTooManyRequests, "Too many wrong codes for this name. Wait 15 minutes.")
 		return
 	}
-	a.hashing <- struct{}{}
+	// a burst waits its turn here, but not for ever: each waiting request holds a connection
+	select {
+	case a.hashing <- struct{}{}:
+	case <-r.Context().Done():
+		return
+	case <-time.After(a.hashWait):
+		a.refuse(w, http.StatusServiceUnavailable, "Busy: try again in a minute.")
+		return
+	}
 	// a burst that queued here: check again now that it's this request's turn
 	if a.limiter.Blocked(userKey, failsPerUser, now) {
 		<-a.hashing

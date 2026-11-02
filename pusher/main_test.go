@@ -25,8 +25,10 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // decryptAes128gcm is an independent receiver-side implementation of RFC 8291/8188.
@@ -250,6 +252,9 @@ func TestPublicOnlyClientRefusesPrivateAddresses(t *testing.T) {
 		"127.0.0.1": false, "10.1.2.3": false, "172.18.0.4": false, "192.168.1.10": false,
 		"169.254.169.254": false, "100.64.1.1": false, "::1": false, "fd00::1": false, "0.0.0.0": false,
 		"::ffff:127.0.0.1": false, "1.1.1.1": true, "8.8.8.8": true, "2606:4700::1111": true,
+		"0.1.2.3": false, "::7f00:1": false, "64:ff9b::7f00:1": false, "64:ff9b::a00:1": false,
+		"64:ff9b::808:808": true, "2002:7f00:1::1": false, "2002:a9fe:a9fe::1": false, "2002:808:808::1": true,
+		"2001:0:4136:e378::1": false, "100::1": false, "fec0::1": false, "fe80::1": false,
 	} {
 		if got := isPublicAddr(netip.MustParseAddr(addr)); got != want {
 			t.Errorf("isPublicAddr(%s) = %v, want %v", addr, got, want)
@@ -265,4 +270,46 @@ func TestPublicOnlyClientRefusesPrivateAddresses(t *testing.T) {
 		t.Fatalf("allowPrivate should connect: %v", err)
 	}
 	res.Body.Close()
+}
+
+// One stalling device server must not hold up the others, or the answer the server waits for.
+type stallSender struct{}
+
+func (stallSender) Send(ctx context.Context, t Target, m Message) (Outcome, error) {
+	if t.Token == "stall" {
+		<-ctx.Done()
+		return Failed, ctx.Err()
+	}
+	return Delivered, nil
+}
+
+func TestSendDoesNotWaitForAStallingDevice(t *testing.T) {
+	s := &Server{Secret: "secret-secret-secret-secret", Providers: map[string]Sender{"unifiedpush": stallSender{}}}
+	ts := httptest.NewServer(s.routes())
+	defer ts.Close()
+	targets := []string{}
+	for i := 0; i < maxTargets; i++ {
+		tok := "ok"
+		if i%5 == 0 {
+			tok = "stall"
+		}
+		targets = append(targets, `{"id":"d`+strconv.Itoa(i)+`","provider":"unifiedpush","token":"`+tok+`"}`)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/send", strings.NewReader(`{"title":"Steady","body":"x","targets":[`+strings.Join(targets, ",")+`]}`))
+	req.Header.Set("Authorization", "Bearer "+s.Secret)
+	start := time.Now()
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out sendResponse
+	json.NewDecoder(res.Body).Decode(&out)
+	took := time.Since(start)
+	if took > perRequest+time.Second {
+		t.Fatalf("took %v: the server waits 10s", took)
+	}
+	if out.Sent != 40 || out.Failed != 10 {
+		t.Fatalf("unexpected %+v after %v", out, took)
+	}
 }

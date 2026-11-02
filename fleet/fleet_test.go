@@ -534,3 +534,59 @@ func TestOverviewShowsTheForum(t *testing.T) {
 		}
 	}
 }
+
+func TestFormsOnlyFromThisSite(t *testing.T) {
+	_, site, steady, u, _ := setup(t)
+	c := signIn(t, site, u, time.Now())
+	res, _ := c.Get(site.URL + "/s/0")
+	page := body(t, res)
+	i := strings.Index(page, `name="csrf" value="`)
+	csrf := page[i+len(`name="csrf" value="`):]
+	csrf = csrf[:strings.Index(csrf, `"`)]
+	post := func(site_ string) int {
+		req, _ := http.NewRequest("POST", site.URL+"/s/0/action", strings.NewReader(url.Values{"csrf": {csrf}, "action": {"check"}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if site_ != "" {
+			req.Header.Set("Sec-Fetch-Site", site_)
+		}
+		res, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body(t, res)
+		return res.StatusCode
+	}
+	// a sibling subdomain (same-site) or another site: refused even with the right token
+	for _, s := range []string{"same-site", "cross-site"} {
+		if got := post(s); got != 403 {
+			t.Fatalf("%s: %d", s, got)
+		}
+	}
+	for _, s := range []string{"same-origin", ""} {
+		if got := post(s); got != http.StatusSeeOther {
+			t.Fatalf("%q: %d", s, got)
+		}
+	}
+	steady.mu.Lock()
+	got := strings.Join(steady.requests, ",")
+	steady.mu.Unlock()
+	if got != "check,check" {
+		t.Fatalf("requests sent: %q", got)
+	}
+}
+
+func TestSignInQueueGivesUp(t *testing.T) {
+	app, _, _, _, _ := setup(t)
+	app.hashWait = 50 * time.Millisecond
+	app.hashing <- struct{}{}
+	app.hashing <- struct{}{}
+	defer func() { <-app.hashing; <-app.hashing }()
+	req := httptest.NewRequest("POST", "/login", strings.NewReader("name=jane&password=x&code=1"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	start := time.Now()
+	app.Routes().ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable || time.Since(start) > 2*time.Second {
+		t.Fatalf("busy: %d after %v", w.Code, time.Since(start))
+	}
+}

@@ -56,7 +56,8 @@ func (p *Poller) fetch(ctx context.Context, sv Server) *Status {
 		return st
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	// a server's status is a few kilobytes
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 256<<10))
 	if res.StatusCode == 404 {
 		st.Err = "the server doesn't know this fleet key (or runs a Steady older than 1.0.3)"
 		return st
