@@ -1,7 +1,8 @@
 # OpenWorks' own server (vps3): the Caddy in front of the fleet view (fleet/) and the community
 # forum (community/). It owns ports 80/443, gets the certificates, and passes each site on over
-# the "edge" Docker network. The sites come straight from the repository, so a git pull
-# updates them. See docs/OPS-SERVER.md.
+# a Docker network of that site's own (fleet-edge, community-edge): only Caddy is on both, so
+# the forum and the fleet view can't reach each other. The sites come straight from the
+# repository, so a git pull updates them. See docs/OPS-SERVER.md.
 #   cd /opt/steady && sudo docker compose -f ops/compose.yml up -d
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: ops
@@ -27,13 +28,16 @@ services:
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
     security_opt: [no-new-privileges:true]
-    networks: [edge]
+    networks: [fleet, community]
 
 volumes:
   caddy_data:
   caddy_config:
 
 networks:
-  edge:
-    # a fixed name, so the fleet view and the forum (other compose files) can join it
-    name: edge
+  # fixed names, so the fleet view (fleet/compose.yml) and the forum (Discourse's launcher,
+  # community/community.yml.example) can join theirs
+  fleet:
+    name: fleet-edge
+  community:
+    name: community-edge

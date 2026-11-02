@@ -1,5 +1,6 @@
 # Steady fleet view on OpenWorks' own server (vps3), behind the Caddy in ops/compose.yml, on the
-# shared "edge" network. See docs/FLEET.md and docs/OPS-SERVER.md.
+# fleet-edge network (only it and Caddy; the forum is on a network of its own). See
+# docs/FLEET.md and docs/OPS-SERVER.md.
 #   sudo install -d -m 700 -o 65532 -g 65532 /var/lib/steady-fleet
 #   sudo docker compose -f fleet/compose.yml up -d --build
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -10,7 +11,7 @@ services:
     environment:
       FLEET_ADDR: ":8080"
       FLEET_DATA: /data
-      # only Caddy's X-Forwarded-For is believed (its service name on the edge network)
+      # only Caddy's X-Forwarded-For is believed (its service name on fleet-edge)
       FLEET_TRUSTED_PROXY: caddy
     volumes:
       - /var/lib/steady-fleet:/data
@@ -26,4 +27,5 @@ services:
 
 networks:
   edge:
+    name: fleet-edge
     external: true

@@ -57,9 +57,9 @@ The fleet route needs Steady 1.0.3 or newer.
    ```
    Then `sudo chown 65532:65532 /var/lib/steady-fleet/servers.json && sudo chmod 600 /var/lib/steady-fleet/servers.json`.
    Changes are picked up within a minute; no restart needed.
-4. Start it. It joins the `edge` network that `ops/compose.yml` made, and that Caddy
-   already has its site (`fleet/fleet.caddy`). `compose.yml` sets
-   `FLEET_TRUSTED_PROXY: caddy`, Caddy's name on that network: only its `X-Forwarded-For` is
+4. Start it. It joins the `fleet-edge` network that `ops/compose.yml` made (only it and
+   Caddy are on it), and that Caddy already has its site (`fleet/fleet.caddy`). `compose.yml`
+   sets `FLEET_TRUSTED_PROXY: caddy`, Caddy's name on that network: only its `X-Forwarded-For` is
    believed, so nobody else can pretend to be a new address on every try.
    ```bash
    cd /opt/steady && sudo docker compose -f fleet/compose.yml up -d --build

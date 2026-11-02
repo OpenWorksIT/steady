@@ -70,8 +70,10 @@ clinical areas. They can't keep out someone who reads the database directly.
 
 The forum runs on OpenWorks' own server, **vps3**, next to the fleet view and nothing else
 ([OPS-SERVER.md](OPS-SERVER.md): the server, hardening and the Caddy in front). Caddy does
-HTTPS and passes the forum on to the Discourse container, `community`, on the `edge` Docker
-network. Discourse publishes no ports of its own.
+HTTPS and passes the forum on to the Discourse container, `community`, on the `community-edge`
+Docker network, which only Caddy shares (the fleet view has a network of its own). Discourse
+publishes no ports of its own, and its Redis answers only inside the container
+(`community.yml`).
 
 Discourse needs about 1 GB of memory while running and more while rebuilding
 ([INSTALL-cloud.md](https://github.com/discourse/discourse/blob/main/docs/INSTALL-cloud.md)).
@@ -90,7 +92,7 @@ vps3 has 4 GB and 2 GB of swap.
 
 ## 2. Nothing more to prepare
 
-Caddy, the `edge` network and swap are already there from OPS-SERVER.md.
+Caddy, the `community-edge` network and swap are already there from OPS-SERVER.md.
 
 ## 3. Install Discourse
 
@@ -353,7 +355,7 @@ update Discourse from the browser between rebuilds. Debian keeps itself patched 
 |---|---|
 | No invitation or notification emails | `./launcher logs community`. Port 465 needs `DISCOURSE_SMTP_FORCE_TLS: true`; 587 needs STARTTLS and no FORCE_TLS. Keep the password in quotes. Admin > Emails > Logs shows what was sent. |
 | No HTTPS certificate | DNS must point at vps3; then `docker compose -f ops/compose.yml logs caddy` in /opt/steady. |
-| 502 from Caddy | The `community` container isn't running (`sudo ./launcher start community`), or isn't on the `edge` network (`docker network inspect edge`). |
+| 502 from Caddy | The `community` container isn't running (`sudo ./launcher start community`), or isn't on the `community-edge` network (`docker network inspect community-edge`). |
 | Rebuild stops with out-of-memory errors | Check swap is on (`swapon --show`). |
 | A setting can't be changed in Admin | It is pinned in `community.yml`. Change it there and rebuild. |
 | `setup.py` says HTTP 403 | Wrong key or username, or the key isn't Global, or it was revoked. |

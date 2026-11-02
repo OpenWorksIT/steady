@@ -6,13 +6,15 @@ A server of its own for the two things that are OpenWorks IT's rather than a pra
 - the **community forum** at community.steadyapp.co.za ([COMMUNITY.md](COMMUNITY.md))
 
 Nothing else runs on it: no Steady practice server, no Shap. A Caddy (`ops/compose.yml`) owns
-ports 80/443, gets the certificates, and passes each site on over a Docker network called
-`edge`. Each site's Caddy file lives next to its code (`fleet/fleet.caddy`,
-`community/community.caddy`), so a `git pull` updates them.
+ports 80/443, gets the certificates, and passes each site on over a Docker network of that
+site's own: `fleet-edge` and `community-edge`. Only Caddy is on both, so the forum (a big
+application with plugins) can't reach the fleet view, which holds every practice server's fleet
+key, and the fleet view can't reach the forum's insides. Each site's Caddy file lives next to its
+code (`fleet/fleet.caddy`, `community/community.caddy`), so a `git pull` updates them.
 
 ```
-internet ──443──> caddy ──edge──> fleet:8080        (fleet/compose.yml)
-                          └─────> community:80      (Discourse, /var/discourse)
+internet ──443──> caddy ──fleet-edge─────> fleet:8080     (fleet/compose.yml)
+                        └─community-edge─> community:80   (Discourse, /var/discourse)
 ```
 
 ## The server
@@ -71,8 +73,9 @@ git clone https://github.com/OpenWorksIT/steady.git /opt/steady
 cd /opt/steady && docker compose -f ops/compose.yml up -d
 ```
 
-Caddy starts and creates the `edge` network. It asks Let's Encrypt for both certificates once
-DNS points here; until the fleet view and the forum are up, their addresses answer 502.
+Caddy starts and creates the `fleet-edge` and `community-edge` networks. It asks Let's Encrypt
+for both certificates once DNS points here; until the fleet view and the forum are up, their
+addresses answer 502.
 
 ## 4. The fleet view
 

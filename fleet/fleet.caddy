@@ -1,4 +1,5 @@
-# The fleet view's site, for the Caddy in ops/compose.yml (docs/FLEET.md).
+# The fleet view's site, for the Caddy in ops/compose.yml (docs/FLEET.md). The fleet view is
+# "fleet" on the fleet-edge network, which only it and Caddy are on.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 fleet.steadyapp.co.za {
 	# no compression: pages carry a CSRF token (BREACH)
@@ -12,6 +13,8 @@ fleet.steadyapp.co.za {
 			wrap json
 			fields {
 				request>headers>Cookie delete
+				# the session cookie as it's handed out at sign-in
+				resp_headers>Set-Cookie delete
 			}
 		}
 	}
