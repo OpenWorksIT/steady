@@ -68,46 +68,29 @@ clinical areas. They can't keep out someone who reads the database directly.
 
 ## Server
 
-For now the forum shares **vps1** with Shap, the Steady beta and the fleet view, behind the
-Caddy that already owns ports 80/443 there. Caddy does HTTPS and passes the forum on to the
-Discourse container, `community`, on the shared `edge` Docker network. Discourse publishes
-no ports of its own.
+The forum runs on OpenWorks' own server, **vps3**, next to the fleet view and nothing else
+([OPS-SERVER.md](OPS-SERVER.md): the server, hardening and the Caddy in front). Caddy does
+HTTPS and passes the forum on to the Discourse container, `community`, on the `edge` Docker
+network. Discourse publishes no ports of its own.
 
 Discourse needs about 1 GB of memory while running and more while rebuilding
-([INSTALL-cloud.md](https://github.com/discourse/discourse/blob/main/docs/INSTALL-cloud.md):
-2 GB RAM, 2 cores and 20 GB disk recommended for a server of its own). Before installing,
-check vps1 has room (`free -h`, `df -h /var`): at least 1.5 GB available memory, 2 GB swap and
-15 GB free disk.
-
-Later the forum can move to a server of its own: restore a backup there (see "Backups") with
-the changes at the top of `community.yml.example`.
+([INSTALL-cloud.md](https://github.com/discourse/discourse/blob/main/docs/INSTALL-cloud.md)).
+vps3 has 4 GB and 2 GB of swap.
 
 ## 1. Before you start
 
-- **DNS**: an A record `community.steadyapp.co.za` pointing at vps1 (102.206.117.135).
+- **The server**: [OPS-SERVER.md](OPS-SERVER.md), steps 1 to 3 (DNS for
+  `community.steadyapp.co.za`, hardening, Caddy).
 - **Mail**: the forum sends from `noreply@steadyapp.co.za`, the mailbox that already sends
   Steady's sign-in codes. Invitations, password resets and notifications come from it. Sign-in
   codes on the forum come from each person's authenticator app, not email. It needs the SPF,
   DKIM and DMARC records for steadyapp.co.za ([DEPLOY.md](DEPLOY.md), step 5a): add those
   first, or invitations land in spam.
-- **The Steady repository** on your own computer, for `community/`.
+- **The Steady repository** on your own computer, for `setup.py`.
 
-## 2. Prepare the server
+## 2. Nothing more to prepare
 
-Check the name of the Docker network Caddy is on (the fleet view uses the same one):
-
-```bash
-docker inspect shap-caddy-1 -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
-```
-
-If it isn't `edge`, change `--network edge` in `community.yml` to that name.
-
-Swap, if vps1 has none yet (`swapon --show` prints nothing):
-
-```bash
-sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
+Caddy, the `edge` network and swap are already there from OPS-SERVER.md.
 
 ## 3. Install Discourse
 
@@ -115,28 +98,17 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 sudo git clone https://github.com/discourse/discourse_docker.git /var/discourse
 ```
 
-From your own computer, copy the settings file across. Its name becomes the container's name,
-so it must be `community.yml` (`app` is already Shap's on the edge network):
-
-```bash
-scp community/community.yml.example vps1:/tmp/community.yml
-```
-
-On vps1:
+Copy the settings file from the repository on vps3. Its name becomes the container's name, so
+it must be `community.yml` (Caddy looks for `community`):
 
 ```bash
 cd /var/discourse
-sudo install -m 600 /tmp/community.yml containers/community.yml && rm /tmp/community.yml
+sudo install -m 600 /opt/steady/community/community.yml.example containers/community.yml
 sudo nano containers/community.yml       # the noreply mailbox password in DISCOURSE_SMTP_PASSWORD
 sudo ./launcher rebuild community        # 10 to 15 minutes the first time
 ```
 
-Then Caddy's site for it:
-
-```bash
-sudo cp /opt/steady/community/community.caddy /opt/shap/deploy/vps/sites/community.caddy
-cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
-```
+Caddy already has its site (`community/community.caddy`).
 
 Check `https://community.steadyapp.co.za` shows a sign-in page with a padlock. It shows only
 "Log in" (no "Sign up"), because the forum is invitation only.
@@ -380,8 +352,8 @@ update Discourse from the browser between rebuilds. Debian keeps itself patched 
 | Symptom | Check |
 |---|---|
 | No invitation or notification emails | `./launcher logs community`. Port 465 needs `DISCOURSE_SMTP_FORCE_TLS: true`; 587 needs STARTTLS and no FORCE_TLS. Keep the password in quotes. Admin > Emails > Logs shows what was sent. |
-| No HTTPS certificate | DNS must point at vps1; then `docker compose logs caddy` in /opt/shap/deploy/vps. |
-| 502 from Caddy | The `community` container isn't running (`sudo ./launcher start community`) or isn't on Caddy's network (step 2). |
+| No HTTPS certificate | DNS must point at vps3; then `docker compose -f ops/compose.yml logs caddy` in /opt/steady. |
+| 502 from Caddy | The `community` container isn't running (`sudo ./launcher start community`), or isn't on the `edge` network (`docker network inspect edge`). |
 | Rebuild stops with out-of-memory errors | Check swap is on (`swapon --show`). |
 | A setting can't be changed in Admin | It is pinned in `community.yml`. Change it there and rebuild. |
 | `setup.py` says HTTP 403 | Wrong key or username, or the key isn't Global, or it was revoked. |

@@ -8,7 +8,7 @@ buttons: **Check for updates**, **Update** and **Restart Steady**.
 It never shows anything about patients: the servers send only versions, health, counts and
 backup age. Sign-in takes a name, a password and a code from an authenticator app.
 
-The code is in `fleet/` (Go, standard library only). It runs on OpenWorks' own server (vps1) at
+The code is in `fleet/` (Go, standard library only). It runs on OpenWorks' own server (vps3, [OPS-SERVER.md](OPS-SERVER.md)) at
 **fleet.steadyapp.co.za**, never on a practice's server.
 
 ## How it works
@@ -42,9 +42,9 @@ The code is in `fleet/` (Go, standard library only). It runs on OpenWorks' own s
 
 The fleet route needs Steady 1.0.3 or newer.
 
-## Setting up the fleet view (vps1)
+## Setting up the fleet view (vps3)
 
-1. DNS: an A record for `fleet.steadyapp.co.za` pointing at vps1.
+1. DNS and the server itself: [OPS-SERVER.md](OPS-SERVER.md), steps 1 to 3.
 2. The data folder, readable only by the fleet view:
    ```bash
    sudo install -d -m 700 -o 65532 -g 65532 /var/lib/steady-fleet
@@ -57,15 +57,12 @@ The fleet route needs Steady 1.0.3 or newer.
    ```
    Then `sudo chown 65532:65532 /var/lib/steady-fleet/servers.json && sudo chmod 600 /var/lib/steady-fleet/servers.json`.
    Changes are picked up within a minute; no restart needed.
-4. Start it on the shared `edge` network, and add its site to the Caddy that owns ports 80/443.
-   `compose.yml` sets `FLEET_TRUSTED_PROXY: caddy`, the Caddy container's name on that network:
-   only its `X-Forwarded-For` is believed, so nobody else can pretend to be a new address on
-   every try. If the Caddy service has another name there, change it.
+4. Start it. It joins the `edge` network that `ops/compose.yml` made, and that Caddy
+   already has its site (`fleet/fleet.caddy`). `compose.yml` sets
+   `FLEET_TRUSTED_PROXY: caddy`, Caddy's name on that network: only its `X-Forwarded-For` is
+   believed, so nobody else can pretend to be a new address on every try.
    ```bash
-   cd /opt/steady
-   sudo docker compose -f fleet/compose.yml up -d --build
-   sudo cp fleet/fleet.caddy /opt/shap/deploy/vps/sites/fleet.caddy
-   cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+   cd /opt/steady && sudo docker compose -f fleet/compose.yml up -d --build
    ```
 5. Once the community forum is up (docs/COMMUNITY.md), its numbers can show on the overview too.
    `/var/lib/steady-fleet/community.json`, same owner and mode as servers.json:
@@ -86,14 +83,14 @@ Other commands, the same way: `passwd <name>`, `resettotp <name>` (a lost phone)
 ## Updating the fleet view
 
 ```bash
-cd /opt/steady && git pull && sudo docker compose -f fleet/compose.yml up -d --build
+cd /opt/steady && sudo git pull && sudo docker compose -f fleet/compose.yml up -d --build
 ```
 
 ## Security notes
 
 - The keys in `servers.json` let the fleet view read health and ask for updates or restarts on
-  every practice server, so the file and the vps1 account that can read it matter. Keep SSH to
-  vps1 key-only, as on the practice servers.
+  every practice server, so the file and the vps3 account that can read it matter. Keep SSH to
+  vps3 key-only, as on the practice servers (OPS-SERVER.md, step 2).
 - Sign-in tries are limited to 8 per address (IPv6: per /64) per 15 minutes. Wrong
   authenticator codes after a right password are limited to 10 per name, so someone without the
   password can't lock you out. A code works only once.

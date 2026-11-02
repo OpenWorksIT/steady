@@ -1,0 +1,39 @@
+# OpenWorks' own server (vps3): the Caddy in front of the fleet view (fleet/) and the community
+# forum (community/). It owns ports 80/443, gets the certificates, and passes each site on over
+# the "edge" Docker network. The sites come straight from the repository, so a git pull
+# updates them. See docs/OPS-SERVER.md.
+#   cd /opt/steady && sudo docker compose -f ops/compose.yml up -d
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: ops
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    # whole folders, not single files: git replaces a file on pull, and a single-file mount
+    # would keep showing the old one
+    command: caddy run --config /etc/caddy/ops/Caddyfile --adapter caddyfile
+    volumes:
+      - ./:/etc/caddy/ops:ro
+      - ../fleet:/etc/caddy/fleet:ro
+      - ../community:/etc/caddy/community:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    networks: [edge]
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
+    # a fixed name, so the fleet view and the forum (other compose files) can join it
+    name: edge

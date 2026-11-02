@@ -1,4 +1,4 @@
-# The community forum's site for the Caddy on vps1 (copy into its sites folder; docs/COMMUNITY.md).
+# The community forum's site, for the Caddy in ops/compose.yml (docs/COMMUNITY.md).
 # Discourse runs as the container "community" on the edge network.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 community.steadyapp.co.za {

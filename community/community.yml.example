@@ -1,8 +1,8 @@
-## Steady community forum: the discourse_docker container, behind the Caddy that already owns
-## ports 80/443 on a shared server (vps1, for now), on its "edge" Docker network.
+## Steady community forum: the discourse_docker container, behind the Caddy that owns ports
+## 80/443 on OpenWorks' own server (vps3, ops/compose.yml), on the "edge" Docker network.
 ##
 ## Copy to /var/discourse/containers/community.yml (the file name is the container's name:
-## "community", never "app", which is Shap's on the same network), fill in the values marked
+## "community"; keep it, Caddy looks for that name), fill in the values marked
 ## CHANGE, then:   cd /var/discourse && sudo ./launcher rebuild community
 ## Caddy serves https://community.steadyapp.co.za and passes it on (community/community.caddy).
 ## Full steps: docs/COMMUNITY.md in the Steady repository.
@@ -27,8 +27,8 @@ docker_args: "--network edge"
 
 params:
   db_default_text_search_config: "pg_catalog.english"
-  ## Set automatically from the server's RAM at bootstrap. On a shared server keep it small.
-  db_shared_buffers: "128MB"
+  ## Shared with the fleet view on a 4 GB server: about 1/8 of the RAM.
+  db_shared_buffers: "512MB"
   ## Which Discourse version to build (default: latest)
   #version: latest
 
@@ -38,7 +38,7 @@ env:
   LANGUAGE: en_US.UTF-8
   DISCOURSE_DEFAULT_LOCALE: en_GB
 
-  ## Web workers. 2 is plenty for a small forum and keeps memory down on a shared server.
+  ## Web workers. 2 is plenty for a forum of a few dozen people.
   UNICORN_WORKERS: 2
 
   ## The forum's address. Discourse will not work on a bare IP address.

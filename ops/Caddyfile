@@ -1,0 +1,11 @@
+# Caddy on OpenWorks' own server (vps3). Each site keeps its own file next to its code (mounted
+# by ops/compose.yml). After changing one: sudo docker compose -f ops/compose.yml exec caddy
+# caddy reload --config /etc/caddy/ops/Caddyfile. See docs/OPS-SERVER.md.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+{
+	# where Let's Encrypt writes if a certificate can't be renewed
+	email info@openworks.co.za
+}
+
+import /etc/caddy/fleet/fleet.caddy
+import /etc/caddy/community/community.caddy

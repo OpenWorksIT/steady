@@ -1,5 +1,5 @@
-# Steady fleet view on OpenWorks' own server (vps1), behind the Caddy that already owns ports
-# 80/443 there, on the shared "edge" network. See docs/FLEET.md.
+# Steady fleet view on OpenWorks' own server (vps3), behind the Caddy in ops/compose.yml, on the
+# shared "edge" network. See docs/FLEET.md and docs/OPS-SERVER.md.
 #   sudo install -d -m 700 -o 65532 -g 65532 /var/lib/steady-fleet
 #   sudo docker compose -f fleet/compose.yml up -d --build
 # SPDX-License-Identifier: AGPL-3.0-or-later
