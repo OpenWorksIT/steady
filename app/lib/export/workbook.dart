@@ -13,14 +13,14 @@ Uint8List buildWorkbook(ExportBundle bundle) {
 
   Sheet sheet(String name, List<String> headers) {
     final s = x[name];
-    s.appendRow([for (final h in headers) TextCellValue(h)]);
+    s.appendRow([for (final h in headers) _text(h)]);
     for (var i = 0; i < headers.length; i++) {
       s.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0)).cellStyle = CellStyle(bold: true);
     }
     return s;
   }
 
-  CellValue? t(String v) => v.isEmpty ? null : TextCellValue(v);
+  CellValue? t(String v) => v.isEmpty ? null : _text(v);
   CellValue? n(num? v) => v == null ? null : (v is int || v == v.roundToDouble() ? IntCellValue(v.round()) : DoubleCellValue(v.toDouble()));
   CellValue dt(DateTime d) => DateTimeCellValue(year: d.year, month: d.month, day: d.day, hour: d.hour, minute: d.minute);
 
@@ -35,7 +35,7 @@ Uint8List buildWorkbook(ExportBundle bundle) {
     // which version of each method produced the numbers
     for (final e in _methods(bundle).entries) [e.key, e.value],
   ]) {
-    about.appendRow([TextCellValue(row[0]), TextCellValue(row[1])]);
+    about.appendRow([_text(row[0]), _text(row[1])]);
   }
 
   final patients = sheet('Patients', ['Patient', 'Name in the app', 'Joined', 'Access', 'From', 'To', 'Check-ins', 'Questionnaires', 'Exercises', 'Watch days']);
@@ -55,12 +55,12 @@ Uint8List buildWorkbook(ExportBundle bundle) {
   ]);
 
   for (final p in bundle.patients) {
-    final who = TextCellValue(p.name);
+    final who = _text(p.name);
     patients.appendRow([
       who,
       t(p.selfName),
       p.joinedAt == null ? null : dt(p.joinedAt!),
-      TextCellValue(p.active ? 'active' : 'stopped'),
+      _text(p.active ? 'active' : 'stopped'),
       p.from == null ? null : dt(p.from!),
       p.to == null ? null : dt(p.to!),
       IntCellValue(p.checkins.length),
@@ -72,7 +72,7 @@ Uint8List buildWorkbook(ExportBundle bundle) {
       checkins.appendRow([who, dt(c.at), IntCellValue(c.mood), IntCellValue(c.anxiety), IntCellValue(c.sleep), IntCellValue(c.energy), t(c.note)]);
     }
     for (final a in p.assessments) {
-      scores.appendRow([who, dt(a.at), TextCellValue(a.name), n(a.total), n(a.max), t(a.band), TextCellValue(a.severity), t(a.flags.map((f) => f.label).join('; '))]);
+      scores.appendRow([who, dt(a.at), _text(a.name), n(a.total), n(a.max), t(a.band), _text(a.severity), t(a.flags.map((f) => f.label).join('; '))]);
       final inst = p.instruments[a.key];
       final items = inst?.items ?? [for (final k in a.answers.keys) (id: k, text: '')];
       for (final it in items) {
@@ -81,8 +81,8 @@ Uint8List buildWorkbook(ExportBundle bundle) {
         answers.appendRow([
           who,
           dt(a.at),
-          TextCellValue(a.name),
-          TextCellValue(it.id),
+          _text(a.name),
+          _text(it.id),
           t(it.text),
           v is num ? n(v) : t('${v ?? ''}'),
           t(p.answerLabel(a.key, it.id, v)),
@@ -90,28 +90,28 @@ Uint8List buildWorkbook(ExportBundle bundle) {
       }
     }
     for (final e in p.exercises) {
-      exercises.appendRow([who, dt(e.at), TextCellValue(e.name), n(e.minutes), TextCellValue(e.selfStarted ? 'yes' : 'no')]);
+      exercises.appendRow([who, dt(e.at), _text(e.name), n(e.minutes), _text(e.selfStarted ? 'yes' : 'no')]);
     }
     for (final f in p.flags.where((f) => f.reviewable)) {
       final r = f.review;
       flags.appendRow([
         who,
         f.at == null ? null : dt(f.at!),
-        TextCellValue(f.label),
-        TextCellValue(f.severity),
-        TextCellValue(r == null ? 'not yet' : 'yes'),
+        _text(f.label),
+        _text(f.severity),
+        _text(r == null ? 'not yet' : 'yes'),
         t(r?.by ?? ''),
         r?.at == null ? null : dt(r!.at!),
         t(r?.note ?? ''),
       ]);
     }
     for (final nt in p.notes) {
-      notes.appendRow([who, dt(nt.at), t(nt.by), TextCellValue(nt.text)]);
+      notes.appendRow([who, dt(nt.at), t(nt.by), _text(nt.text)]);
     }
     for (final d in p.radr?.rated ?? const <ExportRadrDay>[]) {
       radr.appendRow([
         who,
-        TextCellValue(dayText(d.day)),
+        _text(dayText(d.day)),
         n(d.watch),
         n(d.self),
         n(d.combined),
@@ -120,7 +120,7 @@ Uint8List buildWorkbook(ExportBundle bundle) {
       ]);
     }
     for (final d in p.wearableDays) {
-      watch.appendRow([who, TextCellValue(d.day), for (final k in order) d.values[k] is num ? n(d.values[k] as num) : null]);
+      watch.appendRow([who, _text(d.day), for (final k in order) d.values[k] is num ? n(d.values[k] as num) : null]);
     }
   }
 
@@ -147,3 +147,8 @@ Map<String, String> _methods(ExportBundle bundle) {
     if (build.isNotEmpty) 'Steady build': build.join(', '),
   };
 }
+
+/// A text cell without the control characters XML can't hold: one in a name or a check-in
+/// (pasted from elsewhere) would leave a workbook that Excel can't open.
+TextCellValue _text(String v) => TextCellValue(v.replaceAll(_notXml, ''));
+final _notXml = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]');

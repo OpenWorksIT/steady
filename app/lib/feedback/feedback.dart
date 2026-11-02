@@ -2,8 +2,8 @@
 //
 // The Feedback button on psychologists' and administrators' screens (never patients'): "Love this",
 // "Don't like this" and "Bug found", as in Sorted. A bug report carries a screenshot of the screen
-// as it was when the button was pressed, blurred so no one can be read from it unless the sender
-// chooses otherwise, and the last 60 steps (trail.dart). Read in Settings > Feedback (master
+// as it was when the button was pressed, always blurred so no one can be read from it (OpenWorks
+// IT reads it and never sees patients), and the last 60 steps (trail.dart). Read in Settings > Feedback (master
 // psychologist and administrators) and by OpenWorks IT with deploy/feedback.sh.
 import 'dart:ui' as ui;
 
@@ -174,7 +174,7 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
   ];
   String? _kind;
   final _text = TextEditingController();
-  bool _attach = true, _blur = true, _sending = false, _sent = false;
+  bool _attach = true, _sending = false, _sent = false;
   String? _error;
 
   @override
@@ -206,8 +206,9 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
           'screenSize': '${size.width.round()}x${size.height.round()}',
           'theme': dark ? 'dark' : 'light',
         },
-        screenshot: kind == 'bug' && _attach && shots != null ? (_blur ? shots.blurred : shots.clear) : null,
-        screenshotBlurred: _blur,
+        // always the blurred one: it goes to OpenWorks IT, who never see patients
+        screenshot: kind == 'bug' && _attach && shots != null ? shots.blurred : null,
+        screenshotBlurred: true,
       );
       if (!mounted) return;
       setState(() => _sent = true);
@@ -258,6 +259,8 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
               TextField(
                 controller: _text,
                 autofocus: true,
+                // keyboards don't learn from it (it may describe someone's situation)
+                enableIMEPersonalizedLearning: false,
                 maxLength: 2000,
                 minLines: 3,
                 maxLines: 6,
@@ -277,7 +280,7 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
                     borderRadius: BorderRadius.circular(8),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxHeight: 220),
-                      child: Image.memory(_blur ? shots.blurred : shots.clear, fit: BoxFit.contain, gaplessPlayback: true),
+                      child: Image.memory(shots.blurred, fit: BoxFit.contain, gaplessPlayback: true),
                     ),
                   ),
                   CheckboxListTile(
@@ -285,14 +288,8 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
                     value: _attach,
                     onChanged: (v) => setState(() => _attach = v ?? true),
                     title: const Text('Attach this screenshot'),
+                    subtitle: const Text('Blurred, so no patient can be read from it'),
                   ),
-                  if (_attach)
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _blur,
-                      onChanged: (v) => setState(() => _blur = v ?? true),
-                      title: const Text('Blur it so no patient can be read (recommended)'),
-                    ),
                 ],
                 Text(
                   'We also send the screen you were on, the time and your last steps in the app (screens, taps and '

@@ -137,8 +137,14 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    await api.forgetThisDevice();
-    await PushService.instance.disable();
+    // each step is best effort: whatever fails, this device is signed out at the end
+    try {
+      await api.forgetThisDevice();
+    } catch (_) {}
+    try {
+      await PushService.instance.disable();
+    } catch (_) {}
+    await api.endSessionsOnServer();
     api.signOut();
     notifyListeners();
   }

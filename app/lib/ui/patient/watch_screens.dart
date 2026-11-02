@@ -167,8 +167,10 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
             const SizedBox(height: 6),
             bullet('Only daily totals and averages leave your phone, not every reading.'),
             bullet('Up to the last 30 days are shared when you connect, then new days as you use Steady.'),
-            bullet('Only your psychologist at $practice can see it. It helps them understand how you are doing between sessions and may be used, without your name, to improve care.'),
-            bullet('Nobody watches this data around the clock. It does not raise alarms. If you need help, use the crisis numbers on your home screen.'),
+            bullet('Your psychologist at $practice can see it, and a colleague there if your psychologist shares your record with them '
+                '(for example while they are away). It helps them understand how you are doing between sessions, can go into your '
+                'clinical file with the rest of your Steady information, and may be used, without your name, to improve care.'),
+            bullet('Nobody watches this data around the clock. It does not raise alarms. If you need help, call one of the numbers at the bottom of this page.'),
             bullet('To stop, open Settings in Steady and tap "Stop sharing watch data". You can also remove Steady\'s access in $storeName.'),
             const SizedBox(height: 12),
             Card(
@@ -188,6 +190,8 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
             const SizedBox(height: 10),
             Text('Next, $storeName will ask which data Steady may read. Allow all of them for the full picture.',
                 style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+            const SizedBox(height: 24),
+            const CrisisFooter(),
           ],
         ),
       ),

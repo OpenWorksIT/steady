@@ -66,27 +66,44 @@ class AppConfig {
     this.brandLogo = '',
   });
 
+  static const _crisisNotice = "This app isn't monitored around the clock. If you need help now, call one of these numbers.";
+
+  /// SADAG and 112 are always shown, first, whatever a server sends: a server with no lines, or
+  /// wrong ones, must never leave a patient without a number. A practice's own lines follow.
+  static List<CrisisLine> _withBuiltInLines(List<CrisisLine> fromServer) {
+    String digits(String s) => s.replaceAll(RegExp(r'[^0-9+]'), '');
+    final out = [
+      CrisisLine('SADAG Suicide Crisis Line', '0800 567 567', '24 hours, free'),
+      CrisisLine('Emergency services from a mobile', '112', '24 hours'),
+    ];
+    final seen = {for (final l in out) digits(l.number)};
+    for (final l in fromServer) {
+      final d = digits(l.number);
+      if (l.label.trim().isEmpty || d.isEmpty || seen.contains(d)) continue;
+      seen.add(d);
+      out.add(l);
+    }
+    return out;
+  }
+
   /// Used until the server answers, and if it can't be reached.
   static AppConfig fallback() => AppConfig(
         practiceName: 'Your practice',
-        crisisNotice: "This app isn't monitored around the clock. If you need help now, call one of these numbers.",
+        crisisNotice: _crisisNotice,
         consentVersion: '',
         consentText: '',
         vapidPublicKey: '',
-        crisisLines: [
-          CrisisLine('SADAG Suicide Crisis Line', '0800 567 567', '24 hours, free'),
-          CrisisLine('Emergency services from a mobile', '112', '24 hours'),
-        ],
+        crisisLines: _withBuiltInLines(const []),
       );
 
   factory AppConfig.fromJson(Map<String, dynamic> j) => AppConfig(
         practiceName: '${j['practiceName'] ?? 'Your practice'}',
-        crisisNotice: '${j['crisisNotice'] ?? ''}',
+        crisisNotice: '${j['crisisNotice'] ?? ''}'.trim().isEmpty ? _crisisNotice : '${j['crisisNotice']}',
         consentVersion: '${j['consentVersion'] ?? ''}',
         consentText: '${j['consentText'] ?? ''}',
         vapidPublicKey: '${j['vapidPublicKey'] ?? ''}',
         twoStep: '${j['twoStep'] ?? 'staff'}',
-        crisisLines: asList(j['crisisLines']).map((e) => CrisisLine.fromJson(asMap(e))).toList(),
+        crisisLines: _withBuiltInLines(asList(j['crisisLines']).map((e) => CrisisLine.fromJson(asMap(e))).toList()),
         appBuild: '${asMap(j['app'])['build'] ?? ''}',
         apkPath: '${asMap(j['app'])['apk'] ?? ''}',
         appUpdatable: asMap(j['app'])['updatable'] == true,

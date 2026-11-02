@@ -10,6 +10,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../feedback/trail.dart';
 import '../models.dart';
+import 'session_store.dart';
 
 /// Server address. Practice builds set it at build time:
 ///   flutter build appbundle --dart-define=STEADY_SERVER=https://steady.yourpractice.co.za
@@ -229,15 +230,15 @@ class Api {
     String? initial;
     String? saved;
     try {
-      initial = await storage.read(key: _authKey);
+      initial = await readSession(storage, _authKey);
       saved = await storage.read(key: _serverKey);
     } catch (_) {
       initial = null; // e.g. keychain unavailable after restore; user signs in again
     }
     final store = AsyncAuthStore(
-      save: (data) => storage.write(key: _authKey, value: data),
+      save: (data) => writeSession(storage, _authKey, data),
       initial: initial,
-      clear: () => storage.delete(key: _authKey),
+      clear: () => deleteSession(storage, _authKey),
     );
     final url = kServerUrl.isNotEmpty
         ? kServerUrl
@@ -505,6 +506,15 @@ class Api {
   }
 
   void signOut() => pb.authStore.clear();
+
+  /// Ends this account's sessions on the server too (every device: PocketBase can't end just
+  /// one), so a copy of the token stops working. Best effort: signing out here goes ahead anyway.
+  Future<void> endSessionsOnServer() async {
+    if (!signedIn) return;
+    try {
+      await pb.send('/api/steady/me/sign-out', method: 'POST').timeout(const Duration(seconds: 8));
+    } catch (_) {/* offline: the local sign-out still happens */}
+  }
 
   String? _deviceToken;
 

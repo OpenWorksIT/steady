@@ -23,6 +23,21 @@ void main() {
     expect(AppConfig.fallback().brandLogo, '');
   });
 
+  test('SADAG and 112 are always shown first, whatever the server sends', () {
+    List<String> numbers(AppConfig c) => c.crisisLines.map((l) => l.number).toList();
+    expect(numbers(AppConfig.fromJson({'crisisLines': []})), ['0800 567 567', '112']);
+    expect(numbers(AppConfig.fallback()), ['0800 567 567', '112']);
+    final c = AppConfig.fromJson({
+      'crisisLines': [
+        {'label': 'Emergency', 'number': '112', 'hours': '24 hours'},
+        {'label': 'Practice after hours', 'number': '+27 21 555 0100', 'hours': 'evenings'},
+        {'label': '', 'number': '0800 000 000', 'hours': ''},
+      ],
+    });
+    expect(numbers(c), ['0800 567 567', '112', '+27 21 555 0100']);
+    expect(AppConfig.fromJson({'crisisLines': [], 'crisisNotice': ''}).crisisNotice, isNotEmpty);
+  });
+
   test('accent colours are read strictly', () {
     expect(Brand.parseHex('#B0690C'), const Color(0xFFB0690C));
     expect(Brand.parseHex('red'), isNull);

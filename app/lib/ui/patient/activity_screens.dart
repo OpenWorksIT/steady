@@ -135,6 +135,8 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
       );
     } else {
       input = TextFormField(
+        // keyboards don't learn from what's typed here
+        enableIMEPersonalizedLearning: false,
         initialValue: _answers[it.id] as String?,
         maxLines: 3,
         maxLength: it.maxLength,
@@ -322,6 +324,9 @@ class _BreathingScreenState extends State<BreathingScreen> {
                 textAlign: TextAlign.center, style: context.tt.bodyMedium?.copyWith(color: context.sc.ink3)),
             const SizedBox(height: 24),
             OutlinedButton(onPressed: _finish, child: const Text('Finish early')),
+            // below the exercise, out of the way while breathing, there when it's needed
+            const SizedBox(height: 32),
+            const CrisisFooter(),
           ],
         ),
       ),
@@ -374,6 +379,8 @@ class _StepsScreenState extends State<StepsScreen> {
             Text(s.prompt, style: context.tt.bodyLarge?.copyWith(color: context.sc.ink2)),
             const SizedBox(height: 16),
             TextField(
+              // keyboards don't learn from what's typed here
+              enableIMEPersonalizedLearning: false,
               key: ValueKey(_i),
               controller: _controllers[_i],
               maxLines: 5,

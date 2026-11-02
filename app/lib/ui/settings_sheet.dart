@@ -229,6 +229,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             },
             label: const Text('Sign out'),
           ),
+          const SizedBox(height: 4),
+          Text('Signs you out on all your devices.',
+              textAlign: TextAlign.center, style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(

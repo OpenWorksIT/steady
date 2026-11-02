@@ -31,7 +31,8 @@ HEALTH_PERMISSIONS = [
     "android.permission.health.READ_STEPS",
     "android.permission.health.READ_SLEEP",
     "android.permission.health.READ_OXYGEN_SATURATION",
-    "android.permission.health.READ_HEALTH_DATA_HISTORY",
+    # no READ_HEALTH_DATA_HISTORY: Steady never reads further back than 30 days, which Health
+    # Connect allows without it (asking for more than is used is also what Play's review checks)
 ]
 
 DESUGAR_VERSION = "2.1.4"
@@ -151,6 +152,9 @@ def patch_manifest(text):
         text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-feature android:name="android.hardware.camera" android:required="false"/>', text, count=1)
     if "RECORD_AUDIO" not in text:
         text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>', text, count=1)
+    # nor reading health data older than 30 days, whatever a plugin declares (see HEALTH_PERMISSIONS)
+    if "READ_HEALTH_DATA_HISTORY" not in text:
+        text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" tools:node="remove"/>', text, count=1)
     # Health Connect must be able to find the app and show why it asks
     if "com.google.android.apps.healthdata" not in text:
         block = ('        <package android:name="com.google.android.apps.healthdata" />\n'

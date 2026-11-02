@@ -59,6 +59,8 @@ class _CheckinFormState extends State<CheckinForm> {
             const SizedBox(height: 20),
           ],
           TextField(
+            // keyboards don't learn from what's typed here
+            enableIMEPersonalizedLearning: false,
             controller: _note,
             maxLines: 4,
             maxLength: 1000,
