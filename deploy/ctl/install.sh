@@ -8,6 +8,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 command -v jq >/dev/null || apt-get install -y jq
+# deploy/.env holds the server's keys and passwords: root only
+[ -f ../.env ] && chmod 600 ../.env
 # PocketBase runs as uid 10001 in its container: it may leave a request in in/ and read out/
 # (mounted read-only); root keeps its logs in work/. See the top of steady-ctl.sh.
 install -d -m 0755 -o root -g root /var/lib/steady/ctl

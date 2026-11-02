@@ -14,7 +14,7 @@ One small Linux server is enough for a practice: 1 vCPU, 1 GB RAM, 20 GB disk. H
 ```bash
 git clone https://github.com/openworksIT/steady.git /opt/steady
 cd /opt/steady/deploy
-cp .env.example .env
+sudo install -m 600 .env.example .env   # root only: it will hold the server's keys and passwords
 sudo ./gen-keys.sh        # creates secrets/vapid.pem and prints PUSHER_SECRET and STEADY_VAPID_PUBLIC_KEY
 ```
 
@@ -28,7 +28,10 @@ Edit `.env`:
 | `VAPID_SUBJECT` | `mailto:` your IT contact |
 | `APNS_*` | See step 3 |
 
-Edit the consent statement in `server/pb_hooks/content/consent.md` with the practice, then bump `STEADY_CONSENT_VERSION`. The file is mounted read-only into the container, so a restart picks up changes.
+The consent statement patients agree to is the practice's own, installed with its branding as
+`consent.md` (step 4a, [BRAND.md](BRAND.md)). Until then patients see Steady's draft
+(`server/pb_hooks/content/consent.md`), and the fleet view and `audit-server.sh` say so. A
+changed statement is a new version: patients are asked to agree again.
 
 ## 3. Apple push (iOS)
 
@@ -143,9 +146,10 @@ Without email settings, staff sign in with password and authenticator code anywh
 1.0. `STEADY_DEVICE_LINK=off` keeps it that way even with email set up.
 
 Rate limits and the trusted proxy header are set by migrations; `accounts.sh check` shows them.
-For an emergency, `STEADY_DASHBOARD=on` in `.env` (then `docker compose up -d`) reopens `/_/`
-behind the SSH tunnel; it still needs a superuser, which only `accounts.sh` can make. Close it
-again afterwards.
+There is no switch in `.env` that reopens the dashboard or superuser sign-in: Caddy answers 404
+for them, and PocketBase refuses superuser sign-in from anywhere but inside its own container.
+Work that `accounts.sh` doesn't cover is done with `docker compose exec pocketbase ...` on the
+server, by OpenWorks.
 
 ## 6. Server hardening
 
@@ -174,11 +178,19 @@ sudo crontab -e
 15 1 * * *  /opt/steady/deploy/backup.sh /srv/backups/steady
 ```
 
-Backups are encrypted before they're written. Copy them off the server (another SA location). Test a restore at least once:
+Backups are encrypted before they're written, with nothing left unencrypted on the way. Copy
+them off the server (another SA location). Test a restore at least once:
 
 ```bash
-age -d -i backup-key.txt steady-<stamp>.tar.age | tar -x -C /tmp/restore
+age -d -i backup-key.txt steady-<stamp>.tar.age | tar -x -C /tmp/restore     # look inside
+age -d -i backup-key.txt steady-<stamp>.tar.age > /tmp/steady.tar             # or put it back:
+sudo ./restore-data.sh /tmp/steady.tar && shred -u /tmp/steady.tar
 ```
+
+`restore-data.sh` keeps an encrypted copy of the data it replaces in `/var/backups/steady`, and
+afterwards signs everyone out (`accounts.sh rotate-sessions`: new token secrets), so sessions
+from the restored copy, or from anyone else holding it, stop working. `accounts.sh
+rotate-sessions` on its own does the same after a suspected leak.
 
 ## 8. Updating
 
@@ -206,6 +218,14 @@ token or a compromised build can't reach it:
    `deploy/release.sh 1.0.0`. It checks the web app was built from the same commit, shows what
    changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >
    Server and updates and install it at the next "Update now" (or `update.sh`).
+
+What a server checks before installing (from 1.0.4): the tag's signature, that the signed tag
+carries the name it was fetched under (an old release's signed tag can't be passed off as a new
+one), that it isn't older than the release already installed (`/var/lib/steady/release`), and
+that the web app is the very build the signed release names (its `web-dist:` line). Tags this
+server already has are never replaced. A server without `allowed_signers` installs unsigned code
+only when `.env` says so (`STEADY_UNSIGNED=yes`, or `STEADY_TRACK=...`), and never once it has
+installed a signed release.
 
 One-time setup for signing: `git config --global gpg.format ssh` and
 `git config --global user.signingkey ~/.ssh/id_ed25519.pub`.
@@ -256,7 +276,7 @@ cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config 
 
 ```bash
 cd /opt/steady/deploy
-sudo cp .env.example .env && sudo chmod 600 .env
+sudo install -m 600 .env.example .env
 sudo ./gen-keys.sh            # paste PUSHER_SECRET and STEADY_VAPID_PUBLIC_KEY into .env
 sudo nano .env                # STEADY_DOMAIN, practice name, VAPID_SUBJECT, and uncomment
                               # COMPOSE_FILE=docker-compose.yml:behind-proxy.yml

@@ -41,12 +41,18 @@ else
 fi
 
 head_ "Firewall and listening ports"
-if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q 'Status: active'; then
-  ok "ufw is on"; ufw status 2>/dev/null | sed -n '5,40p' | sed 's/^/        /'
-elif command -v nft >/dev/null && [ -n "$(nft list ruleset 2>/dev/null)" ]; then
-  ok "nftables rules are loaded (check them below)"
+# Docker always loads rules of its own, so "some rules are loaded" says nothing: what counts is
+# that incoming connections are dropped unless a rule allows them
+if command -v ufw >/dev/null && ufw status verbose 2>/dev/null | grep -q 'Status: active'; then
+  ufw status verbose 2>/dev/null | grep -q 'Default: deny (incoming)\|Default: reject (incoming)' \
+    && ok "ufw is on and refuses incoming connections by default" || fail "ufw is on but lets incoming connections in by default: ufw default deny incoming"
+  ufw status 2>/dev/null | sed -n '5,40p' | sed 's/^/        /'
+elif command -v nft >/dev/null && nft list ruleset 2>/dev/null | grep -Eq 'hook input .*policy (drop|reject)'; then
+  ok "nftables drops incoming connections unless a rule allows them"
+elif command -v iptables >/dev/null && iptables -S INPUT 2>/dev/null | head -1 | grep -Eq '^-P INPUT (DROP|REJECT)'; then
+  ok "iptables drops incoming connections unless a rule allows them"
 else
-  fail "no firewall is active (ufw or nftables)"
+  fail "no firewall drops incoming connections (Docker's own rules don't count): ufw default deny incoming, or an nftables input chain with policy drop"
 fi
 if command -v ss >/dev/null; then
   ss -H -tlnp 2>/dev/null | awk '{print $4, $6}' | while read -r addr proc; do
@@ -81,6 +87,15 @@ use="$(df -P /var/lib/docker 2>/dev/null | awk 'NR==2{gsub("%","",$5); print $5}
 [ -n "$use" ] && { [ "$use" -lt 80 ] && ok "disk ${use}% used" || warn "disk ${use}% used"; }
 
 head_ "Files"
+# root runs this code (update.sh, the update service, backups): nobody else may change it
+REPO="$(cd .. && pwd)"
+for d in / "$(dirname "$REPO")" "$REPO" "$REPO/deploy" "$REPO/deploy/ctl"; do
+  { [ "$(stat -c %u "$d")" = 0 ] && [ -z "$(find "$d" -maxdepth 0 -perm /022)" ]; } \
+    || fail "$d must belong to root and be writable only by root: root runs the code in it"
+done
+bad="$(find "$REPO" -xdev -path "$REPO/deploy/secrets" -prune -o ! -type l \( ! -user root -o -perm /022 \) -print 2>/dev/null | head -5)"
+[ -z "$bad" ] && ok "the code in $REPO belongs to root and only root can change it" \
+  || fail "others can change code root runs: $(tr '\n' ' ' <<<"$bad")(chown root:root and chmod go-w them)"
 if [ -f .env ]; then
   p="$(stat -c %a .env)"; [ "$p" = 600 ] || [ "$p" = 400 ] && ok ".env is private ($p)" || fail ".env is readable by others ($p): chmod 600 .env"
   for k in PUSHER_SECRET STEADY_MONITOR_KEY; do
@@ -160,20 +175,40 @@ elif [ -n "$DOMAIN" ] && command -v curl >/dev/null; then
     grep -qi "^$want" <<<"$h" && ok "header: $want" || fail "missing header: $want"
   done
   grep -qi '^server:' <<<"$h" && warn "the Server header is sent" || ok "no Server header"
-  for p in /_/ /api/collections/_superusers/auth-with-password /api/collections/users/request-password-reset /api/settings; do
+  # _%C5%BFuperusers: "_ſuperusers" (long s), which PocketBase folds to _superusers
+  for p in /_/ /api/collections/_superusers/auth-with-password /api/collections/_%C5%BFuperusers/auth-with-password /api/collections/users/request-password-reset /api/settings; do
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X GET "https://$DOMAIN$p")"
     case "$code" in 404|401|403) ok "$p answers $code from outside" ;; *) fail "$p answers $code from outside" ;; esac
   done
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "http://$DOMAIN/")"
   case "$code" in 301|308) ok "plain http redirects to https" ;; *) warn "plain http answers $code" ;; esac
+  grep -qi '^cache-control: no-store' <<<"$(curl -sS -I --max-time 15 "https://$DOMAIN/api/health" 2>&1)" \
+    && ok "API answers are never cached" || fail "API answers can be cached (update Steady)"
+  draft="$(curl -s --max-time 15 "https://$DOMAIN/api/steady/config" | python3 -c 'import json,sys
+try: print("yes" if json.load(sys.stdin).get("consentDraft") else "no")
+except Exception: print("?")' 2>/dev/null || echo "?")"
+  case "$draft" in
+    no) ok "patients agree to the practice's own consent statement" ;;
+    yes) fail "patients are agreeing to Steady's DRAFT consent statement: install the practice's own (consent.md, ./brand.sh)" ;;
+    *) warn "couldn't read the consent statement's status (Steady older than 1.0.4?)" ;;
+  esac
   if command -v openssl >/dev/null; then
     end="$(echo | openssl s_client -servername "$DOMAIN" -connect "$DOMAIN:443" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)"
     if [ -n "$end" ]; then
       left=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
       [ "$left" -gt 14 ] && ok "TLS certificate valid for $left more days" || warn "TLS certificate ends in $left days"
     fi
+    # OpenSSL 3 won't offer TLS 1.0/1.1 itself unless asked to (SECLEVEL=0): without that, this
+    # check would say "refused" whatever the server does
     for v in tls1 tls1_1; do
-      echo | openssl s_client -"$v" -servername "$DOMAIN" -connect "$DOMAIN:443" >/dev/null 2>&1 && fail "old TLS ($v) is accepted" || ok "old TLS ($v) is refused"
+      out="$(echo | timeout 20 openssl s_client -"$v" -cipher 'DEFAULT:@SECLEVEL=0' -servername "$DOMAIN" -connect "$DOMAIN:443" 2>&1)"; rc=$?
+      if [ $rc -eq 0 ] && grep -q '^ *Protocol *: *TLSv1\(\.1\)\?$' <<<"$out"; then
+        fail "old TLS ($v) is accepted"
+      elif grep -qi 'no protocols available\|unknown option\|unsupported' <<<"$out"; then
+        warn "this server's openssl can't try $v (checked from another computer: testssl.sh $DOMAIN)"
+      else
+        ok "old TLS ($v) is refused"
+      fi
     done
   fi
 else

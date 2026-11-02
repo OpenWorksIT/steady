@@ -23,11 +23,12 @@ main() {
   DEPLOY="$REPO/deploy"
   BASE="${STEADY_CTL_DIR:-/var/lib/steady/ctl}"
   SNAPS="${STEADY_SNAPSHOT_DIR:-/var/backups/steady}"
-  setup_dirs
   CTL="$BASE/out"
   WORK="$BASE/work"
-  # stats is quick and read-only: it never waits for, or blocks, a check or an update
+  # stats is quick and read-only apart from out/host.json: it never waits for, or blocks, a
+  # check or an update, and leaves the folders alone (its service may write only in out/)
   if [ "${1:-}" = "stats" ]; then stats; return $?; fi
+  setup_dirs
 
   exec 9>/run/steady-ctl.lock
   flock -n 9 || { echo "steady-ctl is already running"; return 0; }
@@ -58,7 +59,10 @@ setup_dirs() {
   # files from the old shared layout: never read, just removed (unlink doesn't follow links)
   find "$BASE" -maxdepth 1 -mindepth 1 ! -name in ! -name out ! -name work -exec rm -rf -- {} + 2>/dev/null || true
   # out/ and work/ must hold only what root wrote
-  find "$BASE/out" "$BASE/work" -mindepth 1 \( -type l -o ! -user root \) -exec rm -f -- {} + 2>/dev/null || true
+  # top level only, and rm -r (it never follows links, even while the tree is being changed):
+  # anything the container could have made is removed whole, never walked by path
+  find "$BASE/out" "$BASE/work" -mindepth 1 -maxdepth 1 \( -type l -o ! -type f -o ! -user root \) \
+    -exec rm -rf --one-file-system -- {} + 2>/dev/null || true
 }
 
 # The app's request: moved out of the container's reach first, then read if it's a plain file.
@@ -69,7 +73,7 @@ take_request() {
   if [ -f "$got" ] && [ ! -L "$got" ] && [ "$(stat -c %s "$got")" -le 64 ]; then
     head -c 64 -- "$got" | tr -dc 'a-z-'
   fi
-  rm -f -- "$got"
+  rm -rf --one-file-system -- "$got"
 }
 
 # status.json, read by the app. Each step changes only its own key.
@@ -119,15 +123,26 @@ app_build() { # the Android build in a version.json on stdin
   jq -r '.build // empty' 2>/dev/null || true
 }
 
+# A release tag signed by a trusted key that also carries its own name (an old release's signed
+# tag pushed under a new name, or over an existing one, isn't accepted; see update.sh).
+signed_tag() { # signed_tag TAG SIGNERS
+  local obj
+  obj="$(git -C "$REPO" rev-parse -q --verify "refs/tags/$1")" || return 1
+  [ "$(git -C "$REPO" cat-file -t "$obj")" = tag ] || return 1
+  [ "$(git -C "$REPO" cat-file tag "$obj" | sed -n '/^$/q; s/^tag //p')" = "$1" ] || return 1
+  git -C "$REPO" -c gpg.format=ssh -c gpg.ssh.program=ssh-keygen -c gpg.ssh.allowedSignersFile="$2" verify-tag "$obj" >/dev/null 2>&1
+}
+
 check() {
   put checking "$(jq -n --arg at "$(now)" '{at: $at}')"
   local err="" cur latest signers="$DEPLOY/secrets/allowed_signers" tag="" webref=origin/web-dist
   cur="$(git -C "$REPO" rev-parse HEAD)"
   if [ -s "$signers" ]; then
     # signed releases only (see update.sh): the newest tag signed by a trusted key
-    git -C "$REPO" fetch -q --tags --force origin 2>"$WORK/.fetch.err" || err="$(tail -c 400 "$WORK/.fetch.err")"
+    # no --force: a tag this server has is never replaced (see update.sh)
+    git -C "$REPO" fetch -q --tags origin 2>"$WORK/.fetch.err" || err="$(tail -c 400 "$WORK/.fetch.err")"
     for t in $(git -C "$REPO" tag -l 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -rV); do
-      if git -C "$REPO" -c gpg.format=ssh -c gpg.ssh.program=ssh-keygen -c gpg.ssh.allowedSignersFile="$signers" verify-tag "$t" >/dev/null 2>&1; then tag="$t"; break; fi
+      if signed_tag "$t" "$signers"; then tag="$t"; break; fi
     done
     latest="$(git -C "$REPO" rev-parse "refs/tags/$tag^{commit}" 2>/dev/null || echo "$cur")"
     webref="refs/tags/web-$tag"

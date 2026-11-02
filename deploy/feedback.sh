@@ -11,7 +11,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 KEY="$(grep -E '^STEADY_MONITOR_KEY=' .env 2>/dev/null | cut -d= -f2- || true)"
 [ -n "$KEY" ] || { echo "Set STEADY_MONITOR_KEY in deploy/.env first (./gen-keys.sh prints one), then: docker compose up -d" >&2; exit 1; }
-get() { docker compose exec -T pocketbase wget -qO- --header "X-Steady-Monitor: $KEY" "http://127.0.0.1:8090$1"; }
+# the key is the container's own (STEADY_MONITOR_KEY), handed to curl on stdin: it never
+# appears on a command line, where anyone on the server could read it in the process list
+get() { docker compose exec -T pocketbase sh -c 'printf "X-Steady-Monitor: %s\n" "$STEADY_MONITOR_KEY" | curl -fsS -H @- "http://127.0.0.1:8090$0"' "$1"; }
 need_jq() { command -v jq >/dev/null || { echo "Install jq (sudo apt install jq) for readable output." >&2; exit 1; }; }
 
 case "${1:-open}" in

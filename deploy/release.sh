@@ -35,9 +35,12 @@ built="$(git log -1 --format=%s origin/web-dist)"
   echo "Wait for the 'Test builds' run for main to finish (GitHub Actions), then try again." >&2
   exit 1; }
 
+websha="$(git rev-parse origin/web-dist)"
 echo "Release $tag"
 echo "  code:    ${sha:0:7}  $(git log -1 --format=%s "$sha")"
-echo "  web app: $(git rev-parse --short origin/web-dist)  $built"
+echo "  web app: ${websha:0:7}  $built"
+echo "           (the web app is CI's build; its commit $websha is written into the signed $tag,"
+echo "            and servers install only that build with it)"
 echo "  changes since the last release:"
 last="$(git tag -l 'v[0-9]*' | sort -V | tail -1)"
 # -n, not | head: head closing the pipe early would end this script here (pipefail)
@@ -45,8 +48,8 @@ git log --no-merges -n 30 --format='    %h %s' "${last:+$last..}$sha"
 read -r -p "Sign and publish $tag? Type yes: " ok
 [ "$ok" = yes ] || exit 1
 
-git tag -s "$tag" -m "Steady $ver" "$sha"
-git tag -s "$web" -m "Steady $ver web app" origin/web-dist
+git tag -s "$tag" -m "Steady $ver" -m "web-dist: $websha" "$sha"
+git tag -s "$web" -m "Steady $ver web app" "$websha"
 # check both signatures the way a server will
 signers="$(mktemp)"; trap 'rm -f "$signers"' EXIT
 key="$(git config user.signingkey)"; key="${key/#\~/$HOME}"

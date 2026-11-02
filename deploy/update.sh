@@ -3,12 +3,13 @@
 #   ./update.sh
 #
 # Signed releases (recommended, and required on live servers): when deploy/secrets/allowed_signers
-# exists, this installs only release tags (v1.0.0, ...) signed by a key listed there, and the web
-# app only from the matching signed web-v1.0.0 tag. A push to GitHub, a stolen token or a
-# compromised CI run can then not reach a practice's server. OpenWorks signs releases with
-# deploy/release.sh. Without the file it follows the main and web-dist branches, as test
-# servers do (STEADY_TRACK=v1 in .env: the v1 and web-dist-v1 branches instead, for a server
-# trying a release before it's signed).
+# exists, this installs only release tags (v1.0.0, ...) signed by a key listed there, carrying
+# their own name, never older than the release installed, and the web app only from the
+# matching signed web-v1.0.0 tag (the very build the signed release names). A push to GitHub,
+# a stolen token or a compromised CI run can then not reach a practice's server. OpenWorks signs
+# releases with deploy/release.sh. Without the file it follows the main and web-dist branches,
+# as test servers do, but only when .env says so (STEADY_UNSIGNED=yes, or STEADY_TRACK=v1 for
+# the v1 and web-dist-v1 branches), and never after a signed release was installed.
 #
 # The web app's files are checked before use: no links, nothing outside its folder.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -19,16 +20,34 @@ set -euo pipefail
 main() {
   cd "$(dirname "$0")"
   local repo=.. signers="$PWD/secrets/allowed_signers" code web
-  [ -f .env ] || { echo "Create deploy/.env first (cp .env.example .env), then run gen-keys.sh." >&2; exit 1; }
+  [ -f .env ] || { echo "Create deploy/.env first (install -m 600 .env.example .env), then run gen-keys.sh." >&2; exit 1; }
+  # it holds the relay secret, the mail password and the server's keys: root only
+  chmod 600 .env
 
   if [ -s "$signers" ]; then
     echo "Fetching signed releases..."
-    git -C "$repo" fetch -q --tags --force origin
+    # no --force: a tag this server already has is never replaced by a different object
+    git -C "$repo" fetch -q --tags origin || echo "  (a tag on GitHub differs from this server's copy; kept this server's)" >&2
     code="$(latest_signed v "$signers")" || { echo "No signed release found (tags v1.2.3 signed by a key in secrets/allowed_signers). Nothing changed." >&2; exit 1; }
+    # never back to an older release than the one installed (a replayed or re-pointed old tag)
+    local state="${STEADY_RELEASE_FILE:-/var/lib/steady/release}" have
+    have="$(cat "$state" 2>/dev/null || true)"
+    if [ -n "$have" ] && [ "$have" != "$code" ] && [ "$(printf '%s\n' "$have" "$code" | sort -V | tail -1)" = "$have" ]; then
+      echo "The newest signed release found ($code) is older than the installed $have: refused. Nothing changed." >&2; exit 1
+    fi
     web="web-$code"
     # everything is checked before anything changes
     if git -C "$repo" rev-parse -q --verify "refs/tags/$web" >/dev/null; then
       verify "$web" "$signers" || { echo "The web app tag $web isn't signed by a trusted key. Nothing changed." >&2; exit 1; }
+      # the signed code tag names the web build that belongs to it (release.sh, from 1.0.4):
+      # a web app signed for another release, or a forged build, doesn't match
+      local want got
+      want="$(git -C "$repo" cat-file tag "refs/tags/$code" | sed -n 's/^web-dist: \([0-9a-f]\{40\}\)$/\1/p' | head -1)"
+      got="$(git -C "$repo" rev-parse "refs/tags/$web^{commit}")"
+      if [ -n "$want" ] && [ "$want" != "$got" ]; then
+        echo "The web app tag $web isn't the build the signed $code names. Nothing changed." >&2; exit 1
+      fi
+      [ -n "$want" ] || echo "  ($code was signed before releases named their web build; checking the web tag's own signature only)" >&2
       unpack_web "refs/tags/$web"
     else
       echo "  No signed web app for $code ($web); keeping the current one." >&2
@@ -36,7 +55,16 @@ main() {
     echo "  installing $code (signature checked)"
     git -C "$repo" checkout -q --detach "refs/tags/$code"
     [ -d web.new ] && swap_web
+    mkdir -p "$(dirname "$state")" && echo "$code" > "$state"
   else
+    # No allowed_signers: unsigned code, for test servers only, and only when .env says so.
+    # Never on a server that has installed a signed release (the file may have been deleted).
+    if [ -s "${STEADY_RELEASE_FILE:-/var/lib/steady/release}" ]; then
+      echo "secrets/allowed_signers is missing, but this server runs signed releases ($(cat "${STEADY_RELEASE_FILE:-/var/lib/steady/release}")). Put the file back; nothing changed." >&2; exit 1
+    fi
+    if ! grep -qE '^STEADY_UNSIGNED=yes' .env && ! grep -qE '^STEADY_TRACK=' .env; then
+      echo "No secrets/allowed_signers, so this would install unsigned code. A live server needs that file (docs/DEPLOY.md, Signed releases); a test server says STEADY_UNSIGNED=yes in .env. Nothing changed." >&2; exit 1
+    fi
     local track webbr
     track="$(track_branch)" || exit 1
     webbr="$(web_branch "$track")"
@@ -67,7 +95,10 @@ main() {
   fi
 
   echo "Building and starting..."
-  docker compose up -d --build
+  # newer base images and Caddy too, not only Steady's own code (they carry security fixes)
+  docker compose pull --ignore-buildable -q 2>/dev/null || docker compose pull -q caddy 2>/dev/null || true
+  docker compose build --pull
+  docker compose up -d
 
   # each build leaves the previous images behind; without this they slowly fill the disk
   docker image prune -f >/dev/null 2>&1 || true
@@ -97,9 +128,15 @@ web_branch() {
   if [ "$1" = main ]; then echo web-dist; else echo "web-dist-$1"; fi
 }
 
-# git verify-tag against the allowed signers (SSH signatures).
+# git verify-tag against the allowed signers (SSH signatures). The signed tag object must also
+# carry the name it is fetched under: verify-tag alone accepts an old release's signed tag object
+# pushed as a new tag name (v9.9.9) or force-pushed over an existing one (fetch --force).
 verify() {
-  git -C .. -c gpg.format=ssh -c gpg.ssh.program=ssh-keygen -c gpg.ssh.allowedSignersFile="$2" verify-tag "$1" >/dev/null 2>&1
+  local obj
+  obj="$(git -C .. rev-parse -q --verify "refs/tags/$1")" || return 1
+  [ "$(git -C .. cat-file -t "$obj")" = tag ] || return 1
+  [ "$(git -C .. cat-file tag "$obj" | sed -n '/^$/q; s/^tag //p')" = "$1" ] || return 1
+  git -C .. -c gpg.format=ssh -c gpg.ssh.program=ssh-keygen -c gpg.ssh.allowedSignersFile="$2" verify-tag "$obj" >/dev/null 2>&1
 }
 
 # The newest tag like v1.2.3 whose signature checks out.

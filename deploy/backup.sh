@@ -14,8 +14,8 @@ command -v age >/dev/null || { echo "Install age first" >&2; exit 1; }
 
 mkdir -p "$DEST"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+OUT="$DEST/steady-$STAMP.tar.age"
+trap 'rm -f "$OUT.part"' EXIT
 
 # SQLite's online backup gives a consistent copy while the server keeps running.
 docker compose exec -T pocketbase sh -c '
@@ -26,7 +26,8 @@ docker compose exec -T pocketbase sh -c '
   done
   if [ -d /pb/pb_data/storage ]; then cp -r /pb/pb_data/storage /tmp/snap/; fi
   tar -C /tmp/snap -cf - . && rm -rf /tmp/snap
-' > "$TMP/pb_data.tar"
-age -R "$RECIPIENT_FILE" -o "$DEST/steady-$STAMP.tar.age" "$TMP/pb_data.tar"
+' | age -R "$RECIPIENT_FILE" -o "$OUT.part"
+# straight into age: the data is never written to this server unencrypted
+mv "$OUT.part" "$OUT"
 find "$DEST" -name 'steady-*.tar.age' -mtime +"$KEEP_DAYS" -delete
-echo "Backup written: $DEST/steady-$STAMP.tar.age"
+echo "Backup written: $OUT"

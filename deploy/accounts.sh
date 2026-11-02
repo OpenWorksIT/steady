@@ -14,6 +14,8 @@
 #   sudo ./accounts.sh audit [--patient <id>] [--actor <id>] [--days 90]
 #   sudo ./accounts.sh check                                     # proxy, rate limits, dashboard
 #   sudo ./accounts.sh demo-patients <psychologist email> [--remove]   # 3 fictional RADR patients
+#   sudo ./accounts.sh rotate-sessions    # signs EVERYONE out (new token secrets): after a
+#                                         # restore, or if a copy of the data may have leaked
 #   ./accounts.sh --test ...                                      # the test stack on a PC
 #
 # How it works: it makes a superuser that lives only for this command, signs in from inside the
@@ -31,7 +33,7 @@ if [ "${1:-}" = "--test" ]; then
 fi
 command -v jq >/dev/null || { echo "Please install jq first (apt-get install -y jq)." >&2; exit 1; }
 
-usage() { sed -n '5,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '5,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 [ $# -ge 1 ] || usage
 
 pbx() { "${COMPOSE[@]}" exec -T pocketbase "$@"; }
@@ -137,6 +139,17 @@ case "$cmd" in
       esac
     done
     api GET "/api/steady/ops/audit?$q" | jq -r '.rows[] | [.at, .actor, .action, .target, .patient, .ip] | @tsv'
+    ;;
+  rotate-sessions)
+    # Sessions are signed with secrets kept in the database, so a copy of it (a backup, a
+    # disk image) could make working sessions until the secrets change. New ones sign
+    # everyone out: they sign in again with their password (staff also with their code).
+    # The secrets go to the server on stdin, never on a command line.
+    for c in users _superusers; do
+      api PATCH "/api/collections/$c" "$(jq -n --arg a "$(openssl rand -hex 32)" --arg f "$(openssl rand -hex 32)" \
+        '{authToken: {secret: $a}, fileToken: {secret: $f}}')" >/dev/null
+    done
+    echo "Everyone is signed out. Patients and staff sign in again with their password (staff with their code too)."
     ;;
   demo-patients)
     [ $# -ge 1 ] || usage

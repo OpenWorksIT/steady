@@ -4,3 +4,26 @@ Description=Steady: disk, memory and load for Settings > Server health
 [Service]
 Type=oneshot
 ExecStart=/opt/steady/deploy/ctl/steady-ctl.sh stats
+TimeoutStartSec=2min
+# it reads a few numbers and writes out/host.json, every 5 minutes as root: nothing else
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/steady/ctl/out
+ProtectHome=read-only
+PrivateTmp=true
+PrivateNetwork=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
