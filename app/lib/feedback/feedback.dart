@@ -233,7 +233,9 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Text('Feedback', style: context.tt.titleLarge),
           const SizedBox(height: 4),
-          Text('Goes to OpenWorks IT, who build Steady. Never about a patient.', style: TextStyle(color: context.sc.ink2)),
+          Text('Goes to OpenWorks IT, who build Steady, and to your practice\'s master psychologist and administrator. '
+              'Never about a patient.',
+              style: TextStyle(color: context.sc.ink2)),
           const SizedBox(height: 14),
           if (_sent)
             Padding(
@@ -269,7 +271,7 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
                   labelText: current.$4,
                   border: const OutlineInputBorder(),
                   // what's written here (and a screenshot) goes to OpenWorks IT, who never see patients
-                  helperText: 'Goes to OpenWorks IT support. Please don\'t name patients.',
+                  helperText: 'Read by OpenWorks IT and your practice\'s master and administrator. Please don\'t name patients.',
                 ),
               ),
               if (_kind == 'bug') ...[

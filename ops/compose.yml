@@ -6,8 +6,16 @@
 #   cd /opt/steady && sudo docker compose -f ops/compose.yml up -d
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: ops
+# each service's log (docker compose logs) is kept to 5 files of 10 MB, not without end
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   caddy:
+    logging: *logging
     image: caddy:2
     restart: unless-stopped
     ports:

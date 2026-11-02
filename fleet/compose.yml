@@ -4,8 +4,16 @@
 #   sudo install -d -m 700 -o 65532 -g 65532 /var/lib/steady-fleet
 #   sudo docker compose -f fleet/compose.yml up -d --build
 # SPDX-License-Identifier: AGPL-3.0-or-later
+# each service's log (docker compose logs) is kept to 5 files of 10 MB, not without end
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   fleet:
+    logging: *logging
     build: .
     restart: unless-stopped
     environment:

@@ -10,8 +10,16 @@
 #
 # Only Caddy is exposed. PocketBase and the push relay talk on an internal network.
 
+# each service's log (docker compose logs) is kept to 5 files of 10 MB, not without end
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   caddy:
+    logging: *logging
     image: caddy:2
     restart: unless-stopped
     ports:
@@ -35,6 +43,7 @@ services:
     security_opt: ["no-new-privileges:true"]
 
   pocketbase:
+    logging: *logging
     build: ../server
     restart: unless-stopped
     # only the practice's own site may call the API from a browser
@@ -93,6 +102,7 @@ services:
       internal: {}
 
   pusher:
+    logging: *logging
     build: ../pusher
     restart: unless-stopped
     read_only: true
