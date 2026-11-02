@@ -28,16 +28,14 @@ routerAdd("POST", "/api/steady/me/delete-request", (e) => {
       });
     });
     const M = require(`${__hooks}/lib/mail.js`);
+    // neutral wording: an inbox can be shared, and the details are in the app
     emailed = M.send($app, u.email(), "Steady: we've received your request to delete your account", [
-      "Hi " + (u.getString("name") || "there") + ",",
+      "Hello,",
       "",
-      "We've received your request to delete your Steady account, and your practice has been told.",
+      "We've received your request to delete your Steady account. It will be done within " + D.DAYS + " days, and you'll get an email when it is. Until then you can still use Steady.",
       "",
-      D.WHY,
-      "",
-      "This will be done within " + D.DAYS + " days, and you'll get an email when it is. Until then you can still use Steady.",
-      "If you didn't ask for this, please contact your practice."
-    ].join("\n") + M.FOOTER);
+      "If you didn't ask for this, open Steady, or tell the person who invited you to it."
+    ].join("\n") + M.PATIENT_FOOTER);
   }
   return e.json(200, { requestedAt: at, days: D.DAYS, emailed: emailed });
 }, $apis.requireAuth());
@@ -68,12 +66,10 @@ routerAdd("POST", "/api/steady/patients/{id}/delete-account", (e) => {
   if (asked && email) {
     const M = require(`${__hooks}/lib/mail.js`);
     emailed = M.send($app, email, "Steady: your account has been deleted", [
-      "Hi " + (name || "there") + ",",
+      "Hello,",
       "",
-      "Your Steady account has been deleted, as you asked, with everything Steady held about you.",
-      "",
-      "Your practice keeps the clinical records South African law requires it to (HPCSA Booklet 9), and a log of who opened your record and when."
-    ].join("\n") + M.FOOTER);
+      "Your Steady account has been deleted, as you asked, with what Steady held about you. Records the law requires to be kept are kept separately, outside Steady."
+    ].join("\n") + M.PATIENT_FOOTER);
   }
   return e.json(200, { deleted: true, records: removed, emailed: emailed });
 }, $apis.requireAuth());

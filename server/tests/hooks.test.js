@@ -65,6 +65,7 @@ function makeRuntime(opts = {}) {
     get(k) { return this.data[k]; }
     getString(k) { const v = this.data[k]; return v === undefined || v === null ? "" : String(v); }
     getInt(k) { return parseInt(this.data[k] || 0, 10) || 0; }
+    getFloat(k) { return parseFloat(this.data[k] || 0) || 0; }
     getBool(k) { return this.data[k] === true; }
     getDateTime(k) { return new DateTime(this.data[k] || ""); }
     setEmail(v) { this.data.email = v; }
@@ -129,6 +130,21 @@ function makeRuntime(opts = {}) {
 
   const app = {
     findCollectionByNameOrId: (n) => { if (!collections[n]) throw new Error("no collection " + n); return collections[n]; },
+    findFirstRecordByData: (name, field, value) => {
+      const r = (store[name] || []).find((x) => x.getString(field) === String(value));
+      if (!r) throw new Error("no record");
+      return r;
+    },
+    // raw SQL (one migration backfills a column): recorded, not run
+    db: () => ({ newQuery: (sql) => ({ execute() { (app.sql = app.sql || []).push(sql); } }) }),
+    // like PocketBase: names match with Unicode case folding ("_ſuperusers" finds _superusers)
+    findCachedCollectionByNameOrId: (n) => {
+      const fold = (x) => String(x).toUpperCase().toLowerCase();
+      if (fold(n) === "_superusers") return { name: "_superusers" };
+      const hit = Object.keys(collections).find((k) => fold(k) === fold(n));
+      if (!hit) throw new Error("no collection " + n);
+      return collections[hit];
+    },
     findRecordById: (n, id) => { const r = (store[n] || []).find((x) => x.id === id); if (!r) throw new Error("not found"); return r; },
     findFirstRecordByFilter: (n, f, p) => { const r = filterRecords(n, f, p)[0]; if (!r) throw new Error("no rows"); return r; },
     findAuthRecordByEmail: (n, email) => { const r = (store[n] || []).find((x) => x.data.email === email); if (!r) throw new Error("no rows"); return r; },
@@ -209,6 +225,7 @@ function makeRuntime(opts = {}) {
     },
     $apis: {
       requireAuth: () => "requireAuth",
+      bodyLimit: (n) => ({ bodyLimit: n }),
       recordAuthResponse: (e, rec) => e.json(200, { token: "token-for-" + rec.id, record: { id: rec.id, role: rec.getString("role") } })
     },
     routerAdd: (method, p, handler) => { routes[method + " " + p] = handler; },
@@ -217,11 +234,23 @@ function makeRuntime(opts = {}) {
     onRecordUpdateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.updateRequest[t] = fn)),
     onRecordUpdate: (fn, ...tags) => tags.forEach((t) => (hooks.update[t] = fn)),
     onBootstrap: (fn) => { (hooks.bootstraps = hooks.bootstraps || []).push(fn); hooks.bootstrap = (e) => hooks.bootstraps.forEach((f) => f(e)); },
-    routerUse: (fn) => { (hooks.middleware = hooks.middleware || []).push(fn); },
+    routerUse: (fn) => { if (typeof fn === "function") (hooks.middleware = hooks.middleware || []).push(fn); else (hooks.globalLimits = hooks.globalLimits || []).push(fn); },
+    onRealtimeSubscribeRequest: (fn) => { hooks.realtimeSubscribe = fn; },
+    onRecordAuthRequest: (fn, ...tags) => tags.forEach((t) => ((hooks.authRequest = hooks.authRequest || {})[t] = fn)),
     onRecordAuthWithPasswordRequest: (fn, ...tags) => tags.forEach((t) => ((hooks.authWithPassword = hooks.authWithPassword || {})[t] = fn)),
     onRecordAfterCreateSuccess: (fn, ...tags) => tags.forEach((t) => (hooks.afterCreate[t] = fn)),
     onRecordsListRequest: (fn, ...tags) => tags.forEach((t) => (hooks.list[t] = fn)),
-    onRecordEnrich: (fn, ...tags) => tags.forEach((t) => ((hooks.enrich = hooks.enrich || {})[t] = fn)),
+    // like PocketBase, several enrich handlers per collection run as one chain
+    onRecordEnrich: (fn, ...tags) => tags.forEach((t) => {
+      const all = (hooks.enrichAll = hooks.enrichAll || {});
+      (all[t] = all[t] || []).push(fn);
+      (hooks.enrich = hooks.enrich || {})[t] = (e) => {
+        let i = 0;
+        const outer = e.next;
+        const step = () => { if (i < all[t].length) all[t][i++](Object.assign(e, { next: step })); else if (outer) outer(); };
+        step();
+      };
+    }),
     onRecordViewRequest: (fn, ...tags) => tags.forEach((t) => (hooks.view[t] = fn)),
     migrate: (up) => up(app)
   };
@@ -306,7 +335,7 @@ function makeRuntime(opts = {}) {
   const makeUser = (fields) => makeRecord("users", Object.assign(
     ["clinician", "admin", "support"].indexOf(fields.role) >= 0 && !("confirmedAt" in fields) ? { confirmedAt: "2099-01-01 00:00:00.000Z" } : {}, fields));
 
-  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, mails, tick: (ms) => { clock += ms; }, now: () => clock };
+  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, mails, sandbox, opts, tick: (ms) => { clock += ms; }, now: () => clock };
 }
 
 /* ------------------------------------------------------------------ tests */
@@ -622,13 +651,38 @@ test("security: push registrations are validated and follow the phone", () => {
 test("security: clinician reads of watch data are audited", () => {
   const rt = makeRuntime({ env: ENV });
   const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
-  const before = rt.store.auditlog.length;
-  const info = { query: { filter: "patient = 'abcdefghijklmno'" } };
-  rt.hooks.list.biometrics({ auth: doc, app: rt.app, collection: { name: "biometrics" }, realIP: () => "127.0.0.1", requestInfo: () => info, next() {} });
+  const p1 = rt.makeUser({ name: "P1", role: "patient", active: true, clinician: doc.id, email: "p1@example.org" });
+  const p2 = rt.makeUser({ name: "P2", role: "patient", active: true, clinician: doc.id, email: "p2@example.org" });
+  const row = (pid) => ({ getString: (k) => (k === "patient" ? pid : "") });
+  const list = (filter, records) => {
+    let sent = false;
+    rt.hooks.list.biometrics({ auth: doc, app: rt.app, collection: { name: "biometrics" }, records, realIP: () => "127.0.0.1",
+      requestInfo: () => ({ query: { filter } }), next() { sent = true; } });
+    return sent;
+  };
+  // the patient comes from the rows returned, never from the filter's text
+  let before = rt.store.auditlog.length;
+  assert.ok(list(`patient = 'aaaaaaaaaaaaaaa' || patient = '${p1.id}'`, [row(p1.id), row(p1.id)]));
+  let rows = rt.store.auditlog.slice(before);
+  assert.deepEqual(rows.map((r) => r.getString("patient")), [p1.id]);
+  assert.equal(rows[0].getString("action"), "list.biometrics");
+  assert.match(rows[0].getString("target"), /filter: patient rows:2/);
+  // one row per patient when a list spans several
+  before = rt.store.auditlog.length;
+  list("", [row(p1.id), row(p2.id)]);
+  assert.deepEqual(rt.store.auditlog.slice(before).map((r) => r.getString("patient")).sort(), [p1.id, p2.id].sort());
+  // an empty answer is still logged, without a patient
+  before = rt.store.auditlog.length;
+  list("", []);
   assert.equal(rt.store.auditlog.length, before + 1);
-  const row = rt.store.auditlog[rt.store.auditlog.length - 1];
-  assert.equal(row.getString("action"), "list.biometrics");
-  assert.equal(row.getString("patient"), "abcdefghijklmno");
+  // and if the log can't be written, nothing is shown
+  const save = rt.app.save;
+  rt.app.save = (rec) => { if (rec.collectionName === "auditlog") throw new Error("disk full"); return save(rec); };
+  let refused = null, shown = false;
+  try { shown = list("", [row(p1.id)]); } catch (err) { refused = err.status; }
+  rt.app.save = save;
+  assert.equal(refused, 500);
+  assert.equal(shown, false);
 });
 
 test("names: the psychologist can rename a patient on their own screens only", () => {
@@ -731,6 +785,69 @@ test("dist: with an iOS link set, iPhones get TestFlight steps; bad links are ig
   // anything that isn't an Apple link is ignored: back to the web app
   rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_IOS_URL: "https://evil.example/x\"><script>" }) });
   assert.equal(rt.call("GET", "/join", { headers: iphone }).status, 302);
+});
+
+test("consent: the practice's own statement from its brand folder; Steady's draft is flagged", () => {
+  // without one, patients would agree to Steady's draft: the config says so
+  const plain = makeRuntime({ env: Object.assign({}, ENV, { STEADY_BRAND_DIR: path.join(os.tmpdir(), "no-brand-here") }) });
+  const c0 = plain.call("GET", "/api/steady/config").data;
+  assert.equal(c0.consentDraft, true);
+  assert.match(c0.consentText, /DRAFT/);
+  // the practice's statement, installed with brand.sh: its own version, no draft
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "steady-consent-"));
+  fs.writeFileSync(path.join(dir, "brand.json"), JSON.stringify({ name: "VR Clinical Psychology", consentVersion: "vr-2026-11" }));
+  fs.writeFileSync(path.join(dir, "consent.md"), "Using Steady with VR Clinical Psychology\n\nWhat we collect ...");
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_BRAND_DIR: dir }) });
+  const c = rt.call("GET", "/api/steady/config").data;
+  assert.equal(c.consentDraft, false);
+  assert.equal(c.consentVersion, "vr-2026-11");
+  assert.match(c.consentText, /VR Clinical Psychology/);
+  // without a version, any change to the text is a new version (patients are asked again)
+  fs.writeFileSync(path.join(dir, "brand.json"), JSON.stringify({ name: "VR Clinical Psychology" }));
+  const v1 = rt.call("GET", "/api/steady/config").data.consentVersion;
+  fs.writeFileSync(path.join(dir, "consent.md"), "Using Steady with VR Clinical Psychology\n\nWhat we collect, changed ...");
+  const v2 = rt.call("GET", "/api/steady/config").data.consentVersion;
+  assert.match(v1, /^practice-/);
+  assert.notEqual(v1, v2);
+  // placeholders left in the practice's statement still count as a draft
+  fs.writeFileSync(path.join(dir, "consent.md"), "Contact\n[Practice name, Information Officer, email, phone]");
+  assert.equal(rt.call("GET", "/api/steady/config").data.consentDraft, true);
+});
+
+test("signing out ends the session on the server; the relay can only remove the devices it was sent", () => {
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUSHER_URL: "http://pusher:8080" }), invalidDevices: [] });
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: doc.id, email: "p@example.org" });
+  const before = pat.getString("tokenKey");
+  const r = rt.call("POST", "/api/steady/me/sign-out", { auth: pat });
+  assert.equal(r.status, 200);
+  assert.notEqual(rt.app.findRecordById("users", pat.id).getString("tokenKey"), before, "old tokens stop working");
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "auth.signed-out"));
+  assert.equal(rt.call("POST", "/api/steady/me/sign-out", {}).status, 401);
+  // a device of someone else, named as "invalid" in the relay's answer, stays
+  const theirs = rt.makeRecord("devices", { user: doc.id, platform: "ios", provider: "apns", token: "a".repeat(64) });
+  const mine = rt.makeRecord("devices", { user: pat.id, platform: "ios", provider: "apns", token: "b".repeat(64) });
+  const s = rt.sandbox.require(path.join(HOOKS, "lib", "server.js"));
+  rt.opts.invalidDevices = [theirs.id, mine.id];
+  s.push(rt.app, pat.id, "assignment");
+  const ids = (rt.store.devices || []).map((d) => d.id);
+  assert.ok(ids.includes(theirs.id), "another account's device isn't touched");
+  assert.ok(!ids.includes(mine.id), "this account's dead device is removed");
+});
+
+test("crisis lines: the national ones always come first; a practice can only add checked numbers", () => {
+  const lines = (json) => makeRuntime({ env: Object.assign({}, ENV, { STEADY_CRISIS_LINES_JSON: json }) }).call("GET", "/api/steady/config").data.crisisLines;
+  const base = lines("");
+  assert.deepEqual(base.map((l) => l.number), ["0800 567 567", "112"]);
+  assert.deepEqual(lines("[]").map((l) => l.number), ["0800 567 567", "112"], "an empty list can't remove them");
+  assert.deepEqual(lines("{}").map((l) => l.number), ["0800 567 567", "112"]);
+  const got = lines(JSON.stringify([
+    { label: "Practice after hours", number: "+27 41 123 4567" },
+    { label: "SADAG Suicide Crisis Line (fake)", number: "0800567567" },
+    { label: "Bad", number: "call me" },
+    { label: "", number: "0800 111 222" }
+  ]));
+  assert.deepEqual(got.map((l) => l.number), ["0800 567 567", "112", "+27 41 123 4567"]);
 });
 
 test("brand: the practice's look comes from a folder on the server, not from the code", () => {
@@ -957,12 +1074,12 @@ test("system: only server admins can check for or start updates, and only once s
 
 test("dashboard: /_/ is closed, and superuser sign-in works only from inside the container", () => {
   let headers;
-  const run = (env, path, remoteAddr) => {
+  const run = (env, path, remoteAddr, auth, query) => {
     const rt = makeRuntime({ env });
     headers = new Map();
     let passed = false;
     try {
-      rt.hooks.middleware.forEach((m) => m({ request: { url: { path }, remoteAddr }, response: { header: () => headers }, status: () => 200, next() { passed = true; } }));
+      rt.hooks.middleware.forEach((m) => m({ auth: auth || null, request: { url: { path, query: () => ({ get: (k) => (query || {})[k] || "" }) }, remoteAddr }, response: { header: () => headers }, status: () => 200, next() { passed = true; } }));
     } catch (err) { return err.status; }
     return passed ? 200 : 0;
   };
@@ -973,10 +1090,46 @@ test("dashboard: /_/ is closed, and superuser sign-in works only from inside the
   assert.equal(run({}, "/api/collections/_SUPERUSERS/auth-with-password", "172.18.0.5:5000"), 404);
   assert.equal(run({}, "/api/collections/pbc_3142635823/auth-with-password", "172.18.0.5:5000"), 404);
   assert.equal(run({}, "/api/collections/_superusers/auth-with-password", "127.0.0.1:5000"), 200);
+  // PocketBase folds Unicode case in collection names: "_ſuperusers" (long s) is _superusers
+  assert.equal(run({}, "/api/collections/_\u017fuperusers/auth-with-password", "172.18.0.5:5000"), 404);
+  assert.equal(run({}, "/api/collections/_\u017fuperusers/auth-with-password", "127.0.0.1:5000"), 200);
+  // a superuser token from outside is refused on any route, not only on _superusers paths
+  const su = { isSuperuser: () => true, getString: () => "" };
+  assert.equal(run({}, "/api/collections/checkins/records", "172.18.0.5:5000", su), 404);
+  assert.equal(run({}, "/api/settings", "172.18.0.5:5000", su), 404);
+  assert.equal(run({}, "/api/settings", "127.0.0.1:5000", su), 200);
+  // expand (related records without an access-log row) is for superusers only
+  const doc = { isSuperuser: () => false, getString: () => "clinician" };
+  assert.equal(run({}, "/api/collections/users/records", "172.18.0.5:5000", doc, { expand: "checkins_via_patient" }), 400);
+  assert.equal(run({}, "/api/collections/users/records", "172.18.0.5:5000", doc, {}), 200);
+  // ...except the one the app uses: an assignment's questionnaire
+  assert.equal(run({}, "/api/collections/assignments/records", "172.18.0.5:5000", doc, { expand: "instrument" }), 200);
+  assert.equal(run({}, "/api/collections/assignments/records/abc123def456ghi", "172.18.0.5:5000", doc, { expand: "instrument" }), 200);
+  assert.equal(run({}, "/api/collections/assignments/records", "172.18.0.5:5000", doc, { expand: "instrument,patient" }), 400);
+  assert.equal(run({}, "/api/collections/assignments/records", "172.18.0.5:5000", doc, { expand: "patient" }), 400);
+  assert.equal(run({}, "/api/collections/checkins/records", "172.18.0.5:5000", doc, { expand: "instrument" }), 400);
+  assert.equal(run({}, "/api/collections/users/auth-refresh", "172.18.0.5:5000", doc, { expand: "checkins_via_patient" }), 400);
+  // API answers are never cached; the web app's files are revalidated
+  run({}, "/api/steady/overview", "172.18.0.5:5000", doc);
+  assert.equal(headers.get("Cache-Control"), "no-store");
+  run({}, "/assets/main.dart.js", "172.18.0.5:5000");
+  assert.equal(headers.get("Cache-Control"), "no-cache");
+  // and the superuser sign-in hook refuses outside callers whatever path reached it
+  const rt2 = makeRuntime({ env: {} });
+  let refused = null;
+  try { rt2.hooks.authRequest._superusers({ remoteIP: () => "172.18.0.5", next() {} }); } catch (err) { refused = err.status; }
+  assert.equal(refused, 404);
+  let inside = false;
+  rt2.hooks.authRequest._superusers({ remoteIP: () => "127.0.0.1", next() { inside = true; } });
+  assert.ok(inside, "superuser sign-in still works from inside the container");
+  assert.deepEqual(rt2.hooks.globalLimits, [{ bodyLimit: 256 * 1024 }]);
+  let subRefused = null;
+  try { rt2.hooks.realtimeSubscribe({ auth: doc, subscriptions: ['checkins/*?options={"query":{"expand":"patient"}}'], next() {} }); } catch (err) { subRefused = err.status; }
+  assert.equal(subRefused, 400);
   assert.equal(run({}, "/api/collections/_superusers/auth-with-password", "[::1]:5000"), 200);
   assert.equal(run({ STEADY_SUPERUSER_API: "open" }, "/api/collections/_superusers/auth-with-password", "172.18.0.5:5000"), 200);
   assert.equal(run({}, "/api/collections/users/auth-with-password", "172.18.0.5:5000"), 200);
-  assert.equal(headers.get("Cache-Control"), undefined, "API answers set their own caching");
+  assert.equal(headers.get("Cache-Control"), "no-store", "API answers may hold patient information: never cached");
   // the web app's files must be re-checked after every update
   assert.equal(run({}, "/main.dart.js", "172.18.0.5:5000"), 200);
   assert.equal(headers.get("Cache-Control"), "no-cache");
@@ -1148,13 +1301,21 @@ test("care: notes are the psychologist's own, shared colleagues read them, patie
 
 test("roles 1.0: who resets whom, easy to lock down and hard to restore, OpenWorks sees no patients", () => {
   const rt = makeRuntime({ env: ENV });
-  const master = rt.makeUser({ role: "clinician", master: true, name: "Dr Master", email: "m@x.test", active: true });
-  const doc = rt.makeUser({ role: "clinician", name: "Dr Doc", email: "d@x.test", active: true });
-  const doc2 = rt.makeUser({ role: "clinician", name: "Dr Two", email: "d2@x.test", active: true });
-  const adm = rt.makeUser({ role: "admin", name: "Reception", email: "r@x.test", active: true });
-  const sup = rt.makeUser({ role: "support", name: "OpenWorks", email: "s@x.test", active: true });
+  // staff with an authenticator: a password reset leaves it in place, so it hands nothing over
+  const two = { totpEnabledAt: "2026-01-01 00:00:00.000Z", totpSecret: "JBSWY3DPEHPK3PXP" };
+  const master = rt.makeUser(Object.assign({ role: "clinician", master: true, name: "Dr Master", email: "m@x.test", active: true }, two));
+  const doc = rt.makeUser(Object.assign({ role: "clinician", name: "Dr Doc", email: "d@x.test", active: true }, two));
+  const doc2 = rt.makeUser(Object.assign({ role: "clinician", name: "Dr Two", email: "d2@x.test", active: true }, two));
+  const adm = rt.makeUser(Object.assign({ role: "admin", name: "Reception", email: "r@x.test", active: true }, two));
+  const sup = rt.makeUser(Object.assign({ role: "support", name: "OpenWorks", email: "s@x.test", active: true }, two));
   const pat = rt.makeUser({ role: "patient", name: "Pat", clinician: doc.id, email: "p@x.test", active: true });
   const reset = (who, target, twoStep) => rt.call("POST", `/api/steady/people/${target.id}/reset-password`, { auth: who, body: { twoStep: !!twoStep } }).status;
+  // without email, a staff member who has no authenticator yet can't be reset by anyone in the
+  // app: whoever did it could sign in as them (the practice admin, then reading patients)
+  const fresh = rt.makeUser({ role: "clinician", name: "Dr New", email: "new@x.test", active: true });
+  assert.equal(reset(adm, fresh), 400);
+  assert.equal(reset(master, fresh), 400);
+  assert.equal(reset(sup, fresh), 400);
   // patients: their psychologist, the master clinician, the practice admin; not OpenWorks
   assert.equal(reset(doc, pat), 200);
   // (the master clinician and practice admin need email for the patient's code: tested on its own)
@@ -1266,7 +1427,7 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
   assert.equal(rt.mails[0].from.address, "noreply@steadyapp.co.za");
   const code = /is:\s+(\d{6})/.exec(rt.mails[0].text)[1];
   assert.ok(!rt.mails[0].subject.includes(code), "the code isn't in the subject (lock screens show it)");
-  assert.ok(!/patient|Pat\b/.test(rt.mails[0].text.replace(/Nothing about patients/, "")), "no patient details in email");
+  assert.ok(!/patient|Pat\b/.test(rt.mails[0].text.replace(/Steady never puts patients' information in emails/, "")), "no patient details in email");
   // wrong codes count; the right one links the device and signs in
   assert.equal(rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: r.data.ticket, code: "000000" } }).status, 400);
   assert.equal(rt.call("POST", "/api/steady/auth/link-device", { body: { ticket: "nonsense-ticket-nonsense", code } }).status, 400);
@@ -1357,6 +1518,13 @@ test("1.0 hardening: patients never get scores, wrong tries rest the account, li
   for (let i = 0; i < 10; i++) assert.equal(signIn("wrong-" + i).status, 400);
   assert.equal(signIn("patient-password").status, 429);
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "auth.resting"));
+  // an address with no account rests exactly the same way, so the answers don't tell anyone
+  // whether someone is a patient here
+  const nobody = (password) => rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "Nobody@Example.org ", password } });
+  for (let i = 0; i < 10; i++) assert.equal(nobody("wrong-" + i).status, 400);
+  assert.equal(nobody("anything").status, 429);
+  // the count is per address: another patient isn't affected, and a success clears it
+  assert.equal(rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "nobody2@example.org", password: "x" } }).status, 400);
   rt.tick(16 * 60000);
   assert.ok(signIn("patient-password").data.token, "after the rest it works, and the count starts again");
   // an unknown email gets the same answer
@@ -1473,7 +1641,9 @@ test("a patient asks to delete their account; their psychologist deletes it afte
   assert.ok(note, "their psychologist is told in the app");
   assert.ok(!rt.store.notifications.some((n) => n.getString("recipient") === master.id), "the master clinician isn't, while the psychologist is active");
   const mail = rt.mails.find((m) => m.to[0].address === "pat@example.org");
-  assert.ok(mail && /HPCSA/.test(mail.text) && /30 days/.test(mail.text), "the patient is emailed what happens and why");
+  assert.ok(mail && /30 days/.test(mail.text), "the patient is emailed when it will happen");
+  // and nothing in it says therapy to someone else reading the inbox (the why is in the app)
+  assert.ok(!/psycholog|clinical|HPCSA|practice|patient/i.test(mail.text), "neutral wording: " + mail.text);
   // asking again changes nothing and sends nothing more
   const mailsBefore = rt.mails.length;
   assert.equal(ask("patient-password").data.requestedAt, r.data.requestedAt);

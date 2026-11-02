@@ -39,7 +39,7 @@ routerAdd("POST", "/api/steady/feedback", (e) => {
   $app.save(rec);
   s.audit($app, e, "feedback.sent", "feedback:" + rec.id + " " + input.kind, "");
   return e.json(200, { id: rec.id });
-}, $apis.requireAuth());
+}, $apis.requireAuth(), $apis.bodyLimit(7 * 1024 * 1024)); // a screenshot (at most 6 MB) and the report
 
 // OpenWorks support and the monitor key get the full picture. The practice's own staff see
 // what was raised as tickets (what, who, when, status), without the technical detail.

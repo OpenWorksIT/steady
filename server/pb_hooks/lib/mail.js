@@ -75,7 +75,10 @@ function send(app, to, subject, text) {
   }
 }
 
-var FOOTER = "\n\nThis is an automatic message from Steady. Nothing about patients is ever sent by email.";
+// Staff emails are about their own account; patient emails (a deletion request, a reset code)
+// are worded so that someone else reading the inbox learns nothing about therapy.
+var FOOTER = "\n\nThis is an automatic message from Steady. Steady never puts patients' information in emails.";
+var PATIENT_FOOTER = "\n\nThis is an automatic message from Steady.";
 
 /** A notice to a staff member about their own account; adds who to contact if it wasn't them. */
 function notice(app, user, subject, lines) {
@@ -85,4 +88,4 @@ function notice(app, user, subject, lines) {
   return send(app, user.email(), "Steady: " + subject, text);
 }
 
-module.exports = { ready: ready, configure: configure, clear: clear, send: send, notice: notice, FOOTER: FOOTER };
+module.exports = { ready: ready, configure: configure, clear: clear, send: send, notice: notice, FOOTER: FOOTER, PATIENT_FOOTER: PATIENT_FOOTER };

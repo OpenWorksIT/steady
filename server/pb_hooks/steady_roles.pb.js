@@ -86,7 +86,7 @@ routerAdd("GET", "/api/steady/audit", (e) => {
   const days = Math.max(1, Math.min(3660, Number(q.days) || 30));
   let filter = "created >= {:since}";
   const params = { since: s.dateValue(s.nowMs() - days * s.core.DAY).string() };
-  if (q.patient) { filter += " && patient = {:p}"; params.p = s.core.str(q.patient, 20); }
+  if (q.patient) { filter += " && (patient = {:p} || patientRef = {:p})"; params.p = s.core.str(q.patient, 20); }
   if (q.actor) { filter += " && actor = {:a}"; params.a = s.core.str(q.actor, 20); }
   const names = {};
   const name = (id) => {

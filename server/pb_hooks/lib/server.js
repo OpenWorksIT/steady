@@ -219,17 +219,25 @@ function env(name, fallback) {
 
 /* ---------- audit ---------- */
 
-function audit(app, e, action, target, patientId) {
+/** Writes one access-log row. strict (reads of patient data): if the row can't be written,
+ *  the read is refused rather than shown without a trace. */
+function audit(app, e, action, target, patientId, strict) {
   try {
     var rec = new Record(app.findCollectionByNameOrId("auditlog"));
     rec.set("actor", e && e.auth ? e.auth.id : "");
     rec.set("action", action);
     rec.set("target", core.str(target, 200));
-    if (patientId) rec.set("patient", patientId);
+    if (patientId) {
+      rec.set("patient", patientId);
+      // plain text too: the relation is emptied when the account is deleted, and the log of
+      // who opened the record must stay findable afterwards
+      rec.set("patientRef", patientId);
+    }
     rec.set("ip", e && e.realIP ? e.realIP() : "");
     app.save(rec);
   } catch (err) {
     app.logger().warn("steady: audit write failed", "error", String(err));
+    if (strict) throw new ApiError(500, "Steady couldn't record this access, so nothing was shown. Please try again.");
   }
 }
 
@@ -357,6 +365,7 @@ function push(app, userId, kind) {
       method: "POST",
       body: JSON.stringify(payload),
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + env("STEADY_PUSHER_SECRET", "") },
+      // the relay sends to every device at once and gives up on a slow one well within this
       timeout: 10
     });
     if (res.statusCode !== 200) {
@@ -366,8 +375,13 @@ function push(app, userId, kind) {
     var parsed = {};
     try { parsed = JSON.parse(toString(res.body)) || {}; } catch (err) { parsed = {}; }
     var gone = Array.isArray(parsed.invalid) ? parsed.invalid : [];
+    // only this request's own devices: the relay talks to servers patients choose, so its
+    // answer must never be able to remove anyone else's registration
+    var mine = {};
+    targets.forEach(function (t) { mine[t.id] = true; });
     gone.forEach(function (id) {
-      try { app.delete(app.findRecordById("devices", id)); } catch (e) { /* already removed */ }
+      if (!mine[String(id)]) return;
+      try { app.delete(app.findRecordById("devices", String(id))); } catch (e) { /* already removed */ }
     });
   } catch (err) {
     app.logger().warn("steady: push failed", "error", String(err));

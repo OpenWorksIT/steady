@@ -313,10 +313,11 @@ def run(su):
           s in (400, 403) or (s == 200 and r.get("patient") == b), r)
     s, r = call("GET", "/api/collections/checkins/records", patB, query={"expand": "patient", "perPage": 50})
     leaked = [i for i in items(r) if i.get("expand", {}).get("patient", {}).get("id") not in (None, b)]
-    check(A, "expanding relations doesn't pull in other patients", s == 200 and not leaked, leaked)
+    # since 1.0.4 expand is refused outright for app accounts (400); before, it had to stay within the rules
+    check(A, "expanding relations doesn't pull in other patients", s == 400 or (s == 200 and not leaked), (s, leaked))
     s, r = call("GET", "/api/collections/assignments/records", patA, query={"expand": "clinician"})
     exp = [i.get("expand", {}).get("clinician", {}) for i in items(r)]
-    check(A, "a patient sees their psychologist's name, not their email", s == 200 and all(not e.get("email") for e in exp), exp)
+    check(A, "a patient sees their psychologist's name, not their email", s == 400 or (s == 200 and all(not e.get("email") for e in exp)), (s, exp))
     s, r = call("GET", "/api/collections/biometrics/records", patB, query={"filter": f"patient='{a}'"})
     check(A, "another patient's watch data stays hidden", s == 200 and not items(r), r)
     s, r = call("GET", "/api/collections/notifications/records", patB)
