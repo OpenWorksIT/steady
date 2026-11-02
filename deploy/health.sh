@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # How this Steady server is coping, in a few lines: speed, errors, database, disk, memory.
-#   ./health.sh             the last 15 minutes, hour and day
-#   ./health.sh --json      everything, as JSON (what a central dashboard reads)
-#   watch -n 30 ./health.sh keep it on screen
-# Uses STEADY_MONITOR_KEY from .env (gen-keys.sh makes one).
+#   sudo ./health.sh             the last 15 minutes, hour and day
+#   sudo ./health.sh --json      everything, as JSON (what a central dashboard reads)
+#   sudo watch -n 30 ./health.sh keep it on screen
+# Uses STEADY_MONITOR_KEY from .env (gen-keys.sh makes one); as root, since .env is root-only.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
 cd "$(dirname "$0")"

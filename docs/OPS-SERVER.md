@@ -97,9 +97,12 @@ from 1.0.4, the server stays on the main branch it was cloned from.)
 ```bash
 cd /opt/steady && git fetch -q --tags origin
 t="$(git tag -l 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
-git cat-file tag "$t" | grep -qx "tag $t" \
-  && git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=deploy/secrets/allowed_signers verify-tag "$t" \
-  && git checkout -q --detach "$t" && echo "now on $t"
+if git cat-file -e "$t:ops/compose.yml" 2>/dev/null && git cat-file tag "$t" | grep -qx "tag $t" \
+   && git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=deploy/secrets/allowed_signers verify-tag "$t"; then
+  git checkout -q --detach "$t" && echo "now on $t"
+else
+  echo "$t isn't a signed release with ops/ in it: nothing changed"
+fi
 docker compose -f fleet/compose.yml up -d --build                  # the fleet view
 docker compose -f ops/compose.yml exec caddy caddy reload --config /etc/caddy/ops/Caddyfile
 docker compose -f ops/compose.yml pull && docker compose -f ops/compose.yml up -d   # Caddy itself, now and then

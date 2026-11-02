@@ -55,8 +55,12 @@ if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
     exit 1
   fi
   webcheck="pushed by CI after a successful 'Test builds' run for this commit"
+elif [ "${STEADY_SKIP_WEB_CHECK:-}" = yes ]; then
+  webcheck="NOT checked who pushed it (STEADY_SKIP_WEB_CHECK=yes)"
 else
-  webcheck="NOT checked who pushed it: install the GitHub CLI (gh) and sign in, then run this again"
+  echo "Can't check who pushed the web app to web-dist: the GitHub CLI (gh) isn't installed or signed in." >&2
+  echo "Install it and run gh auth login, then try again. (STEADY_SKIP_WEB_CHECK=yes signs without the check.)" >&2
+  exit 1
 fi
 echo "Release $tag"
 echo "  code:    ${sha:0:7}  $(git log -1 --format=%s "$sha")"

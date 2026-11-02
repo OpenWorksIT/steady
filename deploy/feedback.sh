@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Feedback sent from the psychologists' and administrators' screens (the Feedback button).
-#   ./feedback.sh                 open reports, newest first
+#   sudo ./feedback.sh            open reports, newest first (as root: .env is root-only)
 #   ./feedback.sh all|done        all of them, or the finished ones
 #   ./feedback.sh show <id>       one report, with the steps that led up to it
-#   ./feedback.sh shot <id> [file.png]   save its screenshot (blurred unless the sender chose otherwise)
+#   ./feedback.sh shot <id> [file.png]   save its screenshot (always blurred from 1.0.4; before, the sender could choose)
 # Uses STEADY_MONITOR_KEY from .env, like health.sh. The master psychologist and administrators
 # also see them in the app (Settings > Feedback), where they can be marked done.
 # SPDX-License-Identifier: AGPL-3.0-or-later

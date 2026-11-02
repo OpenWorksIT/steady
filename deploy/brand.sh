@@ -18,7 +18,8 @@
 #   consent.md  the practice's consent statement, which patients agree to when they join (plain
 #               text, at most 20 000 characters). Without it they see Steady's draft. Change
 #               "consentVersion" (or leave it out: the text's fingerprint is used) and patients
-#               are asked to agree again. Installing a brand without consent.md keeps the
+#               who agreed to an earlier one are asked to agree to it the next time they open
+#               the app (1.0.4 and later). Installing a brand without consent.md keeps the
 #               statement already installed.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail

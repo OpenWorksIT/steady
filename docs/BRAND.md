@@ -29,8 +29,8 @@ never touches it), holding:
   when they join, in plain text, written with the practice (its Information Officer, how to
   complain, its AI note-taking service if any). Steady's draft in
   `server/pb_hooks/content/consent.md` is a starting point. A new version of the text asks
-  patients to agree again (or set `"consentVersion"` in `brand.json` to name versions
-  yourself).
+  patients who agreed to an earlier one to read and agree to it the next time they open the app
+  (Steady 1.0.4 and later); set `"consentVersion"` in `brand.json` to name versions yourself.
 
 OpenWorks IT installs it; psychologists can't change it in the app. It takes effect at once,
 with no restart: the apps pick it up the next time they open.

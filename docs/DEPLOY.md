@@ -31,7 +31,9 @@ Edit `.env`:
 The consent statement patients agree to is the practice's own, installed with its branding as
 `consent.md` (step 4a, [BRAND.md](BRAND.md)). Until then patients see Steady's draft
 (`server/pb_hooks/content/consent.md`), and the fleet view and `audit-server.sh` say so. A
-changed statement is a new version: patients are asked to agree again.
+changed statement is a new version: patients who agreed to an earlier one are asked to read and
+agree to it the next time they open the app (from Steady 1.0.4; older copies of the app don't
+ask). The practice's People screen shows who still has an older consent.
 
 ## 3. Apple push (iOS)
 
@@ -61,15 +63,17 @@ sudo ./brand.sh install <brand folder>          # or on the server
 ## 4b. Watching the server
 
 ```sh
-./health.sh              # speed, errors, database, disk and memory, in a few lines
-watch -n 30 ./health.sh  # keep it on screen
-./health.sh --json       # everything, for a dashboard
+sudo ./health.sh              # speed, errors, database, disk and memory, in a few lines
+sudo watch -n 30 ./health.sh  # keep it on screen
+sudo ./health.sh --json       # everything, for a dashboard
 ```
 
 It needs `STEADY_MONITOR_KEY` in `.env` (`./gen-keys.sh` prints one; then `docker compose up -d`).
-`./feedback.sh` lists what staff sent with the Feedback button ("Love this", "Don't like this",
-"Bug found"); `./feedback.sh show <id>` gives one report with the steps that led to it, and
-`./feedback.sh shot <id>` saves its screenshot. Same key.
+`sudo ./feedback.sh` lists what staff sent with the Feedback button ("Love this", "Don't like
+this", "Bug found"); `sudo ./feedback.sh show <id>` gives one report with the steps that led to
+it, and `sudo ./feedback.sh shot <id>` saves its screenshot. Same key. These and `docker compose`
+here run as root: `.env`, which holds the keys and the compose settings, is readable only by
+root.
 
 Disk, memory and load come from `deploy/ctl` (run `sudo ./ctl/install.sh` again after updating, to
 add the 5-minute stats timer). Limits and when to move up a server size: [CAPACITY.md](CAPACITY.md).
@@ -140,10 +144,13 @@ about patients, from the Steady mailbox at **steadyapp.co.za**:
 3. In `deploy/.env`: `STEADY_SMTP_HOST`, `STEADY_SMTP_PORT` (587 with STARTTLS, or 465 with
    `STEADY_SMTP_TLS=on`), `STEADY_SMTP_USER`, `STEADY_SMTP_PASSWORD`. Then `docker compose up -d`.
 4. Check: sign in on a new browser; the code should arrive within a minute. Server health
-   (Settings, or `./health.sh`) shows `signIn.email` and `signIn.linkedDevices` as true.
+   (Settings, or `sudo ./health.sh`) shows `signIn.email` and `signIn.linkedDevices` as true.
 
 Without email settings, staff sign in with password and authenticator code anywhere, as before
-1.0. `STEADY_DEVICE_LINK=off` keeps it that way even with email set up.
+1.0. `STEADY_DEVICE_LINK=off` keeps it that way even with email set up. Without linked devices
+the app also refuses a staff password reset that would hand the account to whoever does it (a
+full reset, or a reset of someone who hasn't set up two-step sign-in yet): OpenWorks does those
+on the server with `sudo ./accounts.sh reset <email> [--full]`.
 
 Rate limits and the trusted proxy header are set by migrations; `accounts.sh check` shows them.
 There is no switch in `.env` that reopens the dashboard or superuser sign-in: Caddy answers 404
@@ -199,7 +206,8 @@ sudo /opt/steady/deploy/update.sh
 ```
 
 Migrations run automatically on start; the app's "Update now" (below) takes a copy of the data
-first.
+first. After the first update to 1.0.4 or later, run `sudo ./ctl/install.sh` once: it installs
+the locked-down update services from `deploy/ctl/` (running it again is harmless).
 
 ### Signed releases (live servers)
 
