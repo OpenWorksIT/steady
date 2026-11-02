@@ -63,6 +63,19 @@ class AppState extends ChangeNotifier {
   bool get signedIn => api.signedIn;
   bool get isClinician => api.role == 'clinician';
   bool get isPatient => api.role == 'patient';
+
+  /// The practice changed its consent statement after this patient agreed to it: they read the
+  /// new one and agree before going on. Only with the server's own statement in hand (never the
+  /// stand-in used while offline).
+  bool get needsConsentAgain =>
+      isPatient &&
+      config.consentVersion.isNotEmpty &&
+      config.consentText.isNotEmpty &&
+      api.myConsentVersion.isNotEmpty &&
+      api.myConsentVersion != config.consentVersion;
+
+  /// After the patient agreed (the account was refreshed): on to the app.
+  void consentRecorded() => notifyListeners();
   bool get isAdmin => api.role == 'admin';
   bool get isSupport => api.role == 'support';
 

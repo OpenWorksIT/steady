@@ -20,6 +20,7 @@ import 'ui/auth/server_screen.dart';
 import 'ui/auth/sign_in_screen.dart';
 import 'ui/auth/two_step_screen.dart';
 import 'ui/clinician/clinician_shell.dart';
+import 'ui/patient/consent_again_screen.dart';
 import 'ui/patient/daily_flow.dart';
 import 'ui/practice/admin_shell.dart';
 import 'ui/practice/support_shell.dart';
@@ -83,7 +84,7 @@ class RootGate extends StatelessWidget {
     if (state.isClinician) return const ClinicianShell();
     if (state.isAdmin) return const AdminShell();
     if (state.isSupport) return const SupportShell();
-    if (state.isPatient) return const PatientGate();
+    if (state.isPatient) return state.needsConsentAgain ? const ConsentAgainScreen() : const PatientGate();
     return const SignInScreen(message: "This account can't use the app. Ask the practice to check its role.");
   }
 }

@@ -289,6 +289,9 @@ class Api {
   bool get wearableConnected => (me?.getStringValue('wearableConsentAt') ?? '').isNotEmpty;
   String get privacyNoticeVersion => me?.getStringValue('privacyNoticeVersion') ?? '';
 
+  /// The version of the practice's consent statement this patient agreed to.
+  String get myConsentVersion => me?.getStringValue('consentVersion') ?? '';
+
   /* ---------------- session ---------------- */
 
   Future<AppConfig> config() async => AppConfig.fromJson(await pb.send<Map<String, dynamic>>('/api/steady/config'));
@@ -589,7 +592,7 @@ class Api {
     });
   }
 
-  /// kind: privacy | wearable. Refreshes the account afterwards so its consent fields are current.
+  /// kind: privacy | wearable | consent. Refreshes the account afterwards so its consent fields are current.
   Future<void> setConsent(String kind, String version, {bool accepted = true}) async {
     await pb.send('/api/steady/consent', method: 'POST', body: {'kind': kind, 'version': version, 'accepted': accepted});
     await pb.collection('users').authRefresh();
