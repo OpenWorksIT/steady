@@ -87,8 +87,19 @@ addresses answer 502.
 
 ## Updating
 
+The fleet view holds every practice server's fleet key, so vps3 runs only code OpenWorks has
+signed, like the practice servers: the newest release tag, checked against the signing key
+(the same one-line `allowed_signers` file as on the practice servers, DEPLOY.md "Signed
+releases"; put it in `/opt/steady/deploy/secrets/` here too). A plain `git pull` would run
+whatever is on GitHub's main branch, signed or not. (Until a signed release includes `ops/`,
+from 1.0.4, the server stays on the main branch it was cloned from.)
+
 ```bash
-cd /opt/steady && git pull
+cd /opt/steady && git fetch -q --tags origin
+t="$(git tag -l 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+git cat-file tag "$t" | grep -qx "tag $t" \
+  && git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=deploy/secrets/allowed_signers verify-tag "$t" \
+  && git checkout -q --detach "$t" && echo "now on $t"
 docker compose -f fleet/compose.yml up -d --build                  # the fleet view
 docker compose -f ops/compose.yml exec caddy caddy reload --config /etc/caddy/ops/Caddyfile
 docker compose -f ops/compose.yml pull && docker compose -f ops/compose.yml up -d   # Caddy itself, now and then
