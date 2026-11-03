@@ -110,6 +110,10 @@ class Forum:
         m = re.fullmatch(r"/admin/customize/site_texts/(.+)\.json", route)
         if m:
             key = m.group(1)
+            # Discourse wants the locale, in the query (reading) or the body (writing)
+            locale = p.query if method == "GET" else "locale=" + json.loads(body)["site_text"].get("locale", "")
+            if "locale=en" not in locale:
+                return (400, {"errors": ["You supplied invalid parameters to the request: locale"]})
             if key not in self.texts:
                 return 404
             if method == "PUT":

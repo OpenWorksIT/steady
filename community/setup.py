@@ -851,7 +851,7 @@ def _brand_palettes_and_theme(api, problems):
 
 def _brand_texts(api, problems):
     for key, value in TEXTS.items():
-        current = api.get(f"/admin/customize/site_texts/{key}.json", allow_404=True)
+        current = api.get(f"/admin/customize/site_texts/{key}.json?locale=en", allow_404=True)
         if current is None:
             say("skipped", f"{key}: not in this Discourse version")
             continue
