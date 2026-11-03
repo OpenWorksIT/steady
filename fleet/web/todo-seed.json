@@ -1,0 +1,80 @@
+[
+  {
+    "title": "Community sign-in on vps1: the bridge, its keys, the forum's rules",
+    "detail": "DNS for signin.steadyapp.co.za, then the bridge from /opt/steady with the test server as its one practice, the three .env lines on the test server, the Caddy sites, the pinned block in community.yml and a rebuild, and setup.py.\nSteps: docs/COMMUNITY.md, \"The sign-in bridge\".",
+    "area": "Community", "priority": "now", "status": "todo"
+  },
+  {
+    "title": "Try the Community tab as the test psychologist, on the web and on a phone",
+    "detail": "https://test.steadyapp.co.za in a browser (the web tab appears only under steadyapp.co.za), and the newest test APK. Opened straight in a browser, the forum should say it opens inside Steady. The test server's audit report should list each sign-in.",
+    "area": "Community", "priority": "now", "status": "todo"
+  },
+  {
+    "title": "Move the sign-in bridge to /opt/steady-ops, from a signed release",
+    "detail": "It runs from vps1's test checkout until a signed release has it. Move it before the community goes live (docs/COMMUNITY.md, step 2).",
+    "area": "Community", "priority": "soon", "status": "todo"
+  },
+  {
+    "title": "Take the test psychologist out of the community before it goes live",
+    "detail": "Remove the address from the test practice's \"emails\" in /var/lib/steady-signin/config.json, then in the forum: Admin > Users > the test account > Log out (and Suspend).",
+    "area": "Community", "priority": "later", "status": "todo"
+  },
+  {
+    "title": "Decide: should forum sessions end by themselves when a Steady account is stopped?",
+    "detail": "Today Kempie logs people out (Admin > Users > Log out); without Steady they can't come back. The bridge could do it with a forum admin key: one thing less to remember, one more key to guard.",
+    "area": "Community", "priority": "later", "status": "look"
+  },
+  {
+    "title": "Release 1.1.0",
+    "detail": "On Tiaan's say-so: a pull request from test into main, then deploy/release.sh on his own computer, then the practice servers update. It brings the version numbers, the Community tab and this list to the fleet view.",
+    "area": "Releases", "priority": "soon", "status": "look"
+  },
+  {
+    "title": "Firebase for Android notifications",
+    "detail": "Decided on 3 November: Android moves to Google's push (Firebase Cloud Messaging) and ntfy goes. Set up the Firebase project, and one service-account key per practice server.",
+    "area": "Apps and stores", "priority": "soon", "status": "todo"
+  },
+  {
+    "title": "Store review of the apps (1.0.2)",
+    "detail": "In review since 1 November. When each store approves, update app/stores.json, so every server shows the store's version.",
+    "area": "Apps and stores", "priority": "soon", "status": "waiting", "waiting": "Google Play and Apple"
+  },
+  {
+    "title": "Store reviewers' notes: point them at test.steadyapp.co.za",
+    "detail": "The review notes and demo accounts should use test.steadyapp.co.za. Both addresses open vps1's test server until steady.openworks.co.za is retired.",
+    "area": "Apps and stores", "priority": "later", "status": "todo"
+  },
+  {
+    "title": "Get the lawyer's answers to \"Steady: for a lawyer to confirm\"",
+    "detail": "Send the doc, then keep it current: answers go in it, and new questions are added as they come up.",
+    "area": "Paperwork", "priority": "soon", "status": "todo",
+    "link": "https://claude.ai/artifact/3uxjZFBuz2rXNBRFcGSE4N"
+  },
+  {
+    "title": "Send Kempie \"Steady: for Kempie\"",
+    "detail": "What he looks at and what he remembers: the operator agreement, the consent statement, the questionnaires, retention, the community's first day, and logging people out of the forum when they leave a practice.",
+    "area": "Paperwork", "priority": "soon", "status": "todo",
+    "link": "https://claude.ai/artifact/HCHKyxo8UARoqmkFGHRawe"
+  },
+  {
+    "title": "Where does domains.co.za keep the mailbox that sends sign-in codes?",
+    "detail": "Where the mail host is matters for the list of sub-operators and the lawyer's questions.",
+    "area": "Mail and domains", "priority": "later", "status": "look"
+  },
+  {
+    "title": "The security review's morning list: confirm each one is done",
+    "detail": "- vps2 installs only signed releases (audit-server.sh says so)\n- the corrected privacy policy is published\n- steadyapp.co.za: the extra A record gone, HTTPS enforced\n- SPF, DKIM, DMARC and CAA records for steadyapp.co.za\n- GitHub: the web-dist ruleset; steadyapp's alerts and its main ruleset\n- Play Console: the Data safety deletion link",
+    "area": "OpenWorks", "priority": "soon", "status": "look",
+    "link": "https://claude.ai/artifact/LEHovKyyrdqxh6BWLJxtck"
+  },
+  {
+    "title": "Split CI into a build job and a publish job",
+    "detail": "Left open in the security review (F2, F12): a build job without write rights, and a release-time rebuild of the web app to compare with what CI published.",
+    "area": "GitHub", "priority": "later", "status": "look"
+  },
+  {
+    "title": "Try PocketBase with a read-only file system on vps1",
+    "detail": "Decided in the security review: read-only after a trial on vps1. Then through test to the practice servers.",
+    "area": "Test server (vps1)", "priority": "later", "status": "todo"
+  }
+]

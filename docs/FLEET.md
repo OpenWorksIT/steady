@@ -14,6 +14,10 @@ consent statement, deletion requests past 25 days, staff without two-step sign-i
 standing picture of what the November 2026 security review found and fixed; a check that stops
 running shows as such.
 
+**To do** (in the bar at the top) is OpenWorks' own list: what it has to do, look at or wait
+for, across the practice servers, the community, the apps, the releases and the paperwork, and
+the monthly upkeep round. See "To do" below.
+
 It never shows anything about patients: the servers send only versions, health, counts, backup
 age and what their checks found. Sign-in takes a name, a password and a code from an
 authenticator app.
@@ -126,6 +130,29 @@ gets a Docker network of its own (`fleet-edge`) that only it and Shap's Caddy ar
 
 Other commands, the same way (in `/opt/steady-ops`): `passwd <name>`, `resettotp <name>` (a lost phone),
 `deluser <name>` (signs that person out at once).
+
+## To do
+
+OpenWorks' list of everything it has to see to that isn't a server's own check (those are on
+**Checks**). The lawyer and Kempie have docs of their own; what OpenWorks does about them goes
+here.
+
+- **List.** Each item has what needs to happen, where it belongs (OpenWorks, the community, a
+  practice server by name, and so on), now, soon or later, and a status: *On the list*, *To look
+  at* (a decision, or something to check), *Waiting* (on whom), *Done* or *Not doing*. A date
+  and a link are optional. The list is grouped by now, soon and later; within each, what's past
+  its date comes first. The buttons above it show one status or one area.
+- **Done** needs no form: the button on the list closes it as you, now. From the item's own
+  page, a note says what was done ("renewed until 2027"). Everything that happens to an item is
+  in its history and in the audit log, with who did it.
+- **Monthly upkeep** is the round in [UPKEEP.md](UPKEEP.md), one line per item, confirmed once
+  a month with your name and the time. Earlier months stay as they were. What's left open goes
+  on the list.
+- Never anything about patients, in either.
+
+It is kept in `todo.json` in the data folder (same owner and mode as the rest). The first start
+fills it with the list as it stood in November 2026 (`fleet/web/todo-seed.json`); after that it
+is only what people add and change. A copy of `/var/lib/steady-fleet` keeps it with the rest.
 
 ## Updating the fleet view
 
