@@ -279,9 +279,7 @@ OpenWorks holds no admin account on the forum. For the setup it uses a key made 
 and removes it afterwards:
 
 ```bash
-cd /var/discourse && sudo ./launcher enter community
-rake 'api_key:create_master[setup.py]'     # prints the key once
-exit
+sudo docker exec community rake 'api_key:create_master[setup.py]'     # prints the key once
 ```
 
 On your own computer, in the Steady repository:
@@ -316,14 +314,25 @@ Run it again any time. It changes only what differs. Lines marked `WRONG` need f
 `community.yml`. To add a practice's private group and category at the same time, add
 `--practice vr="VR Clinical Psychology"`.
 
+**Discourse's own welcome page.** Until the forum has an admin, its front page is Discourse's
+"Congratulations, you installed Discourse!", even for someone signed in through Steady. Kempie's
+first visit makes him admin, which ends it. To try the forum before he has been (the test
+server, for one), end it on the server:
+
+```bash
+sudo docker exec community rails runner 'SiteSetting.has_login_hint = false; SiteSetting.global_notice = ""'
+```
+
 Then remove the key: once Kempie is admin, **Admin > Advanced > API keys > setup.py > Revoke**;
 before that, on the server:
 
 ```bash
-cd /var/discourse && sudo ./launcher enter community
-rails runner 'ApiKey.where(description: "setup.py").destroy_all'
-exit
+sudo docker exec community rails runner 'ApiKey.where(description: "setup.py").destroy_all'
 ```
+
+(`docker exec community` runs one command in the forum's container and comes back. Don't paste
+several lines after `./launcher enter community`: that opens a shell in the container, and the
+lines after it go to the wrong place.)
 
 ## 5. First visits
 
@@ -460,11 +469,9 @@ Test a restore at least once, on a spare server set up the same way:
 
 ```bash
 age -d -i backup-key.txt <file>.tar.gz.age > /var/discourse/shared/standalone/backups/default/<file>.tar.gz
-cd /var/discourse && ./launcher enter community
-discourse enable_restore
-discourse restore <file>.tar.gz
-discourse disable_restore
-exit
+sudo docker exec community discourse enable_restore
+sudo docker exec community discourse restore <file>.tar.gz
+sudo docker exec community discourse disable_restore
 ```
 
 ## Updates
@@ -507,6 +514,7 @@ The bridge says why it refused someone in its log, never with names or addresses
 | "OpenWorks support comes in through OpenWorks' own server" | A support account opened Community on a practice's server; use the server marked `support`. |
 | "The community didn't open here" in the web app | The practice's Steady isn't a `steadyapp.co.za` address, so the browser won't keep the forum's sign-in in the frame (see "Web addresses"). The phone app works. Or the server's Caddy has no `frame-src` for the forum (step 2). |
 | A blank Community tab in the web app | The browser's console names the rule: `frame-src` in Steady's Caddy, or `frame-ancestors` in `community.caddy`. |
+| "Congratulations, you installed Discourse!" in the Community tab | The forum has no admin yet: step 4, "Discourse's own welcome page". |
 | The forum opens as a site of its own | `community.caddy` isn't the current one: copy it again and reload Caddy. |
 | No notification emails | `./launcher logs community`. Port 465 needs `DISCOURSE_SMTP_FORCE_TLS: true`; 587 needs STARTTLS and no FORCE_TLS. Keep the password in quotes. Admin > Emails > Logs shows what was sent. |
 | No HTTPS certificate | DNS must point at vps1; then Shap's Caddy log. |
