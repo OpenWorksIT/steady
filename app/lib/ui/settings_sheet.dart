@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../services/api.dart';
@@ -161,15 +160,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           if (state.api.isStaff) ...[
             const SizedBox(height: 12),
             Text('The practice', style: context.tt.titleMedium),
-            if (state.isClinician && state.config.communityUrl.isNotEmpty)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.forum_outlined),
-                title: const Text('Steady community'),
-                subtitle: const Text('Psychologists from practices that use Steady: the science, questionnaires and Steady\'s future'),
-                trailing: const Icon(Icons.open_in_new),
-                onTap: () => launchUrl(Uri.parse(state.config.communityUrl), mode: LaunchMode.externalApplication).catchError((_) => false),
-              ),
             if (state.api.isManager)
               _Link(icon: Icons.policy_outlined, title: 'Audit report', subtitle: 'Who opened or changed what', open: () => const AuditScreen()),
             if (state.api.isManager || state.api.isSupport)
@@ -220,8 +210,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                 child: const Text('Change'),
               ),
           ]),
-          Text('Steady ${kAppBuild.isEmpty ? '(development build)' : 'build $kAppBuild'}'
-              '${appUpdateAvailable(state) ? ' · build ${state.config.appBuild} available' : ''}',
+          Text('Steady $thisAppVersion'
+              '${appUpdateAvailable(state) ? ' · ${versionLabel(state.config.appVersion, state.config.appBuild)} available' : ''}',
               style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
           const SourceLink(),
         ]),

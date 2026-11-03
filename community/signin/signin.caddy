@@ -1,0 +1,21 @@
+# The community sign-in bridge's site, for the Caddy in front of the forum (docs/COMMUNITY.md).
+# The bridge is "signin" on the community-edge network.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+signin.steadyapp.co.za {
+	reverse_proxy signin:8080
+	header {
+		-Server
+		X-Robots-Tag "noindex, nofollow"
+	}
+	log {
+		format filter {
+			wrap json
+			fields {
+				# no addresses: they carry the sign-in, and Steady's note (a name and an email)
+				request>uri delete
+				request>headers>Cookie delete
+				request>headers>Referer delete
+			}
+		}
+	}
+}

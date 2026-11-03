@@ -40,6 +40,7 @@ const _actions = {
   'audit.read': 'Read the audit report',
   'people.list': 'Opened the practice\'s people',
   'operator-agreement.sign': 'Signed the operator agreement',
+  'account.community-sign-in': 'Signed in to the community forum',
 };
 
 String _describe(String action) {

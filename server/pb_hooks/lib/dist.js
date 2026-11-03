@@ -41,6 +41,8 @@ function appInfo(publicDir) {
   try { size = $os.stat(publicDir + "/download/steady.apk").size(); } catch (e) { return null; }
   return {
     build: String(v.build).slice(0, 40),
+    // Steady's version, as people read it ("1.1.0", "1.1.0 test 23"); builds before 1.1 had none
+    version: String(v.version || "").replace(/[^0-9A-Za-z. -]/g, "").slice(0, 40),
     date: String(v.date || "").slice(0, 40),
     apk: "/download/steady.apk",
     sizeMB: Math.round(size / 1048576 * 10) / 10,
@@ -81,7 +83,7 @@ function joinPage(opts) {
   var app = opts.app;
   var steps = opts.ios ? iosSteps(opts.ios, code) : app
     ? '<a class="btn" href="' + app.apk + '">Download Steady for Android</a>' +
-      '<p class="small">' + app.sizeMB + ' MB &middot; version ' + esc(app.build) + '</p>' +
+      '<p class="small">' + app.sizeMB + ' MB &middot; version ' + esc(app.version || app.build) + '</p>' +
       '<ol>' +
       '<li>Tap the button above and open the file when it has downloaded.</li>' +
       '<li>If your phone asks, allow your browser to <b>install unknown apps</b>, then tap <b>Install</b>.</li>' +

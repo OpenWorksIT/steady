@@ -65,6 +65,8 @@ routerAdd("GET", "/api/steady/fleet", (e) => {
       behind: check ? check.behind : null,
       checkedAt: check ? check.at : null,
       app: check ? check.app : null,
+      // the newest release, what's in testing and the store apps (steady-ctl.sh, releases)
+      releases: check ? check.releases || null : null,
       error: check ? check.error || "" : ""
     },
     // patients are agreeing to Steady's draft consent statement, not the practice's own

@@ -13,8 +13,8 @@ welcome and guidelines topic in Announcements.
 
 Credentials come from the environment, so they stay out of your shell history:
   DISCOURSE_URL           default https://community.steadyapp.co.za
-  DISCOURSE_API_KEY       an admin API key (Admin > Advanced > API keys)
-  DISCOURSE_API_USERNAME  the admin username the key belongs to
+  DISCOURSE_API_KEY       an admin API key (rake api_key:create_master, or Admin > Advanced > API keys)
+  DISCOURSE_API_USERNAME  the admin username to act as (system, with a key from rake)
 
 Run with --dry-run first: it reads the forum and prints what it would change. Without
 DISCOURSE_API_KEY, --dry-run prints the intended configuration only.
@@ -31,6 +31,7 @@ import urllib.parse
 import urllib.request
 
 DEFAULT_URL = "https://community.steadyapp.co.za"
+SIGNIN_URL = "https://signin.steadyapp.co.za"  # the sign-in bridge (community/signin/)
 CONTACT_EMAIL = "info@openworks.co.za"  # shown to members as the forum's contact address
 
 # Permission levels Discourse uses for category access.
@@ -150,7 +151,11 @@ As with any hosted system, whoever runs the server could technically read its da
 
 ## Signing in
 
-The forum is invitation only, and you need to be signed in to see anything. Everyone signs in with a password and a 6-digit code from an authenticator app (Aegis, 2FAS, Google or Microsoft Authenticator). Keep your backup codes somewhere safe.
+The community opens only inside Steady: choose Community in the Steady app or web app, and you're in as yourself, with the Steady sign-in you already used (password, authenticator code, this device). There is no separate forum password, and the community doesn't open on its own in a browser.
+
+Your name and email address come from Steady, and your practice shows beside your name. To change them, change them in Steady (or ask your practice); the community follows the next time you open it.
+
+When someone leaves a practice, the practice stops their Steady account, and with it their way into the community; the community lead signs them out here.
 
 ## Good to know
 
@@ -273,12 +278,19 @@ def desired_settings(args):
     return [
         # Hard rules (also pinned in community.yml; checked here in case the pin was removed).
         ("login_required", "true"),
-        ("invite_only", "true"),
-        ("enforce_second_factor", "all"),
-        ("enable_local_logins", "true"),          # username/email + password stays the way in
+        ("invite_only", "false"),                 # who joins is decided by Steady (no invitations)
+        # the only way in: Steady, through the sign-in bridge (community/signin/)
+        ("enable_discourse_connect", "true"),
+        ("discourse_connect_url", SIGNIN_URL + "/discourse"),
+        ("enforce_second_factor", "no"),          # Steady asks for the code; Discourse can't do both
+        ("auth_overrides_email", "true"),
+        ("auth_overrides_name", "true"),
+        ("email_editable", "false"),
+        ("logout_redirect", SIGNIN_URL + "/signed-out"),
+        ("maximum_session_age", "12"),            # every visit to the Community tab signs in again
+        ("enable_local_logins", "false"),
         ("enable_local_logins_via_email", "false"),
         ("enable_passkeys", "false"),
-        ("enable_discourse_connect", "false"),
         ("enable_discourse_id", "false"),
         ("enable_google_oauth2_logins", "false"),
         ("enable_github_logins", "false"),
@@ -298,7 +310,7 @@ def desired_settings(args):
         ("discourse_ai_enabled", "false"),
         # Everything else.
         ("allow_uncategorized_topics", "false"),
-        ("invite_allowed_groups", "1|2"),          # admins and moderators only send invites
+        ("invite_allowed_groups", "1|2"),          # admins and moderators only (invites aren't used)
         ("edit_history_visible_to_public", "false"),  # earlier versions of posts: staff only
         ("can_permanently_delete", "true"),        # lets admins remove a slip for good
         ("enable_backups", "true"),
@@ -315,7 +327,9 @@ def desired_settings(args):
 # the admin list, so the API can't change it; this script can only read some of them back.
 PINNED_IN_APP_YML = {
     "login_required", "invite_only", "enforce_second_factor", "enable_local_logins_via_email",
-    "enable_passkeys", "enable_discourse_connect", "enable_discourse_id",
+    "enable_passkeys", "enable_discourse_connect", "enable_discourse_id", "discourse_connect_url",
+    "auth_overrides_email", "auth_overrides_name", "email_editable", "logout_redirect",
+    "enable_local_logins", "maximum_session_age",
     "enable_google_oauth2_logins", "enable_github_logins", "enable_twitter_logins",
     "enable_facebook_logins", "enable_discord_logins", "enable_linkedin_oidc_logins",
     "sign_in_with_apple_enabled", "microsoft_auth_enabled", "openid_connect_enabled",

@@ -1,18 +1,31 @@
-# The community forum's site, for the Caddy in ops/compose.yml (docs/COMMUNITY.md).
-# Discourse runs as the container "community" on the community-edge network, which only it and
+# The community forum's site, for the Caddy in front of it (docs/COMMUNITY.md). Discourse runs as
+# the container "community" on the community-edge network, which only it, the sign-in bridge and
 # Caddy are on.
+#
+# The forum opens only inside Steady: in a frame of the Steady web app (a practice's Steady at
+# <name>.steadyapp.co.za), or in the Steady phone app's own web view (its steady_app cookie). A
+# page opened straight in a browser (a bookmark, a link in an email) goes to the sign-in bridge's
+# "open Steady" page instead. Signing in only through Steady is what keeps people out; this keeps
+# the forum from being used as a site of its own.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 community.steadyapp.co.za {
+	@outside {
+		header Sec-Fetch-Dest document
+		not header Cookie *steady_app=1*
+	}
+	redir @outside https://signin.steadyapp.co.za/outside 303
+
 	reverse_proxy community:80
 	header {
 		-Server
 		X-Robots-Tag "noindex, nofollow"
+		# only Steady's own pages may frame it (community.yml leaves the frame rule to this line)
+		+Content-Security-Policy "frame-ancestors https://*.steadyapp.co.za"
 	}
 	log {
 		format filter {
 			wrap json
-			# no addresses: invitation, password-reset and confirmation links carry their key
-			# in the path; no keys or cookies either way
+			# no addresses: sign-in links carry their key in the path; no keys or cookies either way
 			fields {
 				request>uri delete
 				request>headers>Cookie delete

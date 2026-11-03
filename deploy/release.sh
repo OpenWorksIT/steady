@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Signs a Steady release, on OpenWorks' own computer (never on a server or in CI):
-#   deploy/release.sh 1.0.0
+#   deploy/release.sh            the version in VERSION (say 1.1.0)
+#   deploy/release.sh 1.1.0      the same, checked against VERSION
 #
-# It tags the current main commit as v1.0.0 and the web app CI built from it (on the web-dist
-# branch) as web-v1.0.0, both signed with your SSH key, and pushes the two tags. Servers with
+# The number is set before the release, in VERSION at the top of the repository (docs/VERSIONS.md):
+# a large update adds .1 (1.0.5 -> 1.1.0), a small one .0.1 (1.0.5 -> 1.0.6). It tags the current
+# main commit as v1.1.0 and the web app CI built from it (on the web-dist branch) as web-v1.1.0,
+# both signed with your SSH key, and pushes the two tags. Servers with
 # deploy/secrets/allowed_signers install only signed tags (see update.sh), so nothing reaches a
 # practice until it has been signed here.
 #
@@ -16,10 +19,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ver="${1:-}"
-[[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Usage: deploy/release.sh 1.2.3" >&2; exit 1; }
+file="$(tr -d ' \r\n' < VERSION 2>/dev/null || true)"
+ver="${1:-$file}"
+[[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Usage: deploy/release.sh [1.2.3] (VERSION holds the number)" >&2; exit 1; }
+[ "$ver" = "$file" ] || { echo "VERSION says ${file:-nothing}, not $ver: set VERSION first (a pull request into working), so the apps show the same number." >&2; exit 1; }
 tag="v$ver"; web="web-$tag"
 
+command -v jq >/dev/null || { echo "Install jq first (sudo apt install jq)." >&2; exit 1; }
 [ "$(git config gpg.format)" = ssh ] && [ -n "$(git config user.signingkey)" ] || {
   echo "Set up SSH signing first (see the top of this file)." >&2; exit 1; }
 [ -z "$(git status --porcelain)" ] || { echo "There are uncommitted changes here." >&2; exit 1; }
@@ -27,15 +33,21 @@ git fetch -q origin main web-dist --tags
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null && { echo "$tag already exists." >&2; exit 1; }
 
 sha="$(git rev-parse origin/main)"
+# higher than every release so far (servers install the newest)
+last="$(git tag -l 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+[ -z "$last" ] || [ "$(printf '%s\n%s\n' "${last#v}" "$ver" | sort -V | tail -1)" = "$ver" ] || {
+  echo "$ver isn't higher than the last release, ${last#v}." >&2; exit 1; }
+[ "$(git show "$sha:VERSION" 2>/dev/null | tr -d ' \r\n')" = "$ver" ] || {
+  echo "main's VERSION isn't $ver yet: merge the version change into main first." >&2; exit 1; }
 # sign what was looked over here: this computer must have exactly that commit checked out
 [ "$(git rev-parse HEAD)" = "$sha" ] || {
   echo "This checkout ($(git rev-parse --short HEAD)) isn't GitHub's main (${sha:0:7}): git checkout main && git pull, look it over, then try again." >&2
   exit 1; }
 built="$(git log -1 --format=%s origin/web-dist)"
-[ "$built" = "Web app built from ${sha:0:7}" ] || {
-  echo "The web app on web-dist was built from a different commit:" >&2
-  echo "  web-dist: $built" >&2
-  echo "  main:     ${sha:0:7}" >&2
+[ "$built" = "Web app built from ${sha:0:7}" ] && [ "$(git show origin/web-dist:download/version.json 2>/dev/null | jq -r '.version // empty' 2>/dev/null)" = "$ver" ] || {
+  echo "The web app on web-dist was built from a different commit, or isn't marked $ver:" >&2
+  echo "  web-dist: $built ($(git show origin/web-dist:download/version.json 2>/dev/null | jq -r '.version // "no version"' 2>/dev/null))" >&2
+  echo "  main:     ${sha:0:7} (Steady $ver)" >&2
   echo "Wait for the 'Test builds' run for main to finish (GitHub Actions), then try again." >&2
   exit 1; }
 
@@ -68,8 +80,7 @@ echo "  web app: ${websha:0:7}  $built"
 echo "           $webcheck"
 echo "           (the web app is CI's build; its commit $websha is written into the signed $tag,"
 echo "            and servers install only that build with it)"
-echo "  changes since the last release:"
-last="$(git tag -l 'v[0-9]*' | sort -V | tail -1)"
+echo "  changes since the last release${last:+ (${last#v})}:"
 # -n, not | head: head closing the pipe early would end this script here (pipefail)
 git log --no-merges -n 30 --format='    %h %s' "${last:+$last..}$sha"
 read -r -p "Sign and publish $tag? Type yes: " ok
