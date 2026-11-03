@@ -1,13 +1,15 @@
 # Builds an installable Android APK and the web app, publishes both to the web-dist branch
 # (servers serve them; see deploy/update.sh) and to the "test-build" pre-release.
-# From the v1 branch: to web-dist-v1 only (servers with STEADY_TRACK=v1), so the beta's web-dist,
-# the pre-release and the previews stay as main built them.
+# From the test branch: to web-dist-test only (vps1, STEADY_TRACK=test), so web-dist, the
+# pre-release and the previews stay as main built them.
+# Branches: working (development, CI only) -> test (vps1) -> main (signed releases); see
+# docs/DEPLOY.md, "Branches". It runs on every push to main and test, whatever changed:
+# deploy/release.sh signs a commit only together with the web app CI built from that very commit.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: Test builds
 on:
   push:
-    branches: [main, v1]
-    paths: ["app/**", ".github/workflows/test-builds.yml"]
+    branches: [main, test]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # the signing keys live in the "signing" environment, which only main and v1 may use
+    # the signing keys live in the "signing" environment, which only main and test may use
     # (Settings > Environments); a workflow on any other branch can't reach them
     environment: signing
     steps:
