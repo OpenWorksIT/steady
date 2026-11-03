@@ -1,0 +1,70 @@
+# Looks up everything Steady is built from in public vulnerability databases, which the review's
+# sandbox couldn't reach:
+#   - OSV (osv.dev) for the app's Dart packages (app/pubspec.lock) and the Go modules of the push
+#     relay and the fleet view
+#   - Go's own database through govulncheck: for pusher/ and fleet/ it also says whether the
+#     vulnerable code is actually called; for PocketBase and Caddy it reads the released binaries
+#     (the versions practice servers run: server/Dockerfile and deploy/docker-compose.yml)
+# Red when anything is found. Weekly, and on every push to the three branches and every pull
+# request, so a new advisory for something already in use shows up within a week.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Dependency check
+on:
+  push:
+    branches: [main, test, working]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      OSV_SCANNER: github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.0
+      GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.27"
+      - name: install the scanners
+        run: |
+          go install "$OSV_SCANNER"
+          go install "$GOVULNCHECK"
+      - name: the versions practice servers run
+        id: versions
+        run: |
+          pb="$(sed -n 's/^ARG PB_VERSION=//p' server/Dockerfile)"
+          pbsha="$(sed -n 's/^ARG PB_SHA256_amd64=//p' server/Dockerfile)"
+          caddy="$(sed -n 's/^ *image: caddy:\([0-9.]*\).*/\1/p' deploy/docker-compose.yml | head -1)"
+          [ -n "$pb" ] && [ -n "$pbsha" ] && [ -n "$caddy" ] || { echo "::error::couldn't read the PocketBase or Caddy version"; exit 1; }
+          echo "pb=$pb" >> "$GITHUB_OUTPUT"; echo "pbsha=$pbsha" >> "$GITHUB_OUTPUT"; echo "caddy=$caddy" >> "$GITHUB_OUTPUT"
+          echo "PocketBase $pb, Caddy $caddy"
+      - name: check
+        env:
+          PB: ${{ steps.versions.outputs.pb }}
+          PBSHA: ${{ steps.versions.outputs.pbsha }}
+          CADDY: ${{ steps.versions.outputs.caddy }}
+        run: |
+          # every check runs even when one finds something; the job fails at the end
+          set +e
+          found=0
+          step() { echo; echo "::group::$1"; shift; "$@"; local rc=$?; echo "::endgroup::"; if [ $rc -ne 0 ]; then echo "::error::$*: exit $rc"; found=1; fi; }
+          step "OSV: app packages, relay and fleet modules" osv-scanner scan source \
+            --lockfile app/pubspec.lock --lockfile pusher/go.mod --lockfile fleet/go.mod
+          step "govulncheck: push relay" sh -c 'cd pusher && govulncheck ./...'
+          step "govulncheck: fleet view" sh -c 'cd fleet && govulncheck ./...'
+          bin="$RUNNER_TEMP/bin" && mkdir -p "$bin" && cd "$bin" || exit 1
+          curl -fsSLo pb.zip "https://github.com/pocketbase/pocketbase/releases/download/v${PB}/pocketbase_${PB}_linux_amd64.zip" || exit 1
+          echo "$PBSHA  pb.zip" | sha256sum -c - && unzip -q pb.zip pocketbase || exit 1
+          step "govulncheck: PocketBase $PB (release binary)" govulncheck -mode=binary ./pocketbase
+          curl -fsSLo caddy.tgz "https://github.com/caddyserver/caddy/releases/download/v${CADDY}/caddy_${CADDY}_linux_amd64.tar.gz" || exit 1
+          tar -xzf caddy.tgz caddy || exit 1
+          step "govulncheck: Caddy $CADDY (release binary)" govulncheck -mode=binary ./caddy
+          exit $found
