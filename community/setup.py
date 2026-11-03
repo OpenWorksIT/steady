@@ -85,6 +85,14 @@ CATEGORIES = [
         "permissions": {"clinicians": CREATE_POST, "openworks": FULL},
     },
     {
+        "name": "The science",
+        "slug": "science",
+        "color": "143A3E",
+        "text_color": "FFFFFF",
+        "description": "How each part of Steady works and why: the methods, the evidence and the references, signed off by VR Clinical Psychology. Clinicians only; questions and challenges welcome in the replies.",
+        "permissions": {"clinicians": CREATE_POST},
+    },
+    {
         "name": "Clinical practice",
         "slug": "clinical-practice",
         "color": "2F7F86",
@@ -153,7 +161,7 @@ Data from studies run across practices will only ever be shared here as totals a
 
 | Area | Who can read it |
 |---|---|
-| Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
+| The science, Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
 | Announcements, Steady development | Clinicians and OpenWorks IT |
 | A practice's private category (if it has one) | That practice's psychologists only |
 
@@ -231,7 +239,13 @@ class Discourse:
                     print(f"  (rate limited, waiting {wait} s)", file=sys.stderr)
                     time.sleep(wait)
                     continue
-                raise SetupError(_describe_http_error(method, path, err.code, text, err.headers))
+                e = SetupError(_describe_http_error(method, path, err.code, text, err.headers))
+                if err.code in (301, 302, 303, 307, 308) and err.headers:
+                    loc = err.headers.get("Location", "")
+                    # only to this forum
+                    if loc.startswith(self.base + "/") or loc.startswith("/"):
+                        e.location = loc
+                raise e
             except urllib.error.URLError as err:
                 raise SetupError(f"Could not reach {self.base}: {err.reason}. Check the URL and that the server is up.")
             except json.JSONDecodeError:
@@ -366,6 +380,11 @@ def desired_settings(args):
         # one place to talk: topics and personal messages, which flags and the guidelines cover.
         # Chat is real-time and invites a quick aside about a patient; switch it on here if wanted.
         ("chat_enabled", "false"),
+        # who runs it, for Discourse's terms of service (/tos); see "Steady: for a lawyer to confirm"
+        ("company_name", "OpenWorks IT (Pty) Ltd"),
+        ("company_url", "https://openworks.co.za"),
+        ("governing_law", "South Africa"),
+        ("city_for_disputes", "Gqeberha"),
     ]
 
 
@@ -403,6 +422,10 @@ def apply_settings(api, args, group_ids):
     pm_groups = _pm_groups(current.get("personal_message_enabled_groups"), group_ids)
     if pm_groups:
         wanted.append(("personal_message_enabled_groups", pm_groups))
+    # the reading list and known issues are wikis: clinicians edit them from their first day
+    wiki_groups = _with_groups(current.get("edit_wiki_post_allowed_groups"), group_ids, ("clinicians",))
+    if wiki_groups:
+        wanted.append(("edit_wiki_post_allowed_groups", wiki_groups))
 
     for name, value in wanted:
         if name in current:
@@ -427,6 +450,18 @@ def apply_settings(api, args, group_ids):
             say("skipped", f"{name}: not offered by this Discourse version")
             unknown.append(name)
     return unknown, mismatched
+
+
+def _with_groups(current_value, group_ids, names):
+    """A group-list setting with these groups added to what's there."""
+    if current_value is None or not group_ids:
+        return None
+    ids = [i for i in str(current_value).split("|") if i]
+    for name in names:
+        gid = group_ids.get(name)
+        if gid is not None and str(gid) not in ids:
+            ids.append(str(gid))
+    return "|".join(ids)
 
 
 def _pm_groups(current_value, group_ids):
@@ -749,6 +784,23 @@ TEXTS = {
     "powered_by_html": "Steady Community, for psychologists at practices that use Steady",
 }
 
+def _welcome_message():
+    """The private message every new member gets (Discourse's welcome_user), from drafts/."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drafts", "welcome-message.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return {}
+    first, _, body = text.partition("\n")
+    if not first.startswith("Subject:"):
+        return {}
+    return {"system_messages.welcome_user.subject_template": first[len("Subject:"):].strip(),
+            "system_messages.welcome_user.text_body_template": body.strip() + "\n"}
+
+
+TEXTS.update(_welcome_message())
+
 # Topics Discourse writes about itself when it's installed: removed. (Its terms of service and
 # privacy topics stay: /tos and /privacy show them.) The guidelines topic gets ours.
 SEEDED_TO_REMOVE = [re.compile(r"^welcome to .*:wave:\s*$", re.I),
@@ -970,6 +1022,99 @@ def _brand_seeded_topics(api, problems):
                 say("set", f"the guidelines topic ({topic['id']}) to Steady Community's")
 
 
+# --- the first topics ------------------------------------------------------------------
+#
+# community/topics/<category slug>/NN-name.md: "# Title", optionally "<!-- steady: pinned, wiki -->"
+# on the next line, then the post. Each is posted once, as the system user, with an external id
+# made from its file name, so it's found again whatever happens to its title. A topic already
+# there is left as the forum has it (someone may have edited it); --update-topics replaces it
+# with the file's text.
+
+TOPICS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "topics")
+TOPIC_FLAGS = re.compile(r"^<!--\s*steady:\s*([a-z ,]+?)\s*-->$")
+
+
+def load_topics():
+    topics = []
+    if not os.path.isdir(TOPICS_DIR):
+        return topics
+    for cat in sorted(os.listdir(TOPICS_DIR)):
+        folder = os.path.join(TOPICS_DIR, cat)
+        if not os.path.isdir(folder):
+            continue
+        for name in sorted(os.listdir(folder)):
+            if not name.endswith(".md"):
+                continue
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                lines = f.read().split("\n")
+            title = lines[0].lstrip("#").strip()
+            rest, flags = lines[1:], set()
+            m = TOPIC_FLAGS.match(rest[0].strip()) if rest else None
+            if m:
+                flags = {x.strip() for x in m.group(1).split(",") if x.strip()}
+                rest = rest[1:]
+            key = f"{cat}/{name[:-3]}"
+            topics.append({"key": key, "category": cat, "title": title, "flags": flags,
+                           "raw": "\n".join(rest).strip() + "\n",
+                           "external_id": "steady-" + hashlib.sha1(key.encode()).hexdigest()[:16]})
+    return topics
+
+
+def _find_topic(api, external_id):
+    """The topic with this external id, or None. Discourse answers with a redirect to it."""
+    try:
+        api.get(f"/t/external_id/{external_id}.json")
+    except SetupError as err:
+        loc = getattr(err, "location", "")
+        if not loc:
+            if " HTTP 404" in str(err):
+                return None
+            raise
+        path = urllib.parse.urlparse(loc).path.rstrip("/")
+        return api.get(path + ".json")
+    return None
+
+
+def ensure_topics(api, cat_ids, args):
+    topics = load_topics()
+    print(f"The first topics ({len(topics)} in community/topics/)")
+    # posted last first, so each category lists them in order (newest at the top)
+    for t in reversed(topics):
+        cat_id = cat_ids.get(t["category"])
+        label = f"{t['category']}: {t['title']}"
+        if cat_id is None:
+            say("would add" if api.dry_run else "skipped", label + ("" if api.dry_run else " (no such category)"))
+            continue
+        found = _find_topic(api, t["external_id"])
+        if found is None:
+            if api.dry_run:
+                say("would add", label)
+                continue
+            made = api.post("/posts.json", {"title": t["title"], "raw": t["raw"], "category": cat_id,
+                                            "external_id": t["external_id"]})
+            topic_id, post_id = made["topic_id"], made["id"]
+            say("added", label)
+        else:
+            topic_id = found["id"]
+            post_id = found["post_stream"]["posts"][0]["id"]
+            raw = (api.get(f"/posts/{post_id}.json") or {}).get("raw", "")
+            if raw.strip() == t["raw"].strip():
+                say("ok", label)
+            elif not args.update_topics:
+                say("left", f"{label}: differs from its file (edited in the forum?); --update-topics replaces it")
+            elif api.dry_run:
+                say("would set", f"{label} to its file")
+            else:
+                api.put(f"/posts/{post_id}.json", {"post": {"raw": t["raw"], "edit_reason": "Steady Community"}})
+                say("set", f"{label} to its file")
+        if api.dry_run:
+            continue
+        if "pinned" in t["flags"] and not (found or {}).get("pinned"):
+            api.put(f"/t/{topic_id}/status.json", {"status": "pinned", "enabled": "true"})
+        if "wiki" in t["flags"] and not ((found or {}).get("post_stream", {}).get("posts") or [{}])[0].get("wiki"):
+            api.put(f"/posts/{post_id}/wiki.json", {"wiki": "true"})
+
+
 # --- activity-count account for OpenWorks ---------------------------------------------
 
 STATS_USERNAME = "openworks-stats"
@@ -1058,6 +1203,11 @@ def print_plan(args, categories, groups):
     if not args.skip_welcome:
         print("Welcome and guidelines topic")
         say("want", f"'{WELCOME_TITLE}' in Announcements, pinned")
+    if not args.skip_topics:
+        topics = load_topics()
+        print("The first topics")
+        say("want", f"{len(topics)} topics from community/topics/, in "
+                    + ", ".join(sorted({t['category'] for t in topics})))
     if not args.skip_brand:
         print("The look: Steady Community")
         say("want", f"theme '{THEME_NAME}' (community/brand/theme/), the default, with palettes "
@@ -1102,6 +1252,9 @@ def main(argv=None):
     parser.add_argument("--revoke-key", action="store_true",
                         help=f"at the end, remove the API key(s) described '{KEY_DESCRIPTION}', this one last "
                              "(community/run-setup.sh makes such a key for one run)")
+    parser.add_argument("--skip-topics", action="store_true", help="don't post the first topics (community/topics/)")
+    parser.add_argument("--update-topics", action="store_true",
+                        help="replace topics that differ from their files (edits made in the forum are lost)")
     parser.add_argument("--skip-brand", action="store_true",
                         help="leave the look alone (logo, palettes, theme, wording: community/brand/)")
     parser.add_argument("--stats-account", action="store_true",
@@ -1156,6 +1309,8 @@ def run(api, args, groups, categories):
         unknown, mismatched = apply_settings(api, args, group_ids)
         if not args.skip_welcome:
             ensure_welcome(api, cat_ids.get("announcements"))
+        if not args.skip_topics:
+            ensure_topics(api, cat_ids, args)
         brand_problems = [] if args.skip_brand else ensure_brand(api, args)
         if args.stats_account:
             ensure_stats_account(api, args)

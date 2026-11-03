@@ -194,6 +194,8 @@ def serve(forum):
             if isinstance(out, tuple):
                 self.send_response(out[0])
                 self.send_header("Content-Type", "application/json")
+                for k, v in (out[2] if len(out) > 2 else {}).items():
+                    self.send_header(k, v)
                 self.end_headers()
                 self.wfile.write(json.dumps(out[1]).encode())
                 return
@@ -289,6 +291,109 @@ class LookTest(unittest.TestCase):
         self.assertIn("palettes_and_theme", problems[0])
         self.assertTrue(f.texts["js.composer.reply_placeholder"].startswith("Type here. Never"))
         self.assertNotIn(10, f.topics)
+
+
+class TopicsForum:
+    """Topics with external ids, as Discourse keeps them."""
+
+    def __init__(self):
+        self.topics = {}  # id -> {title, raw, category, external_id, pinned, wiki, post}
+        self.writes = []
+        self.lock = threading.Lock()
+
+    def handle(self, method, path, body, ctype):
+        route = urlparse(path).path
+        if method != "GET":
+            self.writes.append((method, route))
+        m = re.fullmatch(r"/t/external_id/([\w-]+)\.json", route)
+        if m:
+            for tid, t in self.topics.items():
+                if t["external_id"] == m.group(1):
+                    return (301, {}, {"Location": f"{self.base}/t/some-slug/{tid}"})
+            return 404
+        m = re.fullmatch(r"/t/some-slug/(\d+)\.json", route)
+        if m:
+            t = self.topics[int(m.group(1))]
+            return {"id": int(m.group(1)), "title": t["title"], "pinned": t["pinned"],
+                    "post_stream": {"posts": [{"id": t["post"], "wiki": t["wiki"]}]}}
+        if route == "/posts.json" and method == "POST":
+            b = json.loads(body)
+            tid = len(self.topics) + 100
+            self.topics[tid] = {"title": b["title"], "raw": b["raw"], "category": b["category"],
+                                "external_id": b["external_id"], "pinned": False, "wiki": False, "post": tid * 10}
+            return {"id": tid * 10, "topic_id": tid}
+        m = re.fullmatch(r"/t/(\d+)/status\.json", route)
+        if m and method == "PUT":
+            self.topics[int(m.group(1))]["pinned"] = json.loads(body)["enabled"] == "true"
+            return {}
+        m = re.fullmatch(r"/posts/(\d+)(/wiki)?\.json", route)
+        if m:
+            t = next(t for t in self.topics.values() if t["post"] == int(m.group(1)))
+            if m.group(2) and method == "PUT":
+                t["wiki"] = json.loads(body)["wiki"] == "true"
+                return {}
+            if method == "PUT":
+                t["raw"] = json.loads(body)["post"]["raw"]
+            return {"raw": t["raw"]}
+        return 404
+
+
+class TopicsTest(unittest.TestCase):
+    def setUp(self):
+        self.forum = TopicsForum()
+        self.srv = serve(self.forum)
+        self.forum.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+        self.cats = {slug: i for i, slug in enumerate(sorted({t["category"] for t in setup.load_topics()}), 1)}
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+    def run_topics(self, update=False, dry_run=False):
+        api = setup.Discourse(self.forum.base, "k", "system", dry_run)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            setup.ensure_topics(api, self.cats, type("A", (), {"update_topics": update})())
+        return out.getvalue()
+
+    def test_posted_once_pinned_and_wikis_then_left_alone(self):
+        files = setup.load_topics()
+        self.assertGreater(len(files), 20)
+        for t in files:
+            self.assertGreaterEqual(len(t["title"]), 15, t["key"])   # Discourse's shortest title
+            self.assertLessEqual(len(t["raw"]), 32000, t["key"])     # and longest post
+            self.assertNotIn("steady:", t["raw"][:80], t["key"])
+        out = self.run_topics(dry_run=True)
+        self.assertEqual(self.forum.writes, [])
+        self.assertEqual(out.count("would add"), len(files))
+
+        self.run_topics()
+        f = self.forum
+        self.assertEqual(len(f.topics), len(files))
+        by_title = {t["title"]: t for t in f.topics.values()}
+        for t in files:
+            got = by_title[t["title"]]
+            self.assertEqual(got["category"], self.cats[t["category"]])
+            self.assertEqual(got["pinned"], "pinned" in t["flags"], t["key"])
+            self.assertEqual(got["wiki"], "wiki" in t["flags"], t["key"])
+        # posted last first: the first file of a category is the newest there
+        order = [t["title"] for t in sorted(f.topics.values(), key=lambda t: -t["post"])]
+        self.assertEqual(order[0], files[0]["title"])
+
+        # again: nothing changes
+        f.writes.clear()
+        out = self.run_topics()
+        self.assertEqual(f.writes, [])
+        self.assertEqual(out.count("  ok "), len(files))
+
+        # edited in the forum: left alone, unless asked
+        tid = next(iter(f.topics))
+        f.topics[tid]["raw"] = "edited by Kempie"
+        out = self.run_topics()
+        self.assertEqual(f.topics[tid]["raw"], "edited by Kempie")
+        self.assertIn("--update-topics replaces it", out)
+        self.run_topics(update=True)
+        self.assertNotEqual(f.topics[tid]["raw"], "edited by Kempie")
 
 
 class TeaRoomTest(unittest.TestCase):
