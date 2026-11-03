@@ -116,8 +116,13 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 				"practice": "VR Clinical Psychology", "health": map[string]any{"status": "good", "reasons": []any{}},
 				"version":           map[string]any{"code": "83f8776", "managed": true, "signed": true, "behind": 0},
 				"host":              map[string]any{"disk": map[string]any{"total": 25e9, "used": 5e9}, "memory": map[string]any{"total": 2e9, "available": 1e9}, "backups": map[string]any{"newest": time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), "count": 3, "bytes": 1e6}},
-				"counts":            map[string]any{"patients": 12, "staff": 4, "checkins7d": 60},
+				"counts":            map[string]any{"patients": 12, "staff": 4, "checkins7d": 60, "olderConsent": 3, "deletionOverdue": 0, "staffWithoutTwoStep": 1},
 				"operatorAgreement": map[string]any{"version": "1.0", "signed": true, "signedAt": "2026-11-03T08:00:00Z"},
+				"audit": map[string]any{"at": time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339), "code": "9d66cbe", "items": []any{
+					map[string]any{"level": "fail", "section": "Firewall and listening ports", "text": "no firewall drops incoming connections <script>"},
+					map[string]any{"level": "warn", "section": "SSH", "text": "X11 forwarding is on"},
+					map[string]any{"level": "ok", "section": "Disk", "text": "disk 11% used"},
+				}},
 			})
 		case r.URL.Path == "/api/steady/fleet/request" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			var b map[string]string
@@ -214,7 +219,8 @@ func TestSignInAndPages(t *testing.T) {
 	// the overview shows the server
 	res, _ = c.Get(site.URL + "/")
 	page := body(t, res)
-	for _, want := range []string{"VR Clinical Psychology", "83f8776", "up to date", "20% of", "5 h ago", "60"} {
+	for _, want := range []string{"VR Clinical Psychology", "83f8776", "up to date", "20% of", "5 h ago", "60",
+		"1 to fix, 1 to look at", "3 on an older consent statement, 1 staff without two-step sign-in"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("overview lacks %q", want)
 		}
@@ -230,6 +236,16 @@ func TestSignInAndPages(t *testing.T) {
 	page = body(t, res)
 	if !strings.Contains(page, "Operator agreement") || !strings.Contains(page, "signed, version 1.0, on 3 Nov 2026") {
 		t.Fatalf("the detail page doesn't say the operator agreement is signed")
+	}
+	// the security and privacy check: what to fix first, what passed one click down, text escaped
+	for _, want := range []string{"Security and privacy checks", "checked 2 h ago by code 9d66cbe", "no firewall drops incoming connections &lt;script&gt;",
+		"X11 forwarding is on", "1 passed", "disk 11% used", "Patients on an older consent statement</dt><dd>3"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("detail page lacks %q", want)
+		}
+	}
+	if strings.Contains(page, "<script>") {
+		t.Fatal("a check's text wasn't escaped")
 	}
 	i := strings.Index(page, `name="csrf" value="`)
 	csrf := page[i+len(`name="csrf" value="`):]
@@ -592,5 +608,31 @@ func TestSignInQueueGivesUp(t *testing.T) {
 	app.Routes().ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable || time.Since(start) > 2*time.Second {
 		t.Fatalf("busy: %d after %v", w.Code, time.Since(start))
+	}
+}
+
+func TestAuditSummary(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	// none yet (a server older than 1.0.6, or the service not installed)
+	if a := makeAudit(map[string]any{}, now); a.Have || a.Summary != "no check yet" || a.PrivacyWarn {
+		t.Fatalf("no audit: %+v", a)
+	}
+	at := func(d time.Duration) string { return now.Add(-d).Format(time.RFC3339) }
+	ok := map[string]any{"level": "ok", "section": "Disk", "text": "fine"}
+	a := makeAudit(map[string]any{"audit": map[string]any{"at": at(time.Hour), "items": []any{ok}}}, now)
+	if a.Summary != "all clear" || a.SummaryClass != "good" || a.Oks != 1 || a.Stale {
+		t.Fatalf("clear: %+v", a)
+	}
+	// a check that stopped running isn't "all clear"
+	a = makeAudit(map[string]any{"audit": map[string]any{"at": at(20 * time.Hour), "items": []any{ok}}}, now)
+	if !a.Stale || a.SummaryClass != "warn" || !strings.Contains(a.Summary, "stopped running") {
+		t.Fatalf("stale: %+v", a)
+	}
+	// failures first, then warnings; junk ignored
+	a = makeAudit(map[string]any{"audit": map[string]any{"at": at(time.Hour), "items": []any{
+		map[string]any{"level": "warn", "text": "w"}, "junk", map[string]any{"level": "fail", "text": "f"}, map[string]any{"level": "other"}}},
+		"counts": map[string]any{"deletionOverdue": 2.0}}, now)
+	if a.Fails != 1 || a.Warns != 1 || a.Problems[0].Text != "f" || a.SummaryClass != "bad" || !a.PrivacyWarn || a.PrivacyNote != "2 deletion past 25 days" {
+		t.Fatalf("problems: %+v", a)
 	}
 }
