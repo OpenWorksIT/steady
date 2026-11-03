@@ -1,0 +1,49 @@
+{{template "top" .Row.Title}}
+{{template "bar" .}}
+<main>
+<p><a href="/todo">← To do</a></p>
+<h1>{{.Row.Title}}</h1>
+<p><span class="pill {{.Row.Status}}">{{.Row.StatusLabel}}</span> <span class="pill pri-{{.Row.Priority}}">{{.Row.PriorityLabel}}</span> <span class="muted">{{.Row.Area}} · #{{.Row.ID}}</span></p>
+{{if .Msg}}<p class="note">{{.Msg}}</p>{{end}}
+{{if .Row.Detail}}<div class="detail">{{.Row.Detail}}</div>{{end}}
+<dl>
+{{if .Row.Due}}<dt>By</dt><dd{{if .Row.Overdue}} class="overdue"{{end}}>{{.Row.Due}}{{if .Row.Overdue}}, past{{end}}</dd>{{end}}
+{{if .Row.Waiting}}<dt>Waiting on</dt><dd>{{.Row.Waiting}}</dd>{{end}}
+{{if .Row.Link}}<dt>Link</dt><dd><a href="{{.Row.Link}}" rel="noopener noreferrer" target="_blank">{{.Row.Link}}</a></dd>{{end}}
+<dt>Added</dt><dd>{{.Row.Created}}</dd>
+{{if .Row.Closed}}<dt>{{.Row.StatusLabel}}</dt><dd>{{.Row.Closed}}{{if .Row.ClosedNote}}: {{.Row.ClosedNote}}{{end}}</dd>{{end}}
+</dl>
+
+<h2>Update</h2>
+<form method="post" action="/todo/{{.Row.ID}}" class="todo-form">
+<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="op" value="status">
+<label><span>Note <span class="muted">(optional with a status: what was done, or why; it stays in the history)</span></span><textarea name="note" rows="2" maxlength="1000"></textarea></label>
+<div class="buttons">
+{{if .Row.Open}}<button name="to" value="done">Done</button>{{end}}
+{{range .Statuses}}{{if and (ne .Key $.Row.Status) (ne .Key "done")}}<button name="to" value="{{.Key}}" class="secondary">{{.Label}}</button>{{end}}{{end}}
+<button name="to" value="note" class="link">Only add the note</button>
+</div>
+</form>
+
+<details{{if .Form.Error}} open{{end}}><summary>Edit</summary>
+<form method="post" action="/todo/{{.Row.ID}}" class="todo-form">
+<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="op" value="edit">
+{{if .Form.Error}}<p class="error">{{.Form.Error}}</p>{{end}}
+<label><span>What</span><input name="title" maxlength="120" required autocomplete="off" value="{{.Form.Title}}"></label>
+<label><span>What needs to happen <span class="muted">(never anything about patients)</span></span><textarea name="detail" rows="6" maxlength="2000">{{.Form.Detail}}</textarea></label>
+<div class="fields">
+<label><span>Where</span><select name="area">{{range .Areas}}<option{{if eq . $.Form.Area}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+<label><span>When</span><select name="priority">{{range .Priorities}}<option value="{{.Key}}"{{if eq .Key $.Form.Priority}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<label><span>Waiting on</span><input name="waiting" maxlength="80" autocomplete="off" value="{{.Form.Waiting}}"></label>
+<label><span>By</span><input type="date" name="due" value="{{.Form.Due}}"></label>
+<label><span>Link</span><input type="url" name="link" placeholder="https://" value="{{.Form.Link}}"></label>
+</div>
+<div><button>Save</button></div>
+</form></details>
+
+<h2>History</h2>
+<ul class="feed">
+{{range .History}}<li><span class="muted">{{.When}} · {{.By}}</span><div>{{.Text}}</div></li>
+{{end}}</ul>
+</main>
+{{template "end"}}

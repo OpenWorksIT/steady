@@ -1,4 +1,4 @@
-# Steady community sign-in bridge (signin.steadyapp.co.za): the community opens inside Steady's
+# Steady Community sign-in bridge (signin.steadyapp.co.za): the community opens inside Steady's
 # Community tab, signed in as whoever is signed in to Steady. Behind Caddy, on the forum's network
 # (community-edge), which only Caddy, the forum and this are on. See docs/COMMUNITY.md, "Signing
 # in through Steady".

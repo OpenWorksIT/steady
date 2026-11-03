@@ -1,7 +1,8 @@
 # Monthly upkeep and support
 
 Once a month, in the first working week, for every practice server, vps1 and the shared pieces.
-Each item says what to look at and when it's done. Commands run in `/opt/steady/deploy` as root
+Each item says what to look at and when it's done. Tick them off in the fleet view: **To do >
+Monthly upkeep** keeps who confirmed each one, and when; anything left open goes on its list. Commands run in `/opt/steady/deploy` as root
 (`sudo -i`) unless they say otherwise.
 
 ## 1. Updates to what Steady is built on
@@ -42,13 +43,14 @@ what to look at there, and what it can't see.
 - [ ] Staff: everyone uses two-step sign-in (`sudo ./accounts.sh list`); accounts of people who left are stopped.
 - [ ] The operator agreement: the current version is signed (`audit-server.sh`, the fleet view).
 - [ ] Patients: the People screen shows nobody stuck on an older consent statement who still uses Steady; no deletion request older than 25 days.
-- [ ] Feedback tickets: each one answered or planned (Settings > Feedback tickets).
+- [ ] Feedback tickets: each one answered or planned (Settings > Practice > Feedback tickets).
 
 ## 3. vps1 (the test server, the fleet view and the forum)
 
 - [ ] The same checks as a practice server, where they apply (it holds no real patient data).
 - [ ] It follows `test` (`STEADY_TRACK=test` in `.env`) and is on its newest commit.
 - [ ] Free disk: `sudo docker image prune -f` if it's filling up.
+- [ ] The community sign-in bridge (`/var/lib/steady-signin/config.json`): each practice's address list still matches its psychologists, and the OpenWorks list its support staff ([COMMUNITY.md](COMMUNITY.md)).
 - [ ] The forum's sign-in bridge: `signin check` lists only the practices that should be there (no test server once the forum is live), each with its address list ([COMMUNITY.md](COMMUNITY.md)).
 - [ ] The forum's members (Admin > Users): nobody who has left a practice is still signed in.
 
@@ -85,4 +87,4 @@ what to look at there, and what it can't see.
 ## 9. Support
 
 - [ ] What came in this month (feedback tickets, emails, calls): a question asked twice is a fix for the app or the docs.
-- [ ] Note the date, who did the upkeep, and anything left open.
+- [ ] Anything left open is on the fleet view's To do list (the upkeep page keeps who did the rest, and when).

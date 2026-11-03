@@ -1,0 +1,52 @@
+{{template "top" "To do"}}
+{{template "bar" .}}
+<main>
+<nav class="tabs" aria-label="To do"><a class="on" aria-current="page" href="/todo">List</a><a href="/upkeep">Monthly upkeep</a></nav>
+<h1>To do</h1>
+{{with .Page}}<p class="muted">{{.Open}} open{{if .Now}} · <span class="overdue">{{.Now}} for now</span>{{end}}{{if .Overdue}} · <span class="overdue">{{.Overdue}} past their date</span>{{end}} ·
+servers: <a href="/checks">{{.Fix}} to fix, {{.ToLook}} to look at</a> ·
+upkeep for {{.UpkeepMonth}}: <a href="/upkeep">{{.UpkeepDone}} of {{.UpkeepN}} confirmed</a></p>{{end}}
+{{if .Msg}}<p class="note">{{.Msg}}</p>{{end}}
+
+<details id="add"{{if .Form.Error}} open{{end}}><summary>Add something</summary>
+<form method="post" action="/todo" class="todo-form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+{{if .Form.Error}}<p class="error">{{.Form.Error}}</p>{{end}}
+<label><span>What</span><input name="title" maxlength="120" required autocomplete="off" value="{{.Form.Title}}"></label>
+<label><span>What needs to happen <span class="muted">(optional; never anything about patients)</span></span><textarea name="detail" rows="4" maxlength="2000">{{.Form.Detail}}</textarea></label>
+<div class="fields">
+<label><span>Where</span><select name="area">{{range .Page.Areas}}<option{{if eq . $.Form.Area}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+<label><span>When</span><select name="priority">{{range .Page.Priorities}}<option value="{{.Key}}"{{if eq .Key $.Form.Priority}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<label><span>Status</span><select name="status">{{range .Statuses}}<option value="{{.Key}}"{{if eq .Key $.Form.Status}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<label><span>Waiting on <span class="muted">(optional)</span></span><input name="waiting" maxlength="80" autocomplete="off" value="{{.Form.Waiting}}"></label>
+<label><span>By <span class="muted">(optional)</span></span><input type="date" name="due" value="{{.Form.Due}}"></label>
+<label><span>Link <span class="muted">(optional)</span></span><input type="url" name="link" placeholder="https://" value="{{.Form.Link}}"></label>
+</div>
+<div><button>Add to the list</button></div>
+</form></details>
+
+<nav class="chips" aria-label="Show">{{range .Page.Chips}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}{{if ge .N 0}} <span class="n">{{.N}}</span>{{end}}</a>{{end}}</nav>
+{{with .Page.AreaChips}}<nav class="chips small" aria-label="Area">{{range .}}<a href="{{.Href}}"{{if .On}} class="on" aria-current="true"{{end}}>{{.Label}}{{if ge .N 0}} <span class="n">{{.N}}</span>{{end}}</a>{{end}}</nav>{{end}}
+
+{{range .Page.Groups}}
+<h2 class="pri {{.Key}}">{{.Label}} <span class="n">{{len .Rows}}</span></h2>
+<ul class="feed todo">
+{{range .Rows}}<li id="t{{.ID}}"><div class="what"><a class="title" href="/todo/{{.ID}}">{{.Title}}</a>
+<div class="muted"><span class="pill {{.Status}}">{{.StatusLabel}}</span> {{.Area}}{{if and .Waiting (eq .Status "waiting")}} · on {{.Waiting}}{{end}}{{if .Due}} · <span{{if .Overdue}} class="overdue"{{end}}>by {{.Due}}</span>{{end}} · #{{.ID}}</div></div>
+<form method="post" action="/todo/{{.ID}}"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="op" value="status"><input type="hidden" name="to" value="done"><input type="hidden" name="from" value="list">
+<button class="secondary small" aria-label="Mark #{{.ID}} done">Done</button></form></li>
+{{end}}</ul>
+{{end}}
+
+{{with .Page.Closed}}
+<h2 class="pri done">{{if eq $.Page.Status "done"}}Done{{else}}Done in the last 30 days{{end}} <span class="n">{{len .}}</span></h2>
+<ul class="feed todo closed">
+{{range .}}<li id="t{{.ID}}"><div class="what"><a class="title" href="/todo/{{.ID}}">{{.Title}}</a>
+<div class="muted"><span class="pill {{.Status}}">{{.StatusLabel}}</span> {{.Closed}}{{if .ClosedNote}}: {{.ClosedNote}}{{end}} · {{.Area}} · #{{.ID}}</div></div></li>
+{{end}}</ul>
+{{end}}
+{{if ne .Page.Status "done"}}<p><a href="/todo?status=done">Everything done so far</a></p>{{end}}
+
+{{if .Page.Empty}}<p class="muted">Nothing here{{with .Page.Area}} for {{.}}{{end}}. Anything OpenWorks has to do, look at or wait for goes on this list: "Add something" above.</p>{{end}}
+</main>
+{{template "end"}}

@@ -10,10 +10,8 @@ import '../../services/api.dart';
 import '../../services/push.dart';
 import '../community/community_rules.dart';
 import '../community/community_tab.dart';
-import '../practice/people_screen.dart';
 import '../widgets.dart';
 import 'alerts_screen.dart';
-import 'library_screen.dart';
 import 'patients_screen.dart';
 
 /// Shared refresh signal so a notification can refresh whichever tab is showing.
@@ -21,6 +19,23 @@ class ClinicianBus extends ChangeNotifier {
   int unread = 0;
   void changed() => notifyListeners();
 }
+
+/// The psychologist's tabs: Patients, Alerts (with the unread count) and, when the practice's
+/// server has it, Community. The library and the practice's own business (its people, audit
+/// report, feedback and operator agreement) are under Settings > Practice, so the bar stays short.
+List<NavigationDestination> clinicianTabs({required int unread, required bool community}) => [
+      const NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Patients'),
+      NavigationDestination(
+        icon: Badge(
+          isLabelVisible: unread > 0,
+          label: Text('$unread'),
+          child: const Icon(Icons.notifications_none),
+        ),
+        selectedIcon: const Icon(Icons.notifications),
+        label: 'Alerts',
+      ),
+      if (community) const NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum), label: 'Community'),
+    ];
 
 class ClinicianShell extends StatefulWidget {
   const ClinicianShell({super.key});
@@ -94,17 +109,15 @@ class _ClinicianShellState extends State<ClinicianShell> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
-    final master = AppScope.api(context).isMaster;
     // the Steady community, when this practice's server is set up for it (its own tab, opened
     // inside Steady only)
     final forum = AppScope.of(context).config.communityUrl;
     final community = forum.isNotEmpty && communityTabHere(forum);
+    // in the order of clinicianTabs
     final pages = [
       PatientsScreen(bus: _bus),
       AlertsScreen(bus: _bus, onRead: _refreshUnread),
-      const LibraryScreen(),
-      if (community) CommunityTab(active: _tab == 3),
-      if (master) const PeopleScreen(),
+      if (community) CommunityTab(active: _tab == 2),
     ];
     return Scaffold(
       body: IndexedStack(index: _tab, children: pages),
@@ -114,21 +127,7 @@ class _ClinicianShellState extends State<ClinicianShell> with WidgetsBindingObse
           setState(() => _tab = i);
           if (i == 1) _refreshUnread();
         },
-        destinations: [
-          const NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Patients'),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: _bus.unread > 0,
-              label: Text('${_bus.unread}'),
-              child: const Icon(Icons.notifications_none),
-            ),
-            selectedIcon: const Icon(Icons.notifications),
-            label: 'Alerts',
-          ),
-          const NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Library'),
-          if (community) const NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum), label: 'Community'),
-          if (master) const NavigationDestination(icon: Icon(Icons.apartment_outlined), selectedIcon: Icon(Icons.apartment), label: 'Practice'),
-        ],
+        destinations: clinicianTabs(unread: _bus.unread, community: community),
       ),
     );
   }

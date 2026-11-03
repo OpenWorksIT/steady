@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-# Steady community forum: one-off (and re-runnable) setup through the Discourse admin API.
+# Steady Community (the forum): one-off (and re-runnable) setup through the Discourse admin API.
 #
 # Copyright (C) 2026 OpenWorks IT (Pty) Ltd. GNU AGPL v3 or later; see LICENSE.
 #
 # Python 3 standard library only. Safe to run again: groups and categories are found by
 # name or slug and only changed where they differ. See docs/COMMUNITY.md, "Run setup.py".
-"""Configure the Steady community forum (Discourse) through its admin API.
+"""Configure Steady Community, the forum (built on Discourse), through its admin API.
 
 Sets the site settings, creates the "clinicians" and "openworks" groups, creates the
-categories with their permissions, closes any other category to OpenWorks, and posts the
-welcome and guidelines topic in Announcements.
+categories with their permissions, closes any other category to OpenWorks, posts the
+welcome and guidelines topic in Announcements, and gives the forum the Steady Community look
+(community/brand/: logo, icons, fonts, palettes, theme, wording) in place of Discourse's own.
 
 Credentials come from the environment, so they stay out of your shell history:
   DISCOURSE_URL           default https://community.steadyapp.co.za
@@ -21,9 +22,12 @@ DISCOURSE_API_KEY, --dry-run prints the intended configuration only.
 """
 
 import argparse
+import hashlib
 import json
+import mimetypes
 import os
 import re
+import secrets
 import sys
 import time
 import urllib.error
@@ -114,9 +118,10 @@ CATEGORIES = [
     },
 ]
 
-WELCOME_TITLE = "Welcome to the Steady community: please read first"
+WELCOME_TITLE = "Welcome to Steady Community: please read first"
+WELCOME_TITLES_BEFORE = ["Welcome to the Steady community: please read first"]
 WELCOME_RAW = """\
-Welcome. This forum is for psychologists at practices that use Steady. It is a place to talk about the science, build questionnaires together, plan studies across practices, and shape how Steady develops.
+Welcome. Steady Community is for psychologists at practices that use Steady. It is a place to talk about the science, build questionnaires together, plan studies across practices, and shape how Steady develops.
 
 The first community is VR Clinical Psychology. Kempie van Rooyen is the community lead and runs the forum.
 
@@ -189,7 +194,7 @@ class Discourse:
         self.dry_run = dry_run
         self.opener = urllib.request.build_opener(NoRedirect)
 
-    def request(self, method, path, body=None, allow_404=False):
+    def request(self, method, path, body=None, allow_404=False, raw=None, content_type=None):
         if method != "GET" and self.dry_run:
             raise AssertionError("write attempted in dry-run")
         url = self.base + path
@@ -198,6 +203,9 @@ class Discourse:
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        elif raw is not None:
+            data = raw
+            headers["Content-Type"] = content_type
         for attempt in range(TOO_MANY_REQUESTS_RETRIES + 1):
             req = urllib.request.Request(url, data=data, method=method, headers=headers)
             try:
@@ -228,6 +236,26 @@ class Discourse:
 
     def put(self, path, body):
         return self.request("PUT", path, body)
+
+    def delete(self, path):
+        return self.request("DELETE", path)
+
+    def post_file(self, path, file_path, fields):
+        """A multipart upload: the file as "file", plus plain form fields."""
+        boundary = "steady-" + secrets.token_hex(12)
+        name = os.path.basename(file_path)
+        ctype = MIME_TYPES.get(os.path.splitext(name)[1]) or mimetypes.guess_type(name)[0] or "application/octet-stream"
+        parts = []
+        for key, value in fields.items():
+            parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode("utf-8"))
+        with open(file_path, "rb") as f:
+            parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+                         f'Content-Type: {ctype}\r\n\r\n'.encode("utf-8") + f.read() + b"\r\n")
+        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+        return self.request("POST", path, raw=b"".join(parts), content_type=f"multipart/form-data; boundary={boundary}")
+
+
+MIME_TYPES = {".woff2": "font/woff2", ".png": "image/png", ".svg": "image/svg+xml"}
 
 
 def _retry_after(err, text):
@@ -317,9 +345,12 @@ def desired_settings(args):
         ("backup_frequency", "1"),                 # daily
         ("maximum_backups", "7"),
         ("title", args.title),
-        ("site_description", "Psychologists at practices that use Steady: science, questionnaires, studies and development."),
-        ("short_site_description", "Steady community"),
+        ("site_description", "For psychologists at practices that use Steady: the science behind between-session care, questionnaires and tools, and studies across practices."),
+        ("short_site_description", "For psychologists at practices that use Steady"),
         ("contact_email", args.contact_email),
+        # Steady Community, not Discourse: no maker's badge, no Discourse tutorial bot
+        ("enable_powered_by_discourse", "false"),
+        ("discourse_narrative_bot_enabled", "false"),
     ]
 
 
@@ -553,8 +584,16 @@ def ensure_welcome(api, cat_id):
         return
     listing = api.get(f"/c/announcements/{cat_id}.json")
     for topic in listing.get("topic_list", {}).get("topics", []):
-        if topic.get("title", "").strip().lower() == WELCOME_TITLE.lower():
+        title = topic.get("title", "").strip().lower()
+        if title == WELCOME_TITLE.lower():
             say("ok", f"already posted (topic {topic['id']})")
+            return
+        if title in (t.lower() for t in WELCOME_TITLES_BEFORE):
+            if api.dry_run:
+                say("would rename", f"topic {topic['id']} to '{WELCOME_TITLE}'")
+            else:
+                api.put(f"/t/-/{topic['id']}.json", {"title": WELCOME_TITLE})
+                say("renamed", f"topic {topic['id']} to '{WELCOME_TITLE}'")
             return
     if api.dry_run:
         say("would add", f"'{WELCOME_TITLE}' in Announcements, pinned")
@@ -563,6 +602,287 @@ def ensure_welcome(api, cat_id):
     topic_id = created.get("topic_id")
     api.put(f"/t/{topic_id}/status.json", {"status": "pinned", "enabled": "true"})
     say("added", f"topic {topic_id}, pinned in Announcements")
+
+
+# --- the look: Steady Community, not Discourse ------------------------------------------
+#
+# Everything is in community/brand/: the logo, icons and share image, the fonts, and the theme
+# (theme/common.scss, theme/color_definitions.scss, theme/footer.html). The palettes and the
+# wording are here. Change a file there, run this again, and the forum follows.
+
+BRAND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "brand")
+THEME_NAME = "Steady Community"
+
+# Discourse palette colours (hex, no #). Light from steadyapp.co.za; dark from the same family.
+PALETTES = {
+    "light": {"name": "Steady Community", "base": "Light", "colors": {
+        "primary": "17282a", "secondary": "f5f8f7", "tertiary": "236a70", "quaternary": "2c5f7c",
+        "header_background": "f5f8f7", "header_primary": "17282a", "highlight": "d9894a",
+        "selected": "e4ecf1", "hover": "e9efee", "danger": "b3261e", "success": "2e7d4f",
+        "love": "c46b2c",
+    }},
+    "dark": {"name": "Steady Community, dark", "base": "Dark", "colors": {
+        "primary": "dfeae9", "secondary": "0f2a2d", "tertiary": "7fc2c8", "quaternary": "9cc3d9",
+        "header_background": "0f2a2d", "header_primary": "dfeae9", "highlight": "f0b45c",
+        "selected": "1d4247", "hover": "173a3e", "danger": "f2a19b", "success": "7fcf9c",
+        "love": "f0b45c",
+    }},
+}
+
+# site setting -> image in community/brand/
+BRAND_IMAGES = [
+    ("logo", "wordmark.png"),
+    ("logo_dark", "wordmark-dark.png"),
+    ("logo_small", "steady-mark.png"),
+    ("logo_small_dark", "steady-mark.png"),
+    ("digest_logo", "wordmark.png"),
+    ("large_icon", "steady-icon-512.png"),
+    ("manifest_icon", "steady-icon-512.png"),
+    ("favicon", "favicon-32.png"),
+    ("apple_touch_icon", "apple-touch-icon.png"),
+    ("opengraph_image", "og.png"),
+]
+
+# the theme's files: (Discourse field name, file, type: 0 html, 1 scss, 2 upload)
+THEME_TEXT_FIELDS = [
+    ("scss", "theme/common.scss", 1),
+    ("color_definitions", "theme/color_definitions.scss", 1),
+    ("footer", "theme/footer.html", 0),
+]
+THEME_UPLOADS = [  # SCSS variable -> file
+    ("steady_atkinson", "fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2"),
+    ("steady_barlow_300", "fonts/barlow-latin-300-normal.woff2"),
+    ("steady_barlow_400", "fonts/barlow-latin-400-normal.woff2"),
+    ("steady_barlow_500", "fonts/barlow-latin-500-normal.woff2"),
+    ("steady_mark", "steady-mark.png"),
+]
+
+# Discourse's own wording, where members see it
+TEXTS = {
+    "js.composer.reply_placeholder": "Type here. Never anything that could identify a patient: no names, dates of birth, places or rare details. Markdown works; drag or paste images.",
+    "js.composer.reply_placeholder_no_images": "Type here. Never anything that could identify a patient: no names, dates of birth, places or rare details. Markdown works.",
+    "js.welcome_banner.header.new_members": "Welcome to Steady Community, %{preferred_display_name}",
+    "js.welcome_banner.header.logged_in_members": "Welcome back, %{preferred_display_name}",
+    "js.welcome_banner.subheader.logged_in_members": "Psychologists at practices that use Steady. No patient-identifying information, ever.",
+    "js.welcome_banner.search_placeholder": "Search Steady Community",
+    "js.powered_by_discourse": "Steady Community",
+    "powered_by_html": "Steady Community, for psychologists at practices that use Steady",
+}
+
+# Topics Discourse writes about itself when it's installed: removed. (Its terms of service and
+# privacy topics stay: /tos and /privacy show them.) The guidelines topic gets ours.
+SEEDED_TO_REMOVE = [re.compile(r"^welcome to .*:wave:\s*$", re.I),
+                    re.compile(r"^(admin guide: getting started|read me first: admin quick start guide)$", re.I)]
+SEEDED_GUIDELINES_TITLES = {"faq/guidelines", "guidelines", "faq"}
+SYSTEM_USER_ID = -1
+
+GUIDELINES_RAW = """\
+Steady Community is for psychologists at practices that use Steady: the science behind between-session care, the questionnaires and tools, studies across practices, and how Steady develops. These are its guidelines.
+
+## No patient-identifying information, ever
+
+Not here, and not in a personal message:
+
+- no names, initials or nicknames
+- no dates of birth, ID numbers, file or account numbers, phone numbers or addresses
+- no screenshots or photos of patient screens, exports, reports or notes
+- no case details that together could point to one person (a rare event, a town and a date, for example)
+
+Talk about patterns, methods and made-up examples. If you see something that breaks this rule, flag the post: the community lead removes it for good, edit history included. If it was your own post, delete it and tell an admin; editing keeps the earlier version.
+
+## How we talk here
+
+- Disagree with ideas, not people. Be kind and specific.
+- Cite your sources with a link, so others can read the original.
+- Check a questionnaire's licence before posting its full text.
+- This is not a place for urgent clinical matters: nobody watches it around the clock.
+
+## Who runs it
+
+Kempie van Rooyen is the community lead. OpenWorks IT builds and hosts Steady and the community, and can read only Announcements and Steady development. To reach them, post in Steady development or send @openworks a personal message.
+"""
+
+
+def brand_file(rel):
+    return os.path.join(BRAND_DIR, rel)
+
+
+def sha1_of(rel):
+    with open(brand_file(rel), "rb") as f:
+        return hashlib.sha1(f.read()).hexdigest()
+
+
+def same_upload(current, rel):
+    """Discourse names an upload after its SHA-1, so the address says whether it's this file."""
+    return bool(current) and sha1_of(rel) in str(current)
+
+
+def ensure_brand(api, args):
+    """The Steady Community look. Each part carries on if another fails; returns what failed."""
+    print("The look: Steady Community")
+    problems = []
+    for part in (_brand_images, _brand_palettes_and_theme, _brand_texts, _brand_seeded_topics):
+        try:
+            part(api, problems)
+        except (SetupError, OSError, KeyError, TypeError, ValueError, AttributeError, IndexError) as err:
+            say("FAILED", f"{part.__name__[1:].replace('_', ' ')}: {err}")
+            problems.append(f"{part.__name__[1:]}: {err}")
+    return problems
+
+
+def _brand_images(api, problems):
+    listed = api.get("/admin/site_settings.json")
+    current = {s["setting"]: s.get("value") for s in listed.get("site_settings", [])}
+    for setting, rel in BRAND_IMAGES:
+        if setting not in current:
+            say("skipped", f"{setting}: not offered by this Discourse version")
+            continue
+        if same_upload(current[setting], rel):
+            say("ok", f"{setting} is {rel}")
+            continue
+        if api.dry_run:
+            say("would set", f"{setting} to {rel}")
+            continue
+        up = api.post_file("/uploads.json", brand_file(rel),
+                           {"upload_type": "site_setting", "for_site_setting": "true", "site_setting_name": setting})
+        api.put(f"/admin/site_settings/{setting}.json", {setting: up["url"]})
+        say("set", f"{setting} to {rel}")
+
+
+def _brand_palettes_and_theme(api, problems):
+    schemes = api.get("/admin/color_schemes.json") or []
+    if isinstance(schemes, dict):
+        schemes = schemes.get("color_schemes", [])
+    ids = {}
+    for key, pal in PALETTES.items():
+        found = next((c for c in schemes if c.get("name") == pal["name"] and not c.get("is_base")), None)
+        colors = [{"name": n, "hex": h} for n, h in pal["colors"].items()]
+        if found:
+            have = {c["name"]: str(c.get("hex", "")).lower().lstrip("#") for c in found.get("colors", [])}
+            ids[key] = found["id"]
+            if all(have.get(n) == h for n, h in pal["colors"].items()):
+                say("ok", f"palette '{pal['name']}'")
+            elif api.dry_run:
+                say("would set", f"palette '{pal['name']}' colours")
+            else:
+                api.put(f"/admin/color_schemes/{found['id']}.json", {"color_scheme": {"name": pal["name"], "colors": colors}})
+                say("set", f"palette '{pal['name']}' colours")
+        elif api.dry_run:
+            say("would add", f"palette '{pal['name']}'")
+        else:
+            made = api.post("/admin/color_schemes.json",
+                            {"color_scheme": {"name": pal["name"], "base_scheme_id": pal["base"], "colors": colors}})
+            ids[key] = made.get("color_scheme", made)["id"]
+            say("added", f"palette '{pal['name']}'")
+
+    listing = api.get("/admin/themes.json") or {}
+    themes = listing.get("themes", [])
+    theme = next((t for t in themes if t.get("name") == THEME_NAME and not t.get("component")), None)
+    have = {}
+    for f in (theme or {}).get("theme_fields", []):
+        have[(f.get("target"), f.get("name"))] = f
+    fields = []
+    changed = []
+    for name, rel, type_id in THEME_TEXT_FIELDS:
+        with open(brand_file(rel), encoding="utf-8") as fh:
+            value = fh.read()
+        if (have.get(("common", name)) or {}).get("value") != value:
+            changed.append(rel)
+        fields.append({"target": "common", "name": name, "value": value, "type_id": type_id})
+    for var, rel in THEME_UPLOADS:
+        cur = have.get(("common", var)) or {}
+        if cur.get("upload_id") and same_upload(cur.get("url"), rel):
+            fields.append({"target": "common", "name": var, "type_id": 2, "upload_id": cur["upload_id"]})
+            continue
+        changed.append(rel)
+        if api.dry_run:
+            continue
+        up = api.post_file("/admin/themes/upload_asset.json", brand_file(rel), {})
+        fields.append({"target": "common", "name": var, "type_id": 2, "upload_id": up["upload_id"]})
+
+    if api.dry_run:
+        if theme is None:
+            say("would add", f"theme '{THEME_NAME}', the default, with the two palettes")
+        elif changed or not theme.get("default"):
+            say("would set", f"theme '{THEME_NAME}': {', '.join(changed) or 'make it the default'}")
+        else:
+            say("ok", f"theme '{THEME_NAME}' is the default and up to date")
+        return
+    if theme is None:
+        theme = api.post("/admin/themes.json", {"theme": {
+            "name": THEME_NAME, "user_selectable": False, "color_scheme_id": ids.get("light"),
+            "theme_fields": fields, "default": True}})
+        theme = theme.get("theme", theme)
+        api.put(f"/admin/themes/{theme['id']}.json", {"theme": {"dark_color_scheme_id": ids.get("dark"), "default": True}})
+        say("added", f"theme '{THEME_NAME}', the default for everyone")
+    else:
+        body = {"color_scheme_id": ids.get("light"), "dark_color_scheme_id": ids.get("dark"), "default": True}
+        if changed:
+            body["theme_fields"] = fields
+        api.put(f"/admin/themes/{theme['id']}.json", {"theme": body})
+        say("set" if changed or not theme.get("default") else "ok",
+            f"theme '{THEME_NAME}'" + (f": {', '.join(changed)}" if changed else " is the default"))
+    # nobody switches to one of Discourse's own looks
+    for other in themes:
+        if other.get("id") != theme["id"] and other.get("user_selectable") and not other.get("component"):
+            try:
+                api.put(f"/admin/themes/{other['id']}.json", {"theme": {"user_selectable": False}})
+                say("set", f"theme '{other.get('name')}' no longer offered to members")
+            except SetupError as err:
+                say("left", f"theme '{other.get('name')}' stays selectable: {err}")
+
+
+def _brand_texts(api, problems):
+    for key, value in TEXTS.items():
+        current = api.get(f"/admin/customize/site_texts/{key}.json", allow_404=True)
+        if current is None:
+            say("skipped", f"{key}: not in this Discourse version")
+            continue
+        if (current.get("site_text") or {}).get("value") == value:
+            say("ok", f"text {key}")
+            continue
+        if api.dry_run:
+            say("would set", f"text {key}")
+            continue
+        api.put(f"/admin/customize/site_texts/{key}.json", {"site_text": {"value": value, "locale": "en"}})
+        say("set", f"text {key}")
+
+
+def _first_poster(topic):
+    posters = topic.get("posters") or []
+    return posters[0].get("user_id") if posters else None
+
+
+def _brand_seeded_topics(api, problems):
+    topics, path = [], "/latest.json?no_definitions=true"
+    for _ in range(10):  # a new forum has a handful of pages at most
+        listing = api.get(path) or {}
+        topics += listing.get("topic_list", {}).get("topics", [])
+        more = listing.get("topic_list", {}).get("more_topics_url")
+        if not more:
+            break
+        path = more.replace("/latest?", "/latest.json?", 1) if more.startswith("/latest?") else more
+    for topic in topics:
+        title = (topic.get("title") or "").strip()
+        if _first_poster(topic) != SYSTEM_USER_ID:
+            continue
+        if any(p.match(title) for p in SEEDED_TO_REMOVE):
+            if api.dry_run:
+                say("would remove", f"Discourse's topic '{title}' ({topic['id']})")
+            else:
+                api.delete(f"/t/{topic['id']}.json")
+                say("removed", f"Discourse's topic '{title}' ({topic['id']})")
+        elif title.lower() in SEEDED_GUIDELINES_TITLES:
+            first = (api.get(f"/t/{topic['id']}.json").get("post_stream", {}).get("posts") or [{}])[0]
+            post = api.get(f"/posts/{first['id']}.json") if first.get("id") else {}
+            if (post.get("raw") or "").strip() == GUIDELINES_RAW.strip():
+                say("ok", "guidelines are Steady Community's")
+            elif api.dry_run:
+                say("would set", f"the guidelines topic ({topic['id']}) to Steady Community's")
+            else:
+                api.put(f"/posts/{first['id']}.json", {"post": {"raw": GUIDELINES_RAW, "edit_reason": "Steady Community guidelines"}})
+                api.put(f"/t/-/{topic['id']}.json", {"title": "Guidelines"})
+                say("set", f"the guidelines topic ({topic['id']}) to Steady Community's")
 
 
 # --- activity-count account for OpenWorks ---------------------------------------------
@@ -653,6 +973,13 @@ def print_plan(args, categories, groups):
     if not args.skip_welcome:
         print("Welcome and guidelines topic")
         say("want", f"'{WELCOME_TITLE}' in Announcements, pinned")
+    if not args.skip_brand:
+        print("The look: Steady Community")
+        say("want", f"theme '{THEME_NAME}' (community/brand/theme/), the default, with palettes "
+                    + " and ".join(f"'{p['name']}'" for p in PALETTES.values()))
+        say("want", "logo, icons and share image: " + ", ".join(sorted({rel for _, rel in BRAND_IMAGES})))
+        say("want", f"{len(TEXTS)} texts in Steady Community's words; Discourse's own welcome and admin guide removed; "
+                    "the guidelines topic in Steady Community's words")
     if args.stats_account:
         print("Activity-count account")
         say("want", f"{STATS_USERNAME} with a granular key ({STATS_SCOPE})")
@@ -687,6 +1014,8 @@ def main(argv=None):
     parser.add_argument("--leave-other-categories", action="store_true",
                         help="don't close other categories (General, Site Feedback, ...) to OpenWorks")
     parser.add_argument("--skip-welcome", action="store_true", help="don't post the welcome topic")
+    parser.add_argument("--skip-brand", action="store_true",
+                        help="leave the look alone (logo, palettes, theme, wording: community/brand/)")
     parser.add_argument("--stats-account", action="store_true",
                         help=f"also create the {STATS_USERNAME} account and its activity-count key")
     parser.add_argument("--stats-email", metavar="ADDRESS",
@@ -727,6 +1056,7 @@ def main(argv=None):
         unknown, mismatched = apply_settings(api, args, group_ids)
         if not args.skip_welcome:
             ensure_welcome(api, cat_ids.get("announcements"))
+        brand_problems = [] if args.skip_brand else ensure_brand(api, args)
         if args.stats_account:
             ensure_stats_account(api, args)
     except SetupError as err:
@@ -738,10 +1068,16 @@ def main(argv=None):
         print("Not offered by this Discourse (check by hand in Admin > Settings, or in community.yml):")
         for name in unknown:
             print(f"  - {name}")
+    if brand_problems:
+        print("The look wasn't finished (the rest was done; run it again after fixing):")
+        for p in brand_problems:
+            print(f"  - {p}")
     if mismatched:
         print("Pinned to the wrong value (fix in containers/community.yml, then ./launcher rebuild community):")
         for name in mismatched:
             print(f"  - {name}")
+        return 1
+    if brand_problems:
         return 1
     print("Dry run finished; nothing was changed." if args.dry_run else "Done.")
     return 0

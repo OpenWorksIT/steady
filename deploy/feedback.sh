@@ -5,7 +5,7 @@
 #   ./feedback.sh show <id>       one report, with the steps that led up to it
 #   ./feedback.sh shot <id> [file.png]   save its screenshot (always blurred from 1.0.4; before, the sender could choose)
 # Uses STEADY_MONITOR_KEY from .env, like health.sh. The master psychologist and administrators
-# also see them in the app (Settings > Feedback), where they can be marked done.
+# also see them in the app (Settings > Practice > Feedback tickets), where they can be marked done.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
 cd "$(dirname "$0")"

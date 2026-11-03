@@ -1,7 +1,7 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Steady - feedback from staff screens: "Love this", "Don't like this", "Bug found" (lib/feedback.js).
 // Psychologists and administrators send it; the master psychologist and administrators read it
-// in Settings > Feedback; OpenWorks IT reads it with deploy/feedback.sh (the monitor key).
+// in Settings > Practice > Feedback tickets; OpenWorks IT reads it with deploy/feedback.sh (the monitor key).
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 routerAdd("POST", "/api/steady/feedback", (e) => {

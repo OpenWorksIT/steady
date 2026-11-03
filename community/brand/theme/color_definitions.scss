@@ -1,0 +1,15 @@
+// Steady Community: brand colours that follow the palette in use. Discourse compiles this once
+// for each palette, so each colour has its light and its dark value.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+:root {
+  --steady-card: #{dark-light-choose(#ffffff, #143438)};
+  --steady-line: #{dark-light-choose(#d5dedc, #2a4a4e)};
+  --steady-mist: #{dark-light-choose(#e4ecf1, #1b3d42)};
+  --steady-tide: #{dark-light-choose(#2c5f7c, #9cc3d9)};
+  --steady-tide-deep: #{dark-light-choose(#1f4b62, #c3dbe8)};
+  --steady-on-tide: #{dark-light-choose(#ffffff, #0f2a2d)};
+  --steady-ink-2: #{dark-light-choose(#4a5c5e, #a9bdbc)};
+  --steady-deep: #{dark-light-choose(#143a3e, #0a1f21)};
+  --steady-deep-ink: #dfeae9;
+  --steady-sun: #d9894a;
+}
