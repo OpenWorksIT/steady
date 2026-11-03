@@ -1,0 +1,166 @@
+// Steady Community: the look of steadyapp.co.za on the forum. Type from VR Clinical Psychology's
+// site: Barlow for headings, Atkinson Hyperlegible Next (made for low-vision readers) for
+// reading. Colours from the Steady mark and app (color_definitions.scss and the two palettes in
+// community/setup.py). Applied by setup.py; see docs/COMMUNITY.md, "How it looks".
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  src: url($steady_atkinson) format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face { font-family: "Barlow"; src: url($steady_barlow_300) format("woff2"); font-weight: 300; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url($steady_barlow_400) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url($steady_barlow_500) format("woff2"); font-weight: 500; font-display: swap; }
+
+html:root {
+  --font-family: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+  --heading-font-family: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --heading-font-weight: 500;
+  --d-border-radius: 10px;
+  --d-border-radius-large: 16px;
+  --d-input-border-radius: 10px;
+  --d-nav-pill-border-radius: 999px;
+  --d-tag-border-radius: 999px;
+  --d-logo-height: 2.4rem;
+  --d-link-text-decoration: none;
+}
+
+// what everything is read in
+body { text-rendering: optimizeLegibility; }
+h1, h2, h3, h4, .fancy-title, .category-title-header .category-title-name {
+  font-family: var(--heading-font-family);
+  letter-spacing: 0.005em;
+}
+:focus-visible {
+  outline: 3px solid var(--steady-sun, #d9894a);
+  outline-offset: 2px;
+}
+
+// the bar at the top: the paper of the site, a hairline under it
+.d-header {
+  box-shadow: none;
+  border-bottom: 1px solid var(--steady-line, var(--primary-low));
+}
+.d-header #site-logo { max-height: var(--d-logo-height); }
+
+// buttons as on steadyapp.co.za: rounded ends, tide blue for the main action
+.btn.btn-text, .btn.btn-icon-text {
+  border-radius: 999px;
+  font-family: var(--heading-font-family);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.btn-primary {
+  background: var(--steady-tide, var(--tertiary));
+  color: var(--steady-on-tide, var(--secondary));
+  .d-icon { color: inherit; }
+  &:hover, &:focus-visible, .discourse-no-touch &:hover {
+    background: var(--steady-tide-deep, var(--tertiary-hover));
+    color: var(--steady-on-tide, var(--secondary));
+    .d-icon { color: inherit; }
+  }
+}
+#create-topic.btn-default, .btn.btn-default.btn-text {
+  background: transparent;
+  border: 1px solid var(--steady-tide, var(--tertiary));
+  color: var(--steady-tide, var(--tertiary));
+  .d-icon { color: inherit; }
+  &:hover { background: var(--steady-mist, var(--tertiary-very-low)); color: var(--steady-tide-deep, var(--tertiary)); }
+}
+
+// the welcome above the lists: quiet, on the lightest step of Steady's mood scale
+.welcome-banner__wrap {
+  background: var(--steady-mist, var(--tertiary-very-low));
+  border-radius: var(--d-border-radius-large);
+}
+.welcome-banner__title {
+  font-family: var(--heading-font-family);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+}
+.welcome-banner__subheader { color: var(--steady-ink-2, var(--primary-high)); }
+
+// lists of topics
+.topic-list .main-link a.title {
+  font-family: var(--heading-font-family);
+  font-weight: 500;
+  font-size: 1.1em;
+}
+.topic-list-item:hover, .topic-list-item.selected { background: var(--steady-mist, var(--d-hover)); }
+.topic-list .topic-excerpt { color: var(--steady-ink-2, var(--primary-high)); }
+
+// the side menu
+.sidebar-section-link-wrapper .sidebar-section-link {
+  border-radius: var(--d-border-radius);
+  &.active { background: var(--steady-mist, var(--d-selected)); color: var(--tertiary); font-weight: 600; }
+}
+
+// posts: easy to read, links that look like links
+.cooked, .d-editor-preview {
+  font-size: 1.05em;
+  line-height: 1.6;
+  a:not(.mention):not(.hashtag-cooked):not(.lightbox):not(.badge-category__wrapper) {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+  blockquote {
+    border-left: 3px solid var(--steady-sun, #d9894a);
+    background: transparent;
+  }
+  h1, h2, h3 { font-weight: 500; }
+}
+.names .first { font-weight: 600; }
+
+// cards and boxes sit on the page like the site's: white, a hairline, softly rounded
+.category-boxes .category-box, .category-list .category,
+.d-modal__container, .menu-panel, .user-card, .group-card {
+  border-radius: var(--d-border-radius-large);
+}
+.category-boxes .category-box { background: var(--steady-card, var(--secondary)); border-color: var(--steady-line, var(--primary-low)); }
+
+// no maker's badge
+.powered-by-discourse { display: none !important; }
+
+// the footer: the deep band of steadyapp.co.za, with the one rule everyone needs to see
+.steady-footer {
+  margin-top: 4rem;
+  background: var(--steady-deep, #143a3e);
+  color: var(--steady-deep-ink, #dfeae9);
+  font-size: 0.95em;
+  a { color: #fff; }
+  &__inner {
+    max-width: var(--d-max-width);
+    margin: 0 auto;
+    padding: 2.5rem var(--d-wrap-padding-x, 1rem) 2rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 2rem;
+    @media (max-width: 760px) { grid-template-columns: 1fr; }
+  }
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 0.75rem;
+    font: 500 1.35rem/1 var(--heading-font-family);
+    color: #fff;
+    &::before {
+      content: "";
+      width: 2rem;
+      height: 2rem;
+      flex: none;
+      background: url($steady_mark) center / contain no-repeat;
+    }
+  }
+  &__rule {
+    margin: 0;
+    padding-left: 1rem;
+    border-left: 3px solid var(--steady-sun, #d9894a);
+    max-width: 34rem;
+  }
+  p { margin: 0 0 0.6rem; max-width: 34rem; }
+  &__small { color: #9fb6b6; font-size: 0.875rem; }
+}

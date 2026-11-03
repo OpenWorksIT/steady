@@ -1,4 +1,4 @@
-## Steady community forum: the discourse_docker container, behind the Caddy that owns ports
+## Steady Community (the forum): the discourse_docker container, behind the Caddy that owns ports
 ## 80/443 on OpenWorks' own server (vps3, ops/compose.yml), on the "community-edge" Docker
 ## network (only it and Caddy: the fleet view is on a network of its own).
 ##

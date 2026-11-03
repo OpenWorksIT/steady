@@ -138,7 +138,7 @@ func (a *App) enter(w http.ResponseWriter, r *http.Request) {
 	// only from Steady itself: its frame (same site) or the phone app's own web view (none). A
 	// link on another site or in an email can't plant someone else's sign-in in this browser.
 	if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-site" && s != "same-origin" && s != "none" {
-		a.problem(w, http.StatusForbidden, "The Steady community opens inside Steady", "Open Steady, the app or the web app, and choose Community.", "entry from another site ("+s+")")
+		a.problem(w, http.StatusForbidden, "Steady Community opens inside Steady", "Open Steady, the app or the web app, and choose Community.", "entry from another site ("+s+")")
 		return
 	}
 	q := r.URL.Query()
@@ -268,7 +268,7 @@ func (a *App) checkNote(n note, cfg *Config, p *Practice) (title, text, why stri
 	case n.Role == "support" && !listed(cfg.OpenWorks, email):
 		return "This address isn't on the community's list", "Only OpenWorks IT's listed addresses come in as OpenWorks support.", "support address not on the OpenWorks list"
 	case n.Role != "clinician" && n.Role != "support":
-		return "The community is for psychologists", "Only psychologists (and OpenWorks IT) can open the Steady community.", "role " + n.Role
+		return "The community is for psychologists", "Only psychologists (and OpenWorks IT) can open Steady Community.", "role " + n.Role
 	}
 	return "", "", ""
 }
@@ -343,7 +343,7 @@ func signedBy(key, text, sig string) bool {
 // the community opened some other way than through Steady; inside Steady's tab the page tells
 // the tab (web/app.js), which opens it again for whoever is signed in
 var outsidePage = map[string]any{
-	"Title":   "The Steady community opens inside Steady",
+	"Title":   "Steady Community opens inside Steady",
 	"Text":    "Open Steady, the app or the web app, and choose Community.",
 	"Message": "sign-in",
 }
