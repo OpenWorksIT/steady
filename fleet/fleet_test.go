@@ -636,3 +636,52 @@ func TestAuditSummary(t *testing.T) {
 		t.Fatalf("problems: %+v", a)
 	}
 }
+
+func TestChecksPageBySeverity(t *testing.T) {
+	_, site, _, u, _ := setup(t)
+	c := signIn(t, site, u, time.Now())
+	res, _ := c.Get(site.URL + "/checks")
+	page := body(t, res)
+	fix, look := strings.Index(page, "To fix"), strings.Index(page, "To look at")
+	if fix < 0 || look < fix {
+		t.Fatal("not ordered by severity")
+	}
+	fixPart, lookPart := page[fix:look], page[look:]
+	for _, want := range []string{"no firewall drops incoming connections &lt;script&gt;"} {
+		if !strings.Contains(fixPart, want) {
+			t.Fatalf("to fix lacks %q", want)
+		}
+	}
+	for _, want := range []string{"X11 forwarding is on", "3 patient(s) haven&#39;t yet agreed to the current consent statement", "1 staff member(s) without two-step sign-in"} {
+		if !strings.Contains(lookPart, want) {
+			t.Fatalf("to look at lacks %q", want)
+		}
+	}
+	if !strings.Contains(page, `aria-label="1 to fix, 3 to look at, 1 passed"`) || !strings.Contains(page, `href="/checks"`) {
+		t.Fatal("no bar or no link to the page")
+	}
+	if strings.Contains(page, "<script>") {
+		t.Fatal("not escaped")
+	}
+}
+
+func TestMakeChecks(t *testing.T) {
+	now := time.Now()
+	down := &Status{Server: Server{Name: "Down"}, At: now, Err: "can't reach the server: refused"}
+	none := &Status{Server: Server{Name: "Old"}, At: now, Data: map[string]any{"counts": map[string]any{"deletionOverdue": 2.0}}}
+	stale := &Status{Server: Server{Name: "Stale"}, At: now, Data: map[string]any{"audit": map[string]any{"at": now.Add(-30 * time.Hour).Format(time.RFC3339), "items": []any{
+		map[string]any{"level": "ok", "text": "fine"}}}}}
+	p := makeChecks([]*Status{down, none, stale}, now)
+	if len(p.Fix) != 2 || p.Fix[0].Server != "Down" || !strings.Contains(p.Fix[1].Text, "2 deletion request(s)") {
+		t.Fatalf("fix: %+v", p.Fix)
+	}
+	if len(p.Look) != 2 || !strings.Contains(p.Look[0].Text, "no security and privacy check") || !strings.Contains(p.Look[1].Text, "has stopped") {
+		t.Fatalf("look: %+v", p.Look)
+	}
+	if p.Servers[2].Passed != 1 || p.Servers[2].SummaryClass != "warn" || p.Servers[0].SummaryClass != "bad" {
+		t.Fatalf("servers: %+v", p.Servers)
+	}
+	if p.Servers[1].FixW != "50.00" || p.Servers[1].LookW != "50.00" {
+		t.Fatalf("bar: %+v", p.Servers[1])
+	}
+}

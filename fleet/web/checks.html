@@ -1,0 +1,30 @@
+{{template "top" "Checks"}}
+{{template "bar" .}}
+<main>
+<h1>Security and privacy checks</h1>
+<p class="muted">Every server checks itself every 6 hours and after each update; the privacy numbers are counted each minute. This page refreshes itself. {{.Now}}</p>
+{{with .Page}}
+<div class="servers">
+{{range .Servers}}<a class="srv" href="/s/{{.Index}}#checks">
+<strong>{{.Name}}</strong>
+<svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="{{.Fix}} to fix, {{.Look}} to look at, {{.Passed}} passed">
+<rect class="b-ok" x="0" y="0" width="100" height="10"/><rect class="b-fix" x="0" y="0" width="{{.FixW}}" height="10"/><rect class="b-look" x="{{.LookX}}" y="0" width="{{.LookW}}" height="10"/></svg>
+<span><span class="check {{.SummaryClass}}">{{.Summary}}</span> <span class="muted">· {{.Passed}} passed · checked {{.Checked}}</span></span>
+</a>
+{{end}}</div>
+
+<h2 class="sev fix">To fix <span class="n">{{len .Fix}}</span></h2>
+{{if .Fix}}<ul class="feed">
+{{range .Fix}}<li><span class="pill down">fix</span> <a href="/s/{{.Index}}#checks">{{.Server}}</a> <span class="muted">· {{.Section}}{{if .Checked}} · {{.Checked}}{{end}}</span><div>{{.Text}}</div></li>
+{{end}}</ul>{{else}}<p class="muted">Nothing to fix on any server.</p>{{end}}
+
+<h2 class="sev look">To look at <span class="n">{{len .Look}}</span></h2>
+{{if .Look}}<ul class="feed">
+{{range .Look}}<li><span class="pill slow">look</span> <a href="/s/{{.Index}}#checks">{{.Server}}</a> <span class="muted">· {{.Section}}{{if .Checked}} · {{.Checked}}{{end}}</span><div>{{.Text}}</div></li>
+{{end}}</ul>{{else}}<p class="muted">Nothing to look at.</p>{{end}}
+
+<h2 class="sev ok">Passed <span class="n">{{.Passed}}</span></h2>
+<p class="muted">Each server's page lists the checks it passed.</p>
+{{end}}
+</main>
+{{template "end"}}

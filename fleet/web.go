@@ -58,6 +58,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /s/{n}", a.signedIn(a.detail))
 	mux.HandleFunc("POST /s/{n}/action", a.signedIn(a.action))
 	mux.HandleFunc("GET /audit", a.signedIn(a.audit))
+	mux.HandleFunc("GET /checks", a.signedIn(a.checks))
 	return headers(mux)
 }
 
@@ -292,6 +293,14 @@ func (a *App) detail(w http.ResponseWriter, r *http.Request, s *Session) {
 	msg := a.sessions.TakeFlash(s)
 	w.Header().Set("Refresh", "60; url=/s/"+strconv.Itoa(n)+"?auto=1")
 	a.render(w, "detail.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Row": makeRow(n, st, now), "Facts": facts(st, now), "Msg": msg})
+}
+
+// checks: every server's security and privacy checks, by severity (makeChecks).
+func (a *App) checks(w http.ResponseWriter, r *http.Request, s *Session) {
+	sts, _ := a.poller.Snapshot()
+	now := a.now()
+	w.Header().Set("Refresh", "60; url=/checks?auto=1")
+	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, now)})
 }
 
 var actions = map[string]string{"check": "check for updates", "update": "install the latest signed release", "restart": "restart Steady"}
