@@ -89,6 +89,8 @@ services:
       STEADY_DEVICE_LINK: ${STEADY_DEVICE_LINK:-on}
       # the Sorted feed (docs/SORTED.md); empty switches it off
       STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
+      # test servers only: the demo patients get a new day every night (accounts.sh demo-patients)
+      STEADY_DEMO_DAILY: ${STEADY_DEMO_DAILY:-}
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data

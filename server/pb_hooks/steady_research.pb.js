@@ -180,3 +180,12 @@ routerAdd("POST", "/api/steady/ops/demo", (e) => {
   s.audit($app, null, "ops.demo.create", "clinician:" + c.id + " count:" + created.length, "");
   return e.json(200, { removed: existing.length, created: created });
 });
+
+// Test servers only: the fictional demo patients go on living, a day at a time, so a test server
+// looks like one in use (lib/demo_daily.js). Off unless .env says STEADY_DEMO_DAILY=on, and only
+// users marked demo are touched.
+cronAdd("steady_demo_daily", "30 21 * * *", () => {
+  if (String($os.getenv("STEADY_DEMO_DAILY") || "").trim() !== "on") return;
+  const n = require(`${__hooks}/lib/demo_daily.js`).run($app, Date.now());
+  if (n) console.log("steady: the demo patients got " + n + " new day(s)");
+});

@@ -75,6 +75,19 @@ is renewed.
   and got every fact right; its two suggestions (flag review status, linking the Heidi patient
   profile) are in 1.0.
 
+## The test server (vps1)
+
+vps1 runs Steady as **Steady Test**, from the `test` branch (`STEADY_TRACK=test`), with plain Steady
+branding and only fictional patients or people who agreed to their data being used for testing.
+The three demo patients (`sudo ./accounts.sh demo-patients <psychologist email>`) keep it looking
+in use: with `STEADY_DEMO_DAILY=on` in its `.env`, a nightly job adds each new day as a patient
+would (lib/demo_daily.js): last night's watch summary on most days, a check-in on most evenings,
+the PHQ-9 and GAD-7 on Sundays. Demo A stays steady, Demo B slides and recovers in a ten-week
+cycle, Demo C has an episode of disrupted sleep every nine weeks. Days the server missed are
+filled in, up to two weeks back. Only users marked demo are touched, with no notifications and
+nothing in the access log; `audit-server.sh` warns if the setting is on anywhere that isn't
+marked as a test server.
+
 ## Before each release
 
 1. On a test server, sign in as a psychologist on a new phone: the emailed code links it; the app
