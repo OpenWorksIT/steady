@@ -1041,6 +1041,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(X, "the access log keeps the request and the deletion", {"patient.delete_request", "patient.delete"} <= {i["action"] for i in items(logs)}, [i["action"] for i in items(logs)])
 
     operator_agreement(su, tag, adm, sup, doc2, patA)
+    community_sign_in(su, tag, adm, sup, doc2, patA)
 
     # ---- RADR, its explanations and reviews, and the psychologist's own daily words
     Q = "RADR"
@@ -1206,6 +1207,49 @@ def operator_agreement(su, tag, adm, sup, doc2, patA):
     check(G, "the signed copy is unchanged", s == 200 and r.get("signature") == "Dr Operator Example", r.get("signature") if isinstance(r, dict) else r)
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"actor='{MO.id}' && action='operator-agreement.sign'"})
     check(G, "signing is written to the audit log", s == 200 and items(logs), logs)
+
+
+def community_sign_in(su, tag, adm, sup, doc2, patA):
+    """The community, inside Steady: a short note for the sign-in bridge, signed with the
+    practice's key (HMAC-SHA256), for psychologists and OpenWorks support with two-step sign-in
+    on. Never for the practice admin, patients or staff without two-step sign-in."""
+    G = "community sign-in"
+    R = "/api/steady/community/sign-in"
+    key = ENV.get("STEADY_COMMUNITY_KEY", "")
+    bridge = ENV.get("STEADY_COMMUNITY_SIGNIN", "https://signin.steady.test").rstrip("/").lower()
+    s, cfg = call("GET", "/api/steady/config")
+    s, r = call("POST", R, doc2, {})
+    if len(key) < 32:
+        check(G, "without a key configured the route doesn't exist", s == 404, [s, r])
+        check(G, "and the app gets no Community tab", cfg.get("communityUrl") == "", cfg.get("communityUrl"))
+        return
+    check(G, "the app gets the Community tab", cfg.get("communityUrl", "").startswith("https://"), cfg.get("communityUrl"))
+    check(G, "a psychologist gets a note for the bridge", s == 200 and str(r.get("url", "")).startswith(bridge + "/enter?p="), [s, r])
+
+    def note_of(resp):
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(resp.get("url", "")).query)
+        return q.get("p", [""])[0], q.get("s", [""])[0]
+    p, sig = note_of(r)
+    good = hmac.compare_digest(hmac.new(key.encode(), p.encode(), hashlib.sha256).hexdigest(), sig)
+    check(G, "the note is signed with the practice's key", good, sig)
+    try:
+        note = json.loads(p)
+    except ValueError:
+        note = {}
+    check(G, "it names the bridge, the account and its role, once, for two minutes",
+          note.get("aud") == bridge and note.get("role") == "clinician" and len(note.get("jti", "")) >= 16
+          and note.get("sub") and "@" in note.get("email", "") and note.get("exp", 0) - note.get("iat", 0) == 120, note)
+    check(G, "and nothing else", set(note) == {"v", "aud", "jti", "sub", "email", "name", "role", "iat", "exp"}, sorted(note))
+    s, r2 = call("POST", R, doc2, {})
+    check(G, "each note is a new one", s == 200 and json.loads(note_of(r2)[0] or "{}").get("jti") != note.get("jti"), r2)
+    s, r = call("POST", R, sup, {})
+    check(G, "OpenWorks support gets one too, as support", s == 200 and json.loads(note_of(r)[0] or "{}").get("role") == "support", [s, r])
+    N = staff(su, f"cf-n-{tag}@sec.test", "Dr NoCode", two_step=False)
+    for label, tok in (("the practice admin", adm), ("a patient", patA), ("staff without two-step sign-in", N.token), ("nobody signed in", None)):
+        s, r = call("POST", R, tok, {})
+        check(G, f"{label} is refused", s in (401, 403), [s, r])
+    s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": "action='account.community-sign-in'"})
+    check(G, "each note is written to the access log", s == 200 and len(items(logs)) >= 3, logs)
 
 
 if __name__ == "__main__":

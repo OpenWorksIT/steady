@@ -3,7 +3,8 @@
 A server of its own for the two things that are OpenWorks IT's rather than a practice's:
 
 - the **fleet view** at fleet.steadyapp.co.za ([FLEET.md](FLEET.md))
-- the **community forum** at community.steadyapp.co.za ([COMMUNITY.md](COMMUNITY.md))
+- the **community forum** at community.steadyapp.co.za, and its sign-in bridge at
+  signin.steadyapp.co.za ([COMMUNITY.md](COMMUNITY.md))
 
 Nothing else runs on it: no Steady practice server, no Shap. A Caddy (`ops/compose.yml`) owns
 ports 80/443, gets the certificates, and passes each site on over a Docker network of that
@@ -14,7 +15,8 @@ code (`fleet/fleet.caddy`, `community/community.caddy`), so a `git pull` updates
 
 ```
 internet ──443──> caddy ──fleet-edge─────> fleet:8080     (fleet/compose.yml)
-                        └─community-edge─> community:80   (Discourse, /var/discourse)
+                        ├─community-edge─> community:80   (Discourse, /var/discourse)
+                        └─community-edge─> signin:8080    (community/signin/compose.yml)
 ```
 
 ## The server
@@ -31,6 +33,7 @@ A records pointing at vps3's address:
 
 - `fleet.steadyapp.co.za` (move it from vps1 if it's there already)
 - `community.steadyapp.co.za`
+- `signin.steadyapp.co.za`
 
 ## 2. Harden it first
 

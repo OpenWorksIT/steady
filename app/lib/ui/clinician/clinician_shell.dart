@@ -8,6 +8,8 @@ import '../../app_state.dart';
 import '../../models.dart';
 import '../../services/api.dart';
 import '../../services/push.dart';
+import '../community/community_rules.dart';
+import '../community/community_tab.dart';
 import '../practice/people_screen.dart';
 import '../widgets.dart';
 import 'alerts_screen.dart';
@@ -93,10 +95,15 @@ class _ClinicianShellState extends State<ClinicianShell> with WidgetsBindingObse
   @override
   Widget build(BuildContext context) {
     final master = AppScope.api(context).isMaster;
+    // the Steady community, when this practice's server is set up for it (its own tab, opened
+    // inside Steady only)
+    final forum = AppScope.of(context).config.communityUrl;
+    final community = forum.isNotEmpty && communityTabHere(forum);
     final pages = [
       PatientsScreen(bus: _bus),
       AlertsScreen(bus: _bus, onRead: _refreshUnread),
       const LibraryScreen(),
+      if (community) CommunityTab(active: _tab == 3),
       if (master) const PeopleScreen(),
     ];
     return Scaffold(
@@ -119,6 +126,7 @@ class _ClinicianShellState extends State<ClinicianShell> with WidgetsBindingObse
             label: 'Alerts',
           ),
           const NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Library'),
+          if (community) const NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum), label: 'Community'),
           if (master) const NavigationDestination(icon: Icon(Icons.apartment_outlined), selectedIcon: Icon(Icons.apartment), label: 'Practice'),
         ],
       ),

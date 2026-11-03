@@ -1,10 +1,11 @@
 # Looks up everything Steady is built from in public vulnerability databases, which the review's
 # sandbox couldn't reach:
 #   - OSV (osv.dev) for the app's Dart packages (app/pubspec.lock) and the Go modules of the push
-#     relay and the fleet view
-#   - Go's own database through govulncheck: for pusher/ and fleet/ it also says whether the
-#     vulnerable code is actually called; for PocketBase and Caddy it reads the released binaries
-#     (the versions practice servers run: server/Dockerfile and deploy/docker-compose.yml)
+#     relay, the fleet view and the forum's sign-in bridge
+#   - Go's own database through govulncheck: for pusher/, fleet/ and community/signin/ it also
+#     says whether the vulnerable code is actually called; for PocketBase and Caddy it reads the
+#     released binaries (the versions practice servers run: server/Dockerfile and
+#     deploy/docker-compose.yml)
 # Red when anything is found in Steady's own dependencies; a finding in the PocketBase or Caddy
 # release binaries is a warning (only their next release can fix it, and Dependabot proposes
 # that release as a pull request), listed in the run's summary. Weekly, and on every push to the
@@ -74,9 +75,10 @@ jobs:
             fi
           }
           step "OSV: app packages, relay and fleet modules" osv-scanner scan source \
-            --lockfile app/pubspec.lock --lockfile pusher/go.mod --lockfile fleet/go.mod
+            --lockfile app/pubspec.lock --lockfile pusher/go.mod --lockfile fleet/go.mod --lockfile community/signin/go.mod
           step "govulncheck: push relay" sh -c 'cd pusher && govulncheck ./...'
           step "govulncheck: fleet view" sh -c 'cd fleet && govulncheck ./...'
+          step "govulncheck: community sign-in bridge" sh -c 'cd community/signin && govulncheck ./...'
           bin="$RUNNER_TEMP/bin" && mkdir -p "$bin" && cd "$bin" || exit 1
           curl -fsSLo pb.zip "https://github.com/pocketbase/pocketbase/releases/download/v${PB}/pocketbase_${PB}_linux_amd64.zip" || exit 1
           echo "$PBSHA  pb.zip" | sha256sum -c - && unzip -q pb.zip pocketbase || exit 1

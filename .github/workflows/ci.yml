@@ -144,6 +144,12 @@ jobs:
           sed 's/STEADY_DOMAIN/steady.example.co.za/' deploy/proxy/steady.caddy > site.caddy
           docker run --rm -v "$PWD/site.caddy:/etc/caddy/Caddyfile:ro" caddy:2 \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > v5.txt 2>&1 || note "proxy site Caddyfile" v5.txt
+          # OpenWorks' own sites: the forum and its sign-in bridge
+          for site in community/community.caddy community/signin/signin.caddy; do
+            docker run --rm -v "$PWD/$site:/etc/caddy/Caddyfile:ro" caddy:2 \
+              caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > v6.txt 2>&1 || note "$site" v6.txt
+          done
+          docker compose -f community/signin/compose.yml config -q > v7.txt 2>&1 || note "sign-in bridge compose" v7.txt
           exit $fail
       - name: server log on failure
         if: failure()
@@ -162,9 +168,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.27"
-      # the push relay and the fleet view (fleet/): both standard library only
+      # the push relay, the fleet view (fleet/) and the forum's sign-in bridge (community/signin/):
+      # all standard library only
       - run: cd pusher && go vet ./... && go test ./...
       - run: cd fleet && go vet ./... && go test ./...
+      - run: cd community/signin && test -z "$(gofmt -l .)" && go vet ./... && go test ./...
 
   app:
     runs-on: ubuntu-latest

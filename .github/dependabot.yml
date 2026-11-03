@@ -13,11 +13,11 @@ updates:
     target-branch: working
     open-pull-requests-limit: 5
   - package-ecosystem: gomod
-    directories: [/pusher, /fleet]
+    directories: [/pusher, /fleet, /community/signin]
     schedule: { interval: weekly }
     target-branch: working
   - package-ecosystem: docker
-    directories: [/server, /pusher, /fleet]
+    directories: [/server, /pusher, /fleet, /community/signin]
     schedule: { interval: weekly }
     target-branch: working
   # the images named in the compose files (Caddy, the mail catcher, cloudflared)
