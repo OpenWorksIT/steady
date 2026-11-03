@@ -73,6 +73,9 @@ services:
       STEADY_TRUSTED_PROXY_HEADER: X-Forwarded-For
       # psychologists and administrators sign in with a code from an authenticator app
       STEADY_REQUIRE_2FA: ${STEADY_REQUIRE_2FA:-staff}
+      # staff in a web browser: the session belongs to the tab, and its token lasts this many
+      # minutes, renewed while the tab is open (server/pb_hooks/lib/sessions.js)
+      STEADY_TAB_SESSION_MINUTES: ${STEADY_TAB_SESSION_MINUTES:-60}
       # email to staff: codes to link a new device, and notices about their own account (never
       # about patients). With these set, staff sign in only from devices they've linked.
       STEADY_SMTP_HOST: ${STEADY_SMTP_HOST:-}

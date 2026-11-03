@@ -10,6 +10,7 @@ import '../wearable/wearable_sync.dart';
 import '../build_info.dart';
 import 'auth/change_password_screen.dart';
 import 'auth/devices_screen.dart';
+import 'auth/screen_lock.dart';
 import 'auth/server_screen.dart';
 import 'auth/two_step_screen.dart';
 import 'clinician/server_updates_screen.dart';
@@ -129,6 +130,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           ],
           const SizedBox(height: 12),
           Text('Your account', style: context.tt.titleMedium),
+          // patients on a phone: lock Steady with the phone's screen lock, off unless they turn it on
+          if (state.isPatient && !kIsWeb) const _LockSwitch(),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.password),
@@ -288,6 +291,56 @@ class _CareTeam extends StatelessWidget {
           ]);
         },
       ),
+    );
+  }
+}
+
+/// Patients on a phone: "Lock Steady" (ui/auth/screen_lock.dart). Kept on this phone only.
+class _LockSwitch extends StatefulWidget {
+  const _LockSwitch();
+  @override
+  State<_LockSwitch> createState() => _LockSwitchState();
+}
+
+class _LockSwitchState extends State<_LockSwitch> {
+  bool _noLock = false;
+  bool _busy = false;
+
+  Future<void> _set(String id, bool on) async {
+    if (!on) return PatientLock.instance.set(id, false);
+    setState(() => _busy = true);
+    final has = await phoneHasScreenLock();
+    // asked once now, so the patient knows it works before Steady relies on it
+    final ok = has && await unlockWithScreenLock('Turn on Lock Steady');
+    if (!mounted) return;
+    setState(() {
+      _noLock = !has;
+      _busy = false;
+    });
+    if (ok) await PatientLock.instance.set(id, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final id = AppScope.api(context).myId;
+    PatientLock.instance.load(id);
+    return ListenableBuilder(
+      listenable: PatientLock.instance,
+      builder: (context, _) {
+        final on = PatientLock.instance.isOn(id) ?? false;
+        return SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.lock_outline),
+          title: const Text('Lock Steady'),
+          subtitle: Text(_noLock
+              ? 'This phone has no screen lock. Set a PIN, pattern, password or fingerprint in the phone\'s settings first.'
+              : on
+                  ? 'On: Steady asks for your phone\'s screen lock when you open it, and after two minutes away'
+                  : 'Ask for your phone\'s screen lock (fingerprint, face, PIN or pattern) when you open Steady'),
+          value: on,
+          onChanged: _busy ? null : (v) => _set(id, v),
+        );
+      },
     );
   }
 }

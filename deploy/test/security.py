@@ -101,6 +101,20 @@ def items(resp):
     return resp.get("items", []) if isinstance(resp, dict) else []
 
 
+def claims(token):
+    """A token's claims, unchecked (the server checks them)."""
+    try:
+        part = token.split(".")[1]
+        return json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+    except (AttributeError, IndexError, ValueError):
+        return {}
+
+
+def lasts(token):
+    """Seconds until a token runs out."""
+    return claims(token).get("exp", 0) - time.time()
+
+
 # ---------------------------------------------------------------- setup
 
 def totp(secret, step=None):
@@ -628,6 +642,45 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
         check(L, "a linked device still needs the authenticator code", s == 400 and not r.get("token"), r)
         s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": laptop})
         check(L, "a linked device signs in with password and code", s == 200 and r.get("token") and not r.get("linkDevice"), r)
+
+        # staff in a browser: the session belongs to the tab. Short tokens, renewed while the tab
+        # is open; a copy taken from a closed tab soon stops working (lib/sessions.js)
+        B = "browser tab sessions"
+        tab = r.get("token", "")
+        mins = float(ENV.get("STEADY_TAB_SESSION_MINUTES", "60"))
+        short = lambda t: claims(t).get("steadyTab") is True and abs(lasts(t) - mins * 60) < 120
+        long_ = lambda t: not claims(t).get("steadyTab") and lasts(t) > 24 * 3600
+        check(B, f"staff signing in from a browser get a short token ({mins:g} minutes)", short(tab), claims(tab))
+        check(B, "...and so does linking a new browser", short(web), claims(web))
+        check(B, "staff on a phone keep the usual length", long_(S5.token), claims(S5.token))
+        check(B, "patients keep the usual length", long_(patA), claims(patA))
+        lap = {"X-Steady-Device": laptop["key"]}
+        s, r = call("POST", "/api/collections/users/auth-refresh", tab, headers=lap)
+        tab2 = r.get("token", "") if isinstance(r, dict) else ""
+        check(B, "renewing a tab's token gives another short one", s == 200 and short(tab2), [s, claims(tab2)])
+        for label, hdrs in (("a phone's device key", {"X-Steady-Device": S5.device["key"]}), ("no device key", {})):
+            s, r = call("POST", "/api/collections/users/auth-refresh", tab2, headers=hdrs)
+            t = r.get("token", "") if isinstance(r, dict) else ""
+            check(B, f"a tab's token can't be renewed into a long one (with {label})", s == 200 and short(t), [s, claims(t)])
+        s, r = call("GET", "/api/steady/overview", tab2, headers=lap)
+        check(B, "a renewed token works", s == 200, [s, r])
+        s, r = call("GET", "/api/steady/overview", tab, headers=lap)
+        check(B, "the older token works until its own time runs out", s == 200, [s, r])
+        s, r = call("POST", "/api/collections/users/auth-refresh", S5.token)
+        check(B, "renewing a phone's token keeps the usual length", s == 200 and long_(r.get("token", "")), [s, claims(r.get("token", ""))])
+        if mins <= 2.5:
+            # only against a server started with a short STEADY_TAB_SESSION_MINUTES (and the
+            # same value given to this script); CI's server keeps the real hour
+            time.sleep(max(0, lasts(tab)) + 3)
+            s, r = call("GET", "/api/steady/overview", tab, headers=lap)
+            check(B, "an expired tab token reads nothing", s == 401, [s, r])
+            s, r = call("POST", "/api/collections/users/auth-refresh", tab, headers=lap)
+            check(B, "...and can't be renewed", s == 401, [s, r])
+            s, r = call("GET", "/api/steady/overview", S5.token)
+            check(B, "...while the phone's session goes on", s == 200, [s, r])
+            # a new browser session for the checks below (the first one has run out too)
+            s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": laptop})
+            web = r.get("token") or web
         other = devicelink.new_device("web", "Elsewhere")
         s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": other})
         t2 = r.get("ticket", "")

@@ -21,7 +21,8 @@ change isn't released until they pass.
   app versions and watch permissions, exports (flag reviews, notes, methods, the Heidi series),
   and staff sign-in: device links with emailed codes (wrong, reused and expired codes), "confirm
   it's you", locking your own account, password resets unlinking devices, PocketBase's own email
-  routes closed.
+  routes closed; browser tab sessions (short tokens, renewed as short ones whatever device key
+  comes with them; phones and patients keep the usual length).
 
 **Push relay** (`cd pusher && go test ./...`): Web Push encryption against an independent
 decryption, ES256 signatures and key formats, APNs requests against a local HTTP/2 server, the
@@ -34,15 +35,20 @@ mail catcher):
   reach (other patients, other psychologists' patients, hidden fields, the collections API, the
   dashboard, superuser routes), the reset and lock-down rules, OpenWorks seeing no patients,
   two-step sign-in (replayed codes, recovery codes), linked devices (codes, tickets, tries,
-  removal, keys never returned), "confirm it's you" on every sensitive route, locking your own
-  account, closed PocketBase email routes, and no patient names in any email sent.
+  removal, keys never returned), "confirm it's you" on every sensitive route, browser tab
+  sessions (an hour, renewed as short ones, a copied token can't be made long; run against a
+  server with a short `STEADY_TAB_SESSION_MINUTES` and the same value in the script's
+  environment, it also waits for one to run out), locking your own account, closed PocketBase
+  email routes, and no patient names in any email sent.
 - `deploy/test/smoke.py`, the whole clinician and patient flow, ending with the rate limits.
 - Moving the test stack's data to a vps1-style production setup and signing in there.
 
 **The app** (`flutter analyze` and `flutter test` in `app/`, and an Android build): data parsing,
 server addresses and invite links, the watch summaries, chart periods, the patient words and
-calm transitions, the feedback trail, layout rules, and the exports (PDF report, Excel workbook,
-Heidi PDF for a full export, a part of a series and chosen dates).
+calm transitions, the feedback trail, layout rules, the exports (PDF report, Excel workbook,
+Heidi PDF for a full export, a part of a series and chosen dates), the screen lock (patients'
+Lock Steady off by default, the crisis numbers on its lock screen, two minutes away; staff
+locked at opening) and when a browser tab's session is renewed.
 
 ## Tested by people
 
@@ -57,9 +63,14 @@ Heidi PDF for a full export, a part of a series and chosen dates).
 1. On a test server, sign in as a psychologist on a new phone: the emailed code links it; the app
    locks after two minutes in the background and unlocks with the screen lock.
 2. Reset a patient's password: the app asks to confirm it's you first.
-3. Invite a patient on another phone, check in with mood 1, send and complete a PHQ-9 with item
+3. As a patient on a phone, turn on Lock Steady in Settings, leave the app for two minutes and
+   come back: it asks for the screen lock; cancel it: the crisis numbers show. Open the app
+   switcher: Steady's picture is blank (also as a psychologist, and on an iPhone).
+4. In a browser as a psychologist, keep the tab open for over an hour and use it: still signed
+   in. Close the tab and open the site again: the sign-in screen.
+5. Invite a patient on another phone, check in with mood 1, send and complete a PHQ-9 with item
    9 above 0: the notification shows no name or scores; the flag appears; mark it as reviewed.
-4. Export for Heidi twice: the second offers "since the last export" and says part 2.
-5. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
-6. "Lost your phone? Lock your account" on the sign-in screen, then restore it as OpenWorks.
-7. `./backup.sh` and a restore to a scratch machine.
+6. Export for Heidi twice: the second offers "since the last export" and says part 2.
+7. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
+8. "Lost your phone? Lock your account" on the sign-in screen, then restore it as OpenWorks.
+9. `./backup.sh` and a restore to a scratch machine.

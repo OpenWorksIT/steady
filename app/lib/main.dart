@@ -13,6 +13,7 @@ import 'feedback/feedback.dart';
 import 'feedback/trail.dart';
 import 'services/api.dart';
 import 'services/push.dart';
+import 'services/tab_session.dart';
 import 'ui/auth/change_password_screen.dart';
 import 'ui/auth/privacy_notice_screen.dart';
 import 'ui/auth/screen_lock.dart';
@@ -42,6 +43,8 @@ Future<void> main() async {
   };
   await state.loadLocal();
   runApp(AppScope(state: state, child: const SteadyApp()));
+  // staff in a browser: the session lasts while the tab is open, renewed in the background
+  TabSession(state, navigatorKey: SteadyApp.navigatorKey).start();
   await state.start();
 }
 
@@ -61,9 +64,10 @@ class SteadyApp extends StatelessWidget {
         navigatorKey: navigatorKey,
         // screens opened go into the feedback trail; staff get the Feedback button
         navigatorObservers: [TrailObserver()],
-        // staff phones: the screen lock covers every screen, not only the first
-        builder: (context, child) =>
-            _SystemBarSpace(child: StaffLock(child: FeedbackLayer(navigatorKey: navigatorKey, child: child ?? const SizedBox()))),
+        // phones: the screen lock (staff always, patients who turn it on) covers every screen,
+        // not only the first
+        builder: (context, child) => _SystemBarSpace(
+            child: ScreenLock(navigatorKey: navigatorKey, child: FeedbackLayer(navigatorKey: navigatorKey, child: child ?? const SizedBox()))),
         home: const UpdateNudge(child: RootGate()),
       );
   }

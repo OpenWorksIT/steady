@@ -1,5 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Steady 1.0 - staff's linked devices and "confirm it's you" (see lib/devices.js).
+// Steady 1.0 - staff's linked devices and "confirm it's you" (see lib/devices.js), signing out,
+// and how long a browser tab's session lasts (lib/sessions.js).
 // Signing in, linking a device and locking your own account are in steady_practice.pb.js.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
@@ -57,6 +58,13 @@ routerAdd("POST", "/api/steady/me/confirm", (e) => {
   G.succeeded($app, u.email());
   return e.json(200, { confirmed: true, how: how, forMs: D.CONFIRM_MS });
 }, $apis.requireAuth());
+
+// Staff in a web browser get short tokens, renewed while the tab is open; everyone else keeps
+// PocketBase's own length (lib/sessions.js). Every token for the users collection passes here.
+onRecordAuthRequest((e) => {
+  require(`${__hooks}/lib/sessions.js`).onAuth($app, e);
+  e.next();
+}, "users");
 
 // Signing out ends the session on the server too: a new token key makes every token issued
 // before it invalid, so a copy of the token (a shared computer, a stolen phone backup) stops

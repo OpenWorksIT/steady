@@ -77,6 +77,8 @@ function makeRuntime(opts = {}) {
     setVerified(v) { this.data.verified = v; }
     original() { return this._original || null; }
     refreshTokenKey() { this.data.tokenKey = "key-" + (++idSeq); }
+    tokenKey() { return this.getString("tokenKey"); }
+    collection() { return collections[this.collectionName]; }
   }
 
   function matchClause(rec, clause, params) {
@@ -214,7 +216,13 @@ function makeRuntime(opts = {}) {
       randomStringWithAlphabet: (n, alpha) => Array.from({ length: n }, (_, i) => alpha[(idSeq * 7 + i * 13 + (++randSeq)) % alpha.length]).join(""),
       sha256: (t) => require("crypto").createHash("sha256").update(String(t)).digest("hex"),
       randomString: (n) => require("crypto").randomBytes(n).toString("hex").slice(0, n),
-      equal: (a, b) => String(a) === String(b)
+      equal: (a, b) => String(a) === String(b),
+      createJWT: (payload, key, seconds) => {
+        const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+        const body = b64({ alg: "HS256", typ: "JWT" }) + "." + b64(Object.assign({}, payload, { exp: Math.floor(clock / 1000) + seconds }));
+        return body + "." + require("crypto").createHmac("sha256", key).update(body).digest("base64url");
+      },
+      parseUnverifiedJWT: (t) => JSON.parse(Buffer.from(String(t).split(".")[1], "base64url").toString())
     },
     $http: {
       send: (cfg) => {
@@ -264,7 +272,7 @@ function makeRuntime(opts = {}) {
   const ctx = vm.createContext(sandbox);
 
   // the default PocketBase users collection
-  defineCollection(new Collection({ name: "users", type: "auth", id: "_pb_users_auth_", fields: [] }));
+  defineCollection(new Collection({ name: "users", type: "auth", id: "_pb_users_auth_", fields: [], authToken: { secret: "users-secret", duration: 432000 } }));
 
   const run = (file) => vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file });
   for (const f of fs.readdirSync(path.join(ROOT, "pb_migrations")).sort()) run(path.join(ROOT, "pb_migrations", f));
@@ -836,6 +844,80 @@ test("consent: the practice's own statement from its brand folder; Steady's draf
   assert.equal(rt.call("POST", "/api/steady/consent", { auth: pat, body: { kind: "consent", version: now } }).status, 200);
   assert.equal(rt.app.findRecordById("users", pat.id).getString("consentVersion"), now);
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "consent.statement" && a.getString("patient") === pat.id));
+});
+
+test("staff in a browser get short tokens, renewed as short ones; phones and patients keep the usual length", () => {
+  const rt = makeRuntime({ env: ENV });
+  const crypto = require("crypto");
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org", tokenKey: "doc-key" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: doc.id, email: "p@example.org", tokenKey: "pat-key" });
+  const keyHash = (k) => crypto.createHash("sha256").update(k).digest("hex");
+  rt.makeRecord("staffdevices", { user: doc.id, keyHash: keyHash("w".repeat(40)), platform: "web", name: "Laptop" });
+  rt.makeRecord("staffdevices", { user: doc.id, keyHash: keyHash("p".repeat(40)), platform: "android", name: "Phone" });
+  const claims = (t) => JSON.parse(Buffer.from(t.split(".")[1], "base64url").toString());
+  const verifies = (t, rec) => {
+    const [h, b, sig] = t.split(".");
+    return crypto.createHmac("sha256", rec.tokenKey() + "users-secret").update(h + "." + b).digest("base64url") === sig;
+  };
+  // PocketBase's onRecordAuthRequest for the users collection, as it runs for every token
+  const issue = (record, { body = {}, headers = {}, auth = null, said = "" } = {}) => {
+    const e = {
+      record, auth, token: "pocketbase-default",
+      requestInfo: () => ({ body, headers }),
+      get: (k) => (k === "steadyPlatform" && said ? said : null),
+      next() { this.passed = true; }
+    };
+    rt.hooks.authRequest.users(e);
+    assert.ok(e.passed, "the hook passes the request on");
+    return e.token;
+  };
+  const hour = Math.floor(rt.now() / 1000) + 3600;
+
+  // signing in from a browser: short, marked, signed like PocketBase's own tokens
+  const web = issue(doc, { body: { device: { key: "w".repeat(40), platform: "web" } } });
+  assert.equal(claims(web).steadyTab, true);
+  assert.equal(claims(web).exp, hour);
+  assert.equal(claims(web).id, doc.id);
+  assert.equal(claims(web).type, "auth");
+  assert.equal(claims(web).collectionId, "_pb_users_auth_");
+  assert.equal(claims(web).refreshable, true);
+  assert.ok(verifies(web, doc), "signed with the account's token key and the collection's secret");
+  // a phone, a patient: PocketBase's own token, untouched
+  assert.equal(issue(doc, { body: { device: { key: "p".repeat(40), platform: "android" } } }), "pocketbase-default");
+  assert.equal(issue(pat, { body: { device: { key: "w".repeat(40), platform: "web" } } }), "pocketbase-default");
+  assert.equal(issue(pat, { headers: { authorization: web } }), "pocketbase-default");
+  // linking a browser (the route says which device)
+  assert.equal(claims(issue(doc, { said: "web" })).steadyTab, true);
+  assert.equal(issue(doc, { said: "ios" }), "pocketbase-default");
+
+  // renewing: a tab's token stays a tab's, whatever device key or body comes with it
+  rt.tick(20 * 60000);
+  const renewed = issue(doc, { auth: doc, headers: { authorization: "Bearer " + web, x_steady_device: "p".repeat(40) }, body: { device: { key: "p".repeat(40), platform: "android" } } });
+  assert.equal(claims(renewed).steadyTab, true);
+  assert.equal(claims(renewed).exp, hour + 20 * 60, "a new hour from now");
+  assert.equal(claims(issue(doc, { auth: doc, headers: { authorization: web } })).steadyTab, true);
+  // ...but only a token PocketBase accepted for this account counts
+  assert.equal(issue(doc, { auth: pat, headers: { authorization: web } }), "pocketbase-default");
+  // an older browser session (a token from before this) becomes a tab's when it's renewed from its linked browser
+  assert.equal(claims(issue(doc, { auth: doc, headers: { authorization: "old", x_steady_device: "w".repeat(40) } })).steadyTab, true);
+  // a phone's renewal stays long, and so does a phone that isn't linked (a server without email)
+  assert.equal(issue(doc, { auth: doc, headers: { authorization: "old", x_steady_device: "p".repeat(40) } }), "pocketbase-default");
+  assert.equal(issue(doc, { auth: doc, headers: { authorization: "old", x_steady_device: "u".repeat(40) } }), "pocketbase-default");
+
+  // a new token key (signing out everywhere) makes new tab tokens with the new key
+  doc.refreshTokenKey();
+  assert.ok(verifies(issue(doc, { said: "web" }), doc));
+  assert.ok(!verifies(web, doc), "the old one no longer matches");
+
+  // the length can be set, within limits
+  const S = (env) => makeRuntime({ env: Object.assign({}, ENV, env) }).sandbox.require(path.join(HOOKS, "lib", "sessions.js")).tabSeconds();
+  assert.equal(S({}), 3600);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "90" }), 5400);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "0.5" }), 30);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "0" }), 3600);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "rubbish" }), 3600);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "0.01" }), 15);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "99999" }), 86400);
 });
 
 test("signing out ends the session on the server; the relay can only remove the devices it was sent", () => {
