@@ -22,7 +22,9 @@ change isn't released until they pass.
   and staff sign-in: device links with emailed codes (wrong, reused and expired codes), "confirm
   it's you", locking your own account, password resets unlinking devices, PocketBase's own email
   routes closed; browser tab sessions (short tokens, renewed as short ones whatever device key
-  comes with them; phones and patients keep the usual length).
+  comes with them; phones and patients keep the usual length); the operator agreement (only the
+  master clinician signs, only the version shown, every field checked, signed copies never
+  change) and its text, version and docs copy agreeing.
 
 **Push relay** (`cd pusher && go test ./...`): Web Push encryption against an independent
 decryption, ES256 signatures and key formats, APNs requests against a local HTTP/2 server, the
@@ -39,16 +41,19 @@ mail catcher):
   sessions (an hour, renewed as short ones, a copied token can't be made long; run against a
   server with a short `STEADY_TAB_SESSION_MINUTES` and the same value in the script's
   environment, it also waits for one to run out), locking your own account, closed PocketBase
-  email routes, and no patient names in any email sent.
-- `deploy/test/smoke.py`, the whole clinician and patient flow, ending with the rate limits.
+  email routes, no patient names in any email sent, and the operator agreement (who reads, signs
+  and opens it; signed copies can't be changed or deleted, not even by a superuser).
+- `deploy/test/smoke.py`, the whole clinician and patient flow (starting with the master clinician
+  signing the operator agreement), ending with the rate limits.
 - Moving the test stack's data to a vps1-style production setup and signing in there.
 
 **The app** (`flutter analyze` and `flutter test` in `app/`, and an Android build): data parsing,
 server addresses and invite links, the watch summaries, chart periods, the patient words and
 calm transitions, the feedback trail, layout rules, the exports (PDF report, Excel workbook,
-Heidi PDF for a full export, a part of a series and chosen dates), the screen lock (patients'
-Lock Steady off by default, the crisis numbers on its lock screen, two minutes away; staff
-locked at opening) and when a browser tab's session is renewed.
+Heidi PDF for a full export, a part of a series and chosen dates), the operator agreement's
+text, Schedule and PDF, the screen lock (patients' Lock Steady off by default, the crisis numbers
+on its lock screen, two minutes away; staff locked at opening) and when a browser tab's session
+is renewed.
 
 ## Tested by people
 
@@ -72,5 +77,7 @@ locked at opening) and when a browser tab's session is renewed.
    9 above 0: the notification shows no name or scores; the flag appears; mark it as reviewed.
 6. Export for Heidi twice: the second offers "since the last export" and says part 2.
 7. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
+   On a fresh test server, the master clinician is asked to sign the operator agreement first;
+   Settings > The practice > Operator agreement then shows it and downloads the PDF.
 8. "Lost your phone? Lock your account" on the sign-in screen, then restore it as OpenWorks.
 9. `./backup.sh` and a restore to a scratch machine.

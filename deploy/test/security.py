@@ -1038,6 +1038,8 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"target='user:{x}'", "perPage": 50})
     check(X, "the access log keeps the request and the deletion", {"patient.delete_request", "patient.delete"} <= {i["action"] for i in items(logs)}, [i["action"] for i in items(logs)])
 
+    operator_agreement(su, tag, adm, sup, doc2, patA)
+
     # ---- research: RADR and the psychologist's own daily words
     Q = "research"
     s, r = call("GET", f"/api/steady/patients/{a}/radr", doc1)
@@ -1090,6 +1092,70 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(I, "Sorted can't read another psychologist's patient", s == 404, r)
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"action='integration.feed' && patient='{a}'"})
     check(I, "feed reads are audit-logged", items(logs), logs)
+
+def operator_agreement(su, tag, adm, sup, doc2, patA):
+    """The operator agreement with OpenWorks: any staff member reads it, only the master clinician
+    signs it (after confirming it's them), and nobody changes or deletes a signed copy."""
+    G = "operator agreement"
+    OA = "/api/steady/operator-agreement"
+    MO = staff(su, f"op-{tag}@sec.test", "Dr Operator", master=True)
+    s, st = call("GET", OA, MO.token)
+    brief = lambda r: {k: v for k, v in r.items() if k != "text"} if isinstance(r, dict) else r
+    check(G, "the master clinician reads the agreement and may sign it",
+          s == 200 and st.get("canSign") is True and "Operator agreement" in st.get("text", "") and st.get("version"), [s, brief(st)])
+    for label, tok in (("another psychologist", doc2), ("the practice admin", adm), ("OpenWorks support", sup)):
+        s, r = call("GET", OA, tok)
+        check(G, f"{label} reads it, without the practice's details or the right to sign", s == 200 and r.get("canSign") is False and "prefill" not in r, [s, brief(r)])
+    s, r = call("GET", OA, patA)
+    check(G, "a patient can't read it", s == 403, r)
+    fields = {"practiceName": f"Security Test Practice {tag}", "registration": "PR 0000000", "address": "1 Test Street, Gqeberha",
+              "email": "practice@sec.test", "phone": "041 000 0000", "informationOfficer": {"master": True}}
+    body = {"version": st.get("version"), "sha256": st.get("sha256"), "authorised": True, "signature": "Dr Operator Example", "fields": fields}
+    for label, tok in (("another psychologist", doc2), ("the practice admin", adm), ("OpenWorks support", sup), ("a patient", patA)):
+        s, r = call("POST", OA + "/sign", tok, body)
+        check(G, f"{label} can't sign it", s == 403, r)
+    s, r = call("POST", OA + "/sign", MO.token, body, confirm=False)
+    check(G, "signing asks the master clinician to confirm it's them", s == 403 and r.get("data", {}).get("confirm", {}).get("code") == "confirm_needed", r)
+    s, r = call("POST", OA + "/sign", MO.token, dict(body, version="0.0"))
+    check(G, "only the version that was shown can be signed", s == 400, r)
+    s, r = call("POST", OA + "/sign", MO.token, dict(body, authorised=False))
+    check(G, "the signer must confirm they're authorised to sign for the practice", s == 400, r)
+    s, r = call("POST", OA + "/sign", MO.token, dict(body, fields=dict(fields, address="x" * 5000)))
+    check(G, "an over-long field is refused, not cut short", s == 400, r)
+    s, r = call("POST", OA + "/sign", MO.token, dict(body, fields=dict(fields, informationOfficer={"master": False, "name": "Ms Officer"})))
+    check(G, "naming another Information Officer needs their email and phone", s == 400, r)
+    s, signed = call("POST", OA + "/sign", MO.token, body)
+    check(G, "the master clinician signs", s == 200 and signed.get("version") == st.get("version") and signed.get("sha256") == st.get("sha256"), [s, brief(signed)])
+    check(G, "the signed copy records who signed, when, from where and with what",
+          signed.get("signerEmail") == MO.email and signed.get("signedAt") and signed.get("ip") and signed.get("userAgent"),
+          {k: signed.get(k) for k in ("signerEmail", "signedAt", "ip", "userAgent")})
+    check(G, "the master clinician is the Information Officer unless the practice names someone else",
+          signed.get("fields", {}).get("informationOfficer", {}).get("email") == MO.email, signed.get("fields"))
+    s, r = call("GET", OA, doc2)
+    check(G, "every staff member sees that it's signed", s == 200 and r.get("signed") is True, brief(r))
+    for label, tok in (("the master clinician", MO.token), ("the practice admin", adm), ("OpenWorks support", sup)):
+        s, r = call("GET", OA + "/signed", tok)
+        latest = (r.get("latest") or {}) if isinstance(r, dict) else {}
+        check(G, f"{label} opens the signed copy", s == 200 and latest.get("id") == signed.get("id") and latest.get("text") == st.get("text"), [s, latest.get("id")])
+    for label, tok in (("another psychologist", doc2), ("a patient", patA)):
+        s, r = call("GET", OA + "/signed", tok)
+        check(G, f"{label} can't open the signed copy", s == 403, r)
+    rid = signed.get("id", "x")
+    forged = {"version": "9.9", "sha256": "0" * 64, "text": "forged", "signature": "x", "signedAt": "2026-01-01 00:00:00.000Z"}
+    for label, tok in (("the master clinician", MO.token), ("OpenWorks support", sup), ("a superuser", su)):
+        s, r = call("PATCH", f"/api/collections/operator_agreements/records/{rid}", tok, {"signature": "Someone else"})
+        check(G, f"{label} can't change a signed copy", s in (400, 403, 404), [s, str(r)[:150]])
+        s, r = call("DELETE", f"/api/collections/operator_agreements/records/{rid}", tok)
+        check(G, f"{label} can't delete one", s in (400, 403, 404), [s, str(r)[:150]])
+        s, r = call("POST", "/api/collections/operator_agreements/records", tok, forged)
+        check(G, f"{label} can't add one around the app", s in (400, 403, 404), [s, str(r)[:150]])
+    s, r = call("GET", "/api/collections/operator_agreements/records", MO.token)
+    check(G, "app accounts can't list signed copies through the collections", s in (401, 403, 404) or not items(r), [s, str(r)[:150]])
+    s, r = call("GET", f"/api/collections/operator_agreements/records/{rid}", su)
+    check(G, "the signed copy is unchanged", s == 200 and r.get("signature") == "Dr Operator Example", r.get("signature") if isinstance(r, dict) else r)
+    s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"actor='{MO.id}' && action='operator-agreement.sign'"})
+    check(G, "signing is written to the audit log", s == 200 and items(logs), logs)
+
 
 if __name__ == "__main__":
     for k in ("SUPERUSER_EMAIL", "SUPERUSER_PASSWORD"):

@@ -1,21 +1,27 @@
-# Weekly checks for security fixes and updates in Steady's dependencies.
+# Weekly checks for security fixes and updates in Steady's dependencies. Every update goes into
+# working first, then reaches vps1 through test, and practices only in a signed release from main.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    target-branch: working
   - package-ecosystem: pub
     directory: /app
     schedule: { interval: weekly }
+    target-branch: working
     open-pull-requests-limit: 5
   - package-ecosystem: gomod
     directories: [/pusher, /fleet]
     schedule: { interval: weekly }
+    target-branch: working
   - package-ecosystem: docker
     directories: [/server, /pusher, /fleet]
     schedule: { interval: weekly }
+    target-branch: working
   # the images named in the compose files (Caddy, the mail catcher, cloudflared)
   - package-ecosystem: docker-compose
     directories: [/deploy, /deploy/test]
     schedule: { interval: weekly }
+    target-branch: working

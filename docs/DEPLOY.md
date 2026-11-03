@@ -96,7 +96,7 @@ sudo ./accounts.sh list                         # who has which role, and who st
 sudo ./accounts.sh reset <email> [--full]       # a temporary password (--full: also the authenticator)
 sudo ./accounts.sh set <email> master|server-admin|active on|off   # "active on" unlocks a locked account
 sudo ./accounts.sh audit --patient <id>         # who looked at a patient's data (POPIA access requests)
-sudo ./accounts.sh check                        # proxy header, rate limits, dashboard closed
+sudo ./accounts.sh check                        # proxy header, rate limits, dashboard closed, operator agreement
 sudo ./accounts.sh demo-patients <email> [--remove]   # three fictional patients for the RADR tab
 ```
 
@@ -104,6 +104,20 @@ Each run makes a superuser that exists only for that command, signs in from insi
 container, and deletes it again. New accounts and resets print a **temporary password**: give it
 by phone or in person. The person must choose their own password before they can do anything,
 then set up two-step sign-in.
+
+**The operator agreement.** OpenWorks runs the practice's server, so POPIA (section 21) needs a
+written agreement between them. It's signed in the app, not on paper: the first time the master
+clinician opens Steady (after choosing a password and setting up two-step sign-in), Steady shows
+the agreement ([OPERATOR-AGREEMENT.md](OPERATOR-AGREEMENT.md)). They fill in the practice's legal
+name, registration or practice number, address, email and phone, leave the Information Officer
+box ticked (they are the practice's Information Officer unless they untick it and name someone
+else), type their full name, tick that they're authorised to sign for the practice, and tap Sign.
+Nothing else in the app opens for them until it's signed; other staff aren't asked. A new version
+of the agreement is asked for the same way the next time they open Steady. The signed copy is
+under Settings > The practice > Operator agreement (master clinician, practice admin and
+OpenWorks support), with a PDF to download, and `accounts.sh check` says whether the current
+version is signed. Before the first practice signs, fill in OpenWorks' blanks in the text (see the
+notes in OPERATOR-AGREEMENT.md).
 
 **In the app**, by the people at the practice:
 
@@ -168,9 +182,11 @@ Do these on the VPS before real patient data arrives:
 - [ ] Docker's data on an encrypted volume (LUKS), or full-disk encryption if the provider supports it.
 - [ ] `chmod 600 deploy/.env` and keep `deploy/secrets/` readable only by root and the relay (uid 65532).
 - [ ] `sudo ./accounts.sh check` says the dashboard is closed; `accounts.sh list` shows two-step sign-in for every staff account.
+- [ ] The master clinician has signed the operator agreement in the app (`accounts.sh check`: "operator agreement: signed").
 - [ ] Email set up (step 5a): staff sign in only from linked devices.
 - [ ] `sudo ./audit-server.sh` shows nothing to fix (SSH, firewall, updates, disk encryption, file
-      permissions, containers, backups, TLS and headers from outside). Run it again now and then.
+      permissions, containers, backups, TLS and headers from outside, the signed operator
+      agreement). Run it again now and then.
 - [ ] Delete any permanent superuser left from before (`docker compose exec pocketbase /pb/pocketbase superuser delete <email> --dir=/pb/pb_data`).
 - [ ] Backups running and copied off the server (step 7), restore tested.
 - [ ] Uptime monitoring on `https://<domain>/api/health`.
@@ -235,8 +251,8 @@ token or a compromised build can't reach it:
    (`v1.0.0`, ...) signed by that key, with the matching signed web app (`web-v1.0.0`), and refuse
    a web app holding links or special files. Without the file, a server follows the `main` and
    `web-dist` branches unsigned (test servers only; `audit-server.sh` flags it), or, with
-   `STEADY_TRACK=v1` in `.env`, the `v1` branch and the web app CI built from it (`web-dist-v1`),
-   to try a release on a test server before it's signed.
+   `STEADY_TRACK=test` in `.env` (vps1), the `test` branch and the web app CI built from it
+   (`web-dist-test`), to try a release on a test server before it's signed.
 2. To release, on OpenWorks' own computer, once CI's "Test builds" has run for that commit:
    `deploy/release.sh 1.0.0`. It checks the web app was built from the same commit, shows what
    changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >
@@ -249,6 +265,29 @@ that the web app is the very build the signed release names (its `web-dist:` lin
 server already has are never replaced. A server without `allowed_signers` installs unsigned code
 only when `.env` says so (`STEADY_UNSIGNED=yes`, or `STEADY_TRACK=...`), and never once it has
 installed a signed release.
+
+### Branches
+
+Three branches, and changes move one way:
+
+| Branch | What it is | Who changes it | Where it runs |
+|---|---|---|---|
+| `working` | where new work is built and tested in CI | pushes and pull requests (Dependabot's too) | nowhere: CI only |
+| `test` | what's being tried | a pull request from `working`, with CI green | vps1 (`STEADY_TRACK=test`), web app from `web-dist-test` |
+| `main` | production | a pull request from `test`, with CI green | practice servers, only as a signed release (`release.sh`) |
+
+So an update to Caddy, PocketBase, Go or any package (Dependabot opens those as pull requests
+into `working`) runs on vps1 before any practice gets it. Caddy and PocketBase are pinned to
+exact versions; nothing a practice server runs changes without a pull request.
+
+GitHub rulesets keep it that way: `main` and `test` change only through a pull request with CI
+green and can't be deleted or force-pushed; `working` can't be deleted or force-pushed; the
+branches CI publishes (`web-dist`, `web-dist-test`, `previews`) can be written only by GitHub
+Actions, so not even an owner's token can swap a web build; release tags (`v*`, `web-v*`) only
+by an admin, never moved or deleted. The `signing` environment (the store and test-build keys)
+is open to `main` and `test` only. `deploy/github-settings.sh` sets all of this from your own
+computer (GitHub CLI signed in as an admin; safe to run again), and `--retire-v1` drops the old
+`v1` branch's ruleset and signing access once vps1 follows `test`.
 
 One-time setup for signing: `git config --global gpg.format ssh` and
 `git config --global user.signingkey ~/.ssh/id_ed25519.pub`.
@@ -306,7 +345,8 @@ sudo nano .env                # STEADY_DOMAIN, practice name, VAPID_SUBJECT, and
 sudo ./update.sh              # pulls, fetches the web app, builds and starts
 ```
 
-**5. Accounts.** With `sudo ./accounts.sh`, as in step 5 above: the master clinician first.
+**5. Accounts.** With `sudo ./accounts.sh`, as in step 5 above: the master clinician first. They
+sign the operator agreement the first time they open Steady.
 
 **Updating** is `sudo ./update.sh` in `/opt/steady/deploy`, or from the app (below).
 

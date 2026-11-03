@@ -114,9 +114,10 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 		case r.URL.Path == "/api/steady/fleet" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			json.NewEncoder(w).Encode(map[string]any{
 				"practice": "VR Clinical Psychology", "health": map[string]any{"status": "good", "reasons": []any{}},
-				"version": map[string]any{"code": "83f8776", "managed": true, "signed": true, "behind": 0},
-				"host":    map[string]any{"disk": map[string]any{"total": 25e9, "used": 5e9}, "memory": map[string]any{"total": 2e9, "available": 1e9}, "backups": map[string]any{"newest": time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), "count": 3, "bytes": 1e6}},
-				"counts":  map[string]any{"patients": 12, "staff": 4, "checkins7d": 60},
+				"version":           map[string]any{"code": "83f8776", "managed": true, "signed": true, "behind": 0},
+				"host":              map[string]any{"disk": map[string]any{"total": 25e9, "used": 5e9}, "memory": map[string]any{"total": 2e9, "available": 1e9}, "backups": map[string]any{"newest": time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), "count": 3, "bytes": 1e6}},
+				"counts":            map[string]any{"patients": 12, "staff": 4, "checkins7d": 60},
+				"operatorAgreement": map[string]any{"version": "1.0", "signed": true, "signedAt": "2026-11-03T08:00:00Z"},
 			})
 		case r.URL.Path == "/api/steady/fleet/request" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			var b map[string]string
@@ -227,6 +228,9 @@ func TestSignInAndPages(t *testing.T) {
 	body(t, res)
 	res, _ = c.Get(site.URL + "/s/0")
 	page = body(t, res)
+	if !strings.Contains(page, "Operator agreement") || !strings.Contains(page, "signed, version 1.0, on 3 Nov 2026") {
+		t.Fatalf("the detail page doesn't say the operator agreement is signed")
+	}
 	i := strings.Index(page, `name="csrf" value="`)
 	csrf := page[i+len(`name="csrf" value="`):]
 	csrf = csrf[:strings.Index(csrf, `"`)]

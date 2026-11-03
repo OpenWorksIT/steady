@@ -24,6 +24,7 @@ import 'ui/clinician/clinician_shell.dart';
 import 'ui/patient/consent_again_screen.dart';
 import 'ui/patient/daily_flow.dart';
 import 'ui/practice/admin_shell.dart';
+import 'ui/practice/operator_agreement_screen.dart';
 import 'ui/practice/support_shell.dart';
 import 'ui/calm.dart';
 import 'ui/theme.dart';
@@ -85,7 +86,8 @@ class RootGate extends StatelessWidget {
     // after a reset: a temporary password does nothing until it's replaced
     if (state.api.mustChangePassword) return const ChangePasswordScreen(forced: true);
     if (state.needsTwoStepSetup) return const TwoStepSetupScreen(forced: true);
-    if (state.isClinician) return const ClinicianShell();
+    // the master clinician signs the practice's operator agreement with OpenWorks first
+    if (state.isClinician) return const OperatorAgreementGate(child: ClinicianShell());
     if (state.isAdmin) return const AdminShell();
     if (state.isSupport) return const SupportShell();
     if (state.isPatient) return state.needsConsentAgain ? const ConsentAgainScreen() : const PatientGate();

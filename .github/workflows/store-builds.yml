@@ -19,7 +19,7 @@ concurrency:
 jobs:
   android:
     runs-on: ubuntu-latest
-    # the signing keys live in the "signing" environment, which only main and v1 may use
+    # the signing keys live in the "signing" environment, which only main and test may use
     # (Settings > Environments); a workflow on any other branch can't reach them
     environment: signing
     steps:
