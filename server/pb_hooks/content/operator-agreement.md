@@ -6,7 +6,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 ## 1. The parties
 
-1.1 OpenWorks: OpenWorks IT (Pty) Ltd, registration number [To complete: company registration number], of 24 Pelican Road, Port Elizabeth, 6070, South Africa. Email: info@openworks.co.za. Phone and WhatsApp: 076 768 9155. Information Officer: Tiaan van der Merwe, info@openworks.co.za.
+1.1 OpenWorks: OpenWorks IT (Pty) Ltd, registration number 2024/733128/07, of 24 Pelican Road, Port Elizabeth, 6070, South Africa. Email: info@openworks.co.za. Phone and WhatsApp: 076 768 9155. Information Officer: Tiaan van der Merwe, info@openworks.co.za.
 
 1.2 The Practice: the practice named in the Schedule, with the registration or practice number, physical address and contact details recorded there when this agreement is signed.
 
