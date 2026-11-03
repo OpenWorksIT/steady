@@ -682,7 +682,6 @@ TEXTS = {
     "js.welcome_banner.header.logged_in_members": "Welcome back, %{preferred_display_name}",
     "js.welcome_banner.subheader.logged_in_members": "Psychologists at practices that use Steady. No patient-identifying information, ever.",
     "js.welcome_banner.search_placeholder": "Search Steady Community",
-    "js.powered_by_discourse": "Steady Community",
     "powered_by_html": "Steady Community, for psychologists at practices that use Steady",
 }
 
@@ -850,19 +849,24 @@ def _brand_palettes_and_theme(api, problems):
 
 
 def _brand_texts(api, problems):
+    # one text Discourse won't let change doesn't stop the others
     for key, value in TEXTS.items():
-        current = api.get(f"/admin/customize/site_texts/{key}.json?locale=en", allow_404=True)
-        if current is None:
-            say("skipped", f"{key}: not in this Discourse version")
-            continue
-        if (current.get("site_text") or {}).get("value") == value:
-            say("ok", f"text {key}")
-            continue
-        if api.dry_run:
-            say("would set", f"text {key}")
-            continue
-        api.put(f"/admin/customize/site_texts/{key}.json", {"site_text": {"value": value, "locale": "en"}})
-        say("set", f"text {key}")
+        try:
+            current = api.get(f"/admin/customize/site_texts/{key}.json?locale=en", allow_404=True)
+            if current is None:
+                say("skipped", f"{key}: not in this Discourse version")
+                continue
+            if (current.get("site_text") or {}).get("value") == value:
+                say("ok", f"text {key}")
+                continue
+            if api.dry_run:
+                say("would set", f"text {key}")
+                continue
+            api.put(f"/admin/customize/site_texts/{key}.json", {"site_text": {"value": value, "locale": "en"}})
+            say("set", f"text {key}")
+        except SetupError as err:
+            say("FAILED", f"text {key}: {err}")
+            problems.append(f"text {key}: {err}")
 
 
 def _first_poster(topic):

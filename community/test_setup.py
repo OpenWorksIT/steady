@@ -29,6 +29,7 @@ class Forum:
         self.schemes = [{"id": -1, "name": "Light", "is_base": True, "colors": []}]
         self.themes = [{"id": 1, "name": "Foundation", "user_selectable": True, "default": True, "component": False, "theme_fields": []}]
         self.texts = {k: "Discourse's own" for k in setup.TEXTS if k != "js.welcome_banner.search_placeholder"}
+        self.restricted_texts = set()  # Discourse's RESTRICTED_KEYS: refused with 403
         self.topics = {
             10: {"title": "Welcome to Discourse! :wave:", "user": -1},
             11: {"title": "FAQ/Guidelines", "user": -1, "post": 110, "raw": "Discourse provides tools..."},
@@ -114,6 +115,8 @@ class Forum:
             locale = p.query if method == "GET" else "locale=" + json.loads(body)["site_text"].get("locale", "")
             if "locale=en" not in locale:
                 return (400, {"errors": ["You supplied invalid parameters to the request: locale"]})
+            if key in self.restricted_texts:
+                return (403, {"errors": ["This email template can't be modified."]})
             if key not in self.texts:
                 return 404
             if method == "PUT":
@@ -286,6 +289,31 @@ class LookTest(unittest.TestCase):
         self.assertIn("palettes_and_theme", problems[0])
         self.assertTrue(f.texts["js.composer.reply_placeholder"].startswith("Type here. Never"))
         self.assertNotIn(10, f.topics)
+
+
+class TextsTest(unittest.TestCase):
+    def test_a_text_discourse_refuses_doesnt_stop_the_others(self):
+        forum = Forum()
+        first = next(iter(setup.TEXTS))
+        forum.restricted_texts.add(first)
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            problems = []
+            with redirect_stdout(io.StringIO()):
+                setup._brand_texts(api, problems)
+            self.assertEqual(len(problems), 1, problems)
+            self.assertIn(first, problems[0])
+            for key in setup.TEXTS:
+                if key not in (first, "js.welcome_banner.search_placeholder"):
+                    self.assertEqual(forum.texts[key], setup.TEXTS[key], key)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_no_text_discourse_never_lets_change(self):
+        # Discourse's site_texts_controller RESTRICTED_KEYS
+        self.assertNotIn("js.powered_by_discourse", setup.TEXTS)
 
 
 class Categories:
