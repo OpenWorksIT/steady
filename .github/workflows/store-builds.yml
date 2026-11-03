@@ -55,7 +55,8 @@ jobs:
           echo "STEADY_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
           # beta APKs are version code 1; store builds start at 101 and always go up
           echo "VERSION_CODE=$((100 + ${{ github.run_number }}))" >> "$GITHUB_ENV"
-          echo "VERSION_NAME=$(grep '^version:' app/pubspec.yaml | sed -E 's/version: *([0-9.]+).*/\1/')" >> "$GITHUB_ENV"
+          # Steady's version (VERSION, docs/VERSIONS.md): the number the store shows
+          echo "VERSION_NAME=$(tr -d ' \r\n' < VERSION)" >> "$GITHUB_ENV"
 
       - name: build app bundle
         working-directory: app
@@ -74,7 +75,7 @@ jobs:
           flutter build appbundle --release --build-name=$VERSION_NAME --build-number=$VERSION_CODE \
             --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
             --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
-            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE --dart-define=STEADY_SERVER=${{ vars.STEADY_SERVER }} \
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE --dart-define=STEADY_VERSION=$VERSION_NAME --dart-define=STEADY_SERVER=${{ vars.STEADY_SERVER }} \
             --dart-define=STEADY_STORE=play 2>&1 | tee ../aab.txt \
             || { echo "::error title=flutter build appbundle::$(sed 's/%/%25/g' ../aab.txt | grep -iE 'error|failed' | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
           cp build/app/outputs/bundle/release/app-release.aab ../steady-$VERSION_NAME-$VERSION_CODE.aab

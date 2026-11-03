@@ -1,0 +1,5 @@
+{
+  "_": "The store apps, kept by hand: change a line when a store approves a new version. Servers show it under Settings > Server and updates (from main), for OpenWorks to keep track. status: in review, live, or testing (TestFlight). docs/VERSIONS.md.",
+  "android": {"version": "1.0.2", "status": "in review", "since": "2026-11-01"},
+  "ios": {"version": "1.0.2", "status": "in review", "since": "2026-11-01"}
+}

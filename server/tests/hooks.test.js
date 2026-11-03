@@ -797,9 +797,12 @@ test("dist: the invite page offers the Android app, and iPhones go to the web ap
   assert.equal(app.apk, "/download/steady.apk");
   assert.equal(app.sizeMB, 3);
   assert.equal(app.updatable, false, "a build without the permanent key mustn't trigger update prompts");
-  fs.writeFileSync(path.join(pub, "download", "version.json"), JSON.stringify({ build: "abc1234", date: "x", signing: "release" }));
+  assert.equal(app.version, "", "builds from before versions have none");
+  fs.writeFileSync(path.join(pub, "download", "version.json"), JSON.stringify({ build: "abc1234", version: "1.1.0 test 23<b>", date: "x", signing: "release" }));
   assert.equal(rt.call("GET", "/api/steady/config").data.app.updatable, true);
+  assert.equal(rt.call("GET", "/api/steady/config").data.app.version, "1.1.0 test 23b", "the version as people read it, nothing else");
   page = rt.call("GET", "/join", { query: { invite: "abcd-2345" }, headers: android });
+  assert.match(page.html, /version 1\.1\.0 test 23b/);
   assert.match(page.html, /href="\/download\/steady.apk"/);
   assert.match(page.html, /ABCD-2345/);
   assert.match(page.html, /href="\/\?invite=ABCD2345"/);

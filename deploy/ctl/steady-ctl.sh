@@ -123,6 +123,30 @@ app_build() { # the Android build in a version.json on stdin
   jq -r '.build // empty' 2>/dev/null || true
 }
 
+app_version() { # its version as people read it ("1.1.0", "1.1.0 test 23"; empty for older builds)
+  jq -r '.version // empty' 2>/dev/null || true
+}
+
+version_of() { # the version of a commit as people read it (deploy/version.sh)
+  "$DEPLOY/version.sh" "$1" "$REPO" 2>/dev/null || true
+}
+
+# Where Steady is as a whole, for OpenWorks to keep track (Settings > Server and updates): the
+# newest release, what's in testing (the test branch), and the store apps (app/stores.json on
+# main, kept by hand as the stores approve them). Only read for showing: nothing here is run or
+# installed, and it doesn't change what this server updates to.
+releases() {
+  git -C "$REPO" fetch -q origin "+refs/heads/main:refs/remotes/origin/main" "+refs/heads/test:refs/remotes/origin/test" 2>/dev/null || true
+  local newest test="" stores
+  newest="$(git -C "$REPO" tag -l 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+  if git -C "$REPO" rev-parse -q --verify origin/test >/dev/null 2>&1; then test="$(version_of origin/test)"; fi
+  stores="$(git -C "$REPO" show origin/main:app/stores.json 2>/dev/null | jq -c '
+    def one(x): if (x|type) == "object" then {version: ((x.version // "") | tostring | .[0:20]), status: ((x.status // "") | tostring | .[0:40]), since: ((x.since // "") | tostring | .[0:10])} else null end;
+    {android: one(.android), ios: one(.ios)}' 2>/dev/null || echo null)"
+  jq -n --arg newest "${newest#v}" --arg test "$test" --argjson stores "${stores:-null}" \
+    '{newest: $newest, test: $test, stores: $stores}'
+}
+
 # A release tag signed by a trusted key that also carries its own name (an old release's signed
 # tag pushed under a new name, or over an existing one, isn't accepted; see update.sh).
 signed_tag() { # signed_tag TAG SIGNERS
@@ -159,6 +183,8 @@ check() {
     [[ "$track" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || track=main
     if [ "$track" = main ]; then webref=origin/web-dist; else webref="origin/web-dist-$track"; fi
     git -C "$REPO" fetch -q origin "+refs/heads/$track:refs/remotes/origin/$track" 2>"$WORK/.fetch.err" || err="$(tail -c 400 "$WORK/.fetch.err")"
+    # the release tags, only to count changes since the last release in the version shown
+    git -C "$REPO" fetch -q --tags origin 2>/dev/null || true
     # apart: a branch without a web build yet (update.sh keeps the current web app then)
     # mustn't hide its code updates
     git -C "$REPO" fetch -q origin "+refs/heads/${webref#origin/}:refs/remotes/$webref" 2>/dev/null || true
@@ -170,10 +196,14 @@ check() {
     --arg latest "$latest" --arg latestDate "$(git -C "$REPO" log -1 --format=%cI "$latest" 2>/dev/null)" \
     --argjson behind "$(git -C "$REPO" rev-list --count "$cur".."$latest" 2>/dev/null || echo 0)" \
     --argjson changes "$(git -C "$REPO" log --no-merges --format='%h%x09%s' "$cur".."$latest" 2>/dev/null | head -40 | jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {sha: .[0], subject: .[1]})')" \
+    --arg curVer "$(version_of "$cur")" --arg latestVer "$(version_of "$latest")" \
     --arg appCurrent "$(app_build < "$DEPLOY/web/download/version.json" 2>/dev/null)" \
     --arg appLatest "$(git -C "$REPO" show "$webref:download/version.json" 2>/dev/null | app_build)" \
+    --arg appCurrentVer "$(app_version < "$DEPLOY/web/download/version.json" 2>/dev/null)" \
+    --arg appLatestVer "$(git -C "$REPO" show "$webref:download/version.json" 2>/dev/null | app_version)" \
     --arg release "$tag" --argjson signed "$([ -s "$signers" ] && echo true || echo false)" \
-    '{at: $at, error: $err, current: {sha: $cur, date: $curDate}, latest: {sha: $latest, date: $latestDate, release: $release}, signed: $signed, behind: $behind, changes: $changes, app: {current: $appCurrent, latest: $appLatest}}' \
+    --argjson releases "$(releases 2>/dev/null || echo null)" \
+    '{at: $at, error: $err, current: {sha: $cur, date: $curDate, version: $curVer}, latest: {sha: $latest, date: $latestDate, release: $release, version: $latestVer}, signed: $signed, behind: $behind, changes: $changes, app: {current: $appCurrent, latest: $appLatest, currentVersion: $appCurrentVer, latestVersion: $appLatestVer}, releases: $releases}' \
     > "$WORK/.check.json"
   put check "$(cat "$WORK/.check.json")"
   put checking null
@@ -206,7 +236,7 @@ snapshot() {
 update() {
   local from to ok=true log="$WORK/update.log"
   : > "$log"
-  from="$(git -C "$REPO" rev-parse --short HEAD)"
+  from="$(version_of HEAD)"
   put updating "$(jq -n --arg at "$(now)" '{at: $at, step: "Saving a copy of the data first"}')"
   if ! snapshot >> "$log" 2>&1; then
     put lastUpdate "$(jq -n --arg at "$(now)" '{at: $at, ok: false, message: "Saving a copy of the data failed, so nothing was changed."}')"
@@ -219,7 +249,7 @@ update() {
   # folder of its own here, root only
   install -d -m 0700 -o root -g root "$WORK/buildx"
   BUILDX_CONFIG="$WORK/buildx" "$DEPLOY/update.sh" >> "$log" 2>&1 || ok=false
-  to="$(git -C "$REPO" rev-parse --short HEAD)"
+  to="$(version_of HEAD)"
   put lastUpdate "$(jq -n --arg at "$(now)" --argjson ok "$ok" --arg from "$from" --arg to "$to" \
     --arg log "$(tail -c 3000 "$log")" '{at: $at, ok: $ok, from: $from, to: $to, log: $log}')"
   put updating null

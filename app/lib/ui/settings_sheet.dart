@@ -220,8 +220,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                 child: const Text('Change'),
               ),
           ]),
-          Text('Steady ${kAppBuild.isEmpty ? '(development build)' : 'build $kAppBuild'}'
-              '${appUpdateAvailable(state) ? ' · build ${state.config.appBuild} available' : ''}',
+          Text('Steady $thisAppVersion'
+              '${appUpdateAvailable(state) ? ' · ${versionLabel(state.config.appVersion, state.config.appBuild)} available' : ''}',
               style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
           const SourceLink(),
         ]),

@@ -234,6 +234,8 @@ function summary(app, nowMs, hours, ctlDir, startedMs) {
     now: new Date(nowMs).toISOString(),
     uptimeSeconds: startedMs ? Math.round((nowMs - startedMs) / 1000) : null,
     code: status && status.check && status.check.current ? status.check.current.sha.slice(0, 7) : "",
+    // the same as people read it: "1.0.5", "1.1.0 test 23" (deploy/version.sh)
+    version: status && status.check && status.check.current ? String(status.check.current.version || "").slice(0, 40) : "",
     health: verdict(w15, host),
     // staff sign-in: whether the server can email device codes (and so requires linked devices)
     signIn: { email: require(__hooks + "/lib/mail.js").ready(), linkedDevices: require(__hooks + "/lib/devices.js").required() },

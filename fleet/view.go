@@ -118,12 +118,8 @@ func makeRow(i int, st *Status, now time.Time) Row {
 		}
 		r.Health += ": " + strings.Join(rs, ", ")
 	}
-	// version: the code it runs, and whether a newer signed release is waiting
-	code := str(get(d, "version", "code"))
-	if code == "" {
-		code = "?"
-	}
-	r.Version = code
+	// version: what it runs, as people read it, and whether a newer signed release is waiting
+	r.Version = versionText(d)
 	// the buttons need the server's in-app updates (deploy/ctl/install.sh)
 	r.CanAct = get(d, "version", "managed") == true
 	if b, ok := num(get(d, "version", "behind")); ok && b > 0 {
@@ -177,6 +173,42 @@ func makeRow(i int, st *Status, now time.Time) Row {
 // Facts are the detail page's label/value pairs.
 type Fact struct{ Label, Value string }
 
+// versionText: the version a server runs as people read it ("1.0.5", "1.1.0 test 23"; see
+// deploy/version.sh). A server from before versions were reported shows its release's number
+// when it runs the latest signed release, and its code otherwise.
+func versionText(d map[string]any) string {
+	if v := str(get(d, "version", "current", "version")); v != "" {
+		return v
+	}
+	code := str(get(d, "version", "code"))
+	latest, rel := str(get(d, "version", "latest", "sha")), str(get(d, "version", "latest", "release"))
+	if code != "" && rel != "" && strings.HasPrefix(latest, code) {
+		return strings.TrimPrefix(rel, "v")
+	}
+	if code == "" {
+		return "?"
+	}
+	return code
+}
+
+// releaseText: the newest signed release ("1.0.5"), or "none" for a server that follows a branch.
+func releaseText(d map[string]any) string {
+	rel := strings.TrimPrefix(str(get(d, "version", "latest", "release")), "v")
+	if rel == "" {
+		return "none (follows a branch)"
+	}
+	return rel
+}
+
+func firstOf(s ...string) string {
+	for _, x := range s {
+		if x != "" {
+			return x
+		}
+	}
+	return ""
+}
+
 func facts(st *Status, now time.Time) []Fact {
 	d := st.Data
 	if d == nil {
@@ -186,10 +218,11 @@ func facts(st *Status, now time.Time) []Fact {
 		{"Practice", str(d["practice"])},
 		{"Address", st.Server.URL},
 		{"Running for", durationText(get(d, "uptimeSeconds"))},
+		{"Version", versionText(d)},
 		{"Code", str(get(d, "version", "code"))},
-		{"Latest signed release", str(get(d, "version", "latest", "release")) + " " + str(get(d, "version", "latest", "sha"))},
+		{"Latest signed release", releaseText(d)},
 		{"Last update check", ago(parseTime(get(d, "version", "checkedAt")), now)},
-		{"Android app on the server", str(get(d, "version", "app", "current"))},
+		{"Android app on the server", firstOf(str(get(d, "version", "app", "currentVersion")), str(get(d, "version", "app", "current")))},
 		{"Requests, last hour", intText(get(d, "lastHour", "requests")) + " (typical " + msText(get(d, "lastHour", "p50")) + ", slowest 5% " + msText(get(d, "lastHour", "p95")) + ")"},
 		{"Server errors, last 24 h", intText(get(d, "last24h", "errors"))},
 		{"Database", bytesOrQ(get(d, "database", "bytes"))},
