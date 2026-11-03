@@ -29,6 +29,7 @@ class Forum:
         self.schemes = [{"id": -1, "name": "Light", "is_base": True, "colors": []}]
         self.themes = [{"id": 1, "name": "Foundation", "user_selectable": True, "default": True, "component": False, "theme_fields": []}]
         self.texts = {k: "Discourse's own" for k in setup.TEXTS if k != "js.welcome_banner.search_placeholder"}
+        self.restricted_texts = set()  # Discourse's RESTRICTED_KEYS: refused with 403
         self.topics = {
             10: {"title": "Welcome to Discourse! :wave:", "user": -1},
             11: {"title": "FAQ/Guidelines", "user": -1, "post": 110, "raw": "Discourse provides tools..."},
@@ -114,6 +115,8 @@ class Forum:
             locale = p.query if method == "GET" else "locale=" + json.loads(body)["site_text"].get("locale", "")
             if "locale=en" not in locale:
                 return (400, {"errors": ["You supplied invalid parameters to the request: locale"]})
+            if key in self.restricted_texts:
+                return (403, {"errors": ["This email template can't be modified."]})
             if key not in self.texts:
                 return 404
             if method == "PUT":
@@ -286,6 +289,94 @@ class LookTest(unittest.TestCase):
         self.assertIn("palettes_and_theme", problems[0])
         self.assertTrue(f.texts["js.composer.reply_placeholder"].startswith("Type here. Never"))
         self.assertNotIn(10, f.topics)
+
+
+class TeaRoomTest(unittest.TestCase):
+    def test_discourses_general_becomes_the_tea_room(self):
+        forum = Categories()
+        calls = []
+        orig = forum.handle
+
+        def more(method, path, body, ctype):
+            route = urlparse(path).path
+            calls.append((method, route, json.loads(body) if body and body[:1] == b"{" else None))
+            if route == "/c/4/show.json":
+                return {"category": {"topic_url": "/t/about-the-general-category/2", "group_permissions": []}}
+            if route == "/t/about-the-general-category/2.json":
+                return {"post_stream": {"posts": [{"id": 20}]}}
+            if route == "/posts/20.json":
+                return {}
+            if route == "/groups.json":
+                return {"groups": []}
+            return orig(method, path, body, ctype)
+
+        forum.handle = more
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            spec = next(c for c in setup.CATEGORIES if c["slug"] == "tea-room")
+            with redirect_stdout(io.StringIO()):
+                ids = setup.ensure_categories(api, [spec], {"clinicians"})
+            self.assertEqual(ids, {"tea-room": 4})
+            put = next(b for m, r, b in calls if m == "PUT" and r == "/categories/4.json")
+            self.assertEqual((put["name"], put["slug"], put["permissions"]), ("Tea room", "tea-room", {"clinicians": setup.FULL}))
+            post = next(b for m, r, b in calls if m == "PUT" and r == "/posts/20.json")
+            self.assertEqual(post["post"]["raw"], spec["description"])
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
+class SidebarTest(unittest.TestCase):
+    def test_everyones_side_menu_gets_the_categories_in_order(self):
+        forum = Forum()
+        forum.settings["default_navigation_menu_categories"] = "4"   # Discourse's General
+        sent = []
+        orig = forum.handle
+
+        def spy(method, path, body, ctype):
+            if method == "PUT" and "default_navigation_menu_categories" in path:
+                sent.append(json.loads(body))
+            return orig(method, path, body, ctype)
+
+        forum.handle = spy
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            with redirect_stdout(io.StringIO()):
+                setup.ensure_sidebar(api, {"announcements": 5, "clinical-practice": 6, "research-and-studies": 7})
+                setup.ensure_sidebar(api, {"announcements": 5, "clinical-practice": 6, "research-and-studies": 7})
+            self.assertEqual(forum.settings["default_navigation_menu_categories"], "5|6|7")
+            self.assertEqual(len(sent), 1)                       # the second run changes nothing
+            self.assertEqual(sent[0]["update_existing_user"], "true")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
+class TextsTest(unittest.TestCase):
+    def test_a_text_discourse_refuses_doesnt_stop_the_others(self):
+        forum = Forum()
+        first = next(iter(setup.TEXTS))
+        forum.restricted_texts.add(first)
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            problems = []
+            with redirect_stdout(io.StringIO()):
+                setup._brand_texts(api, problems)
+            self.assertEqual(len(problems), 1, problems)
+            self.assertIn(first, problems[0])
+            for key in setup.TEXTS:
+                if key not in (first, "js.welcome_banner.search_placeholder"):
+                    self.assertEqual(forum.texts[key], setup.TEXTS[key], key)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_no_text_discourse_never_lets_change(self):
+        # Discourse's site_texts_controller RESTRICTED_KEYS
+        self.assertNotIn("js.powered_by_discourse", setup.TEXTS)
 
 
 class Categories:

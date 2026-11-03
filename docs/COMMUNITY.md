@@ -55,6 +55,7 @@ welcome post and the "If someone posts patient information" steps below back the
 | Research and studies | Read, post and reply | Numbers only |
 | Questionnaires and tools | Read, post and reply | Numbers only |
 | Steady development | Read, post and reply | Read, post and reply |
+| Tea room (introductions, the work and life around it; Discourse's General, renamed) | Read, post and reply | Numbers only |
 | A practice's private category (optional) | That practice only | Numbers only |
 | Personal messages | Their own | Their own, including ones clinicians send to OpenWorks |
 
@@ -301,7 +302,8 @@ does the guarding.)
 It:
 
 - creates the groups `clinicians` and `openworks`
-- creates the five categories with the permissions in "Who sees what"
+- creates the six categories with the permissions in "Who sees what" (the Tea room is
+  Discourse's own General, renamed)
 - closes every other category (Discourse's own General and so on) to OpenWorks and to
   "everyone", and opens it to clinicians instead. Discourse's own Site Feedback can't be closed
   (Discourse won't change who sees it), so it is deleted: feedback goes to Steady development
@@ -367,8 +369,11 @@ dark mode.
 | Words | `TEXTS` in `setup.py`: the box members type in, the welcome above the lists, and the places Discourse names itself |
 | Discourse's own topics | Its welcome topic and admin guide are removed; its guidelines topic gets Steady Community's (`GUIDELINES_RAW`). Its terms and privacy topics stay (`/tos`, `/privacy`) |
 
-Settings: `enable_powered_by_discourse` off (no "Powered by Discourse") and Discourse's tutorial
-bot off.
+Settings: `enable_powered_by_discourse` off (no "Powered by Discourse"), Discourse's tutorial
+bot off, people shown by their names rather than usernames, and chat off: one place to talk,
+topics and personal messages, which flags and the guidelines cover (switch `chat_enabled` on in
+`setup.py` if the community wants it). Everyone's side menu lists the community's categories in
+order, and the link to Discourse's kanban boards is hidden.
 
 To change something, edit the file in `community/brand/` (or `PALETTES`, `TEXTS` in `setup.py`)
 and run `setup.py` again: it changes only what differs, and the forum shows it at once. The
