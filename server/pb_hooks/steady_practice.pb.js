@@ -215,6 +215,8 @@ routerAdd("POST", "/api/steady/auth/link-device", (e) => {
   const b = s.body(e);
   const got = D.finishLink($app, b.ticket, b.code, e.realIP());
   s.audit($app, { auth: got.user, realIP: () => e.realIP() }, "account.device.linked", got.device.getString("platform") + ":" + got.device.getString("name"), "");
+  // a browser gets a short token, renewed while its tab is open (lib/sessions.js)
+  require(`${__hooks}/lib/sessions.js`).setPlatform(e, got.device.getString("platform"));
   return $apis.recordAuthResponse(e, got.user, "password");
 });
 

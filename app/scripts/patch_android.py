@@ -9,8 +9,9 @@
 - notifications through Firebase Cloud Messaging (packages/steady_fcm): Steady's mark as their
   status-bar icon, and no advertising ID (nothing in Steady uses one). There is no
   google-services.json: the app is built with its Firebase settings (docs/APP.md)
-- the phone's screen lock for staff (local_auth): USE_BIOMETRIC, and an AppCompat launch theme
-  (the fingerprint dialog crashes on Android 8 without one)
+- the phone's screen lock (local_auth; staff always, patients who turn it on): USE_BIOMETRIC,
+  and an AppCompat launch theme (the fingerprint dialog crashes on Android 8 without one)
+- MainActivity: a blank app-switcher picture for everyone, and no screenshots of staff screens
 - no cloud backup of app data
 - plain HTTP allowed in debug builds only, for a local development server
 
@@ -39,19 +40,31 @@ HEALTH_PERMISSIONS = [
 ]
 
 DESUGAR_VERSION = "2.1.4"
-MAIN_ACTIVITY = """import android.view.WindowManager
+MAIN_ACTIVITY = """import android.os.Build
+import android.os.Bundle
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterFragmentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // The app switcher shows a blank picture of Steady, for everyone. Android 13 and later
+        // can do just that; before 13 only FLAG_SECURE does it, which also stops screenshots.
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
+        else window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // practice staff: no screenshots or screen recording either (ui/auth/screen_lock.dart)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "steady/secure").setMethodCallHandler { call, result ->
             if (call.method == "set") {
                 val on = call.arguments as? Boolean ?: false
                 runOnUiThread {
-                    if (on) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    // before Android 13 FLAG_SECURE is also what keeps the app switcher blank
+                    if (on || Build.VERSION.SDK_INT < 33) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
                     else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                 }
                 result.success(null)
@@ -220,9 +233,10 @@ def main():
         src = kt.read_text()
         new = src.replace("io.flutter.embedding.android.FlutterActivity", "io.flutter.embedding.android.FlutterFragmentActivity")
         new = re.sub(r":\s*FlutterActivity\(\)", ": FlutterFragmentActivity()", new)
-        # staff screens can't be screenshotted, recorded or shown in the app switcher
-        # (FLAG_SECURE, switched on by the app for practice staff; ui/auth/screen_lock.dart)
-        if "steady/secure" not in new:
+        # a blank app-switcher picture for everyone; staff screens can't be screenshotted or
+        # recorded (FLAG_SECURE, switched on by the app for practice staff; ui/auth/screen_lock.dart).
+        # Rewritten when it's an older copy of Steady's MainActivity.
+        if "setRecentsScreenshotEnabled" not in new:
             pkg = re.search(r"^package\s+[\w.]+", new, re.M)
             if not pkg:
                 fail("couldn't find the package line in MainActivity.kt")

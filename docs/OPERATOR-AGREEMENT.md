@@ -106,8 +106,6 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 7.4 OpenWorks tells the Practice in writing at least 30 days before it adds or replaces a Sub-operator, and offers a new version of this agreement with the updated list. If the Practice objects on reasonable grounds and the parties can't agree on a solution, the Practice may end this agreement before the change takes effect.
 
-7.5 A patient who chooses a UnifiedPush notification app (such as ntfy) on an Android phone receives notifications through the service that app uses. OpenWorks does not choose or engage that service. The notification is encrypted to the phone and carries only a signal to open Steady.
-
 ## 8. Personal information outside South Africa
 
 8.1 OpenWorks keeps the Server and its backups in South Africa.
