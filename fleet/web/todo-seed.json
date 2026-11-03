@@ -81,10 +81,11 @@
   },
   {
     "title": "Where does domains.co.za keep the mailbox that sends sign-in codes?",
-    "detail": "Where the mail host is matters for the list of sub-operators and the lawyer's questions.",
+    "detail": "Where the mail host is matters for the list of sub-operators and the lawyer's questions.\nAnswered on 3 November: South Africa, Teraco's data centre in Isando (domains.co.za's email hosting page). Filled in in the operator agreement, clause 7.1.",
     "area": "Mail and domains",
     "priority": "later",
-    "status": "look"
+    "status": "done",
+    "link": "https://www.domains.co.za/email-hosting"
   },
   {
     "title": "The security review's morning list: confirm each one is done",
