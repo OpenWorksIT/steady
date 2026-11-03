@@ -416,7 +416,7 @@ func makeChecks(sts []*Status, now time.Time) ChecksPage {
 			}
 		}
 		if row.Err != "" {
-			add("fail", "Reaching it", "the fleet view can't reach this server: "+row.Err, row.Checked)
+			add("fail", "Reaching it", row.Err, row.Checked)
 			sc.Checked, sc.Summary, sc.SummaryClass = row.Checked, "can't be reached", "bad"
 			p.Servers = append(p.Servers, sc.withBar())
 			continue
