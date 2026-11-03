@@ -171,6 +171,7 @@ When someone leaves a practice, the practice stops their Steady account, and wit
 """
 
 TOO_MANY_REQUESTS_RETRIES = 4
+KEY_DESCRIPTION = "setup.py"  # the one-off key's description (community/run-setup.sh, docs/COMMUNITY.md)
 
 
 class SetupError(Exception):
@@ -274,7 +275,7 @@ def _describe_http_error(method, path, code, text, headers):
     try:
         payload = json.loads(text)
         errors = payload.get("errors") or [payload.get("error") or payload.get("message")]
-        detail = "; ".join(str(e) for e in errors if e)
+        detail = "; ".join(str(e) for e in errors if e).rstrip(".")
     except (ValueError, AttributeError):
         detail = text.strip()[:200]
     hint = ""
@@ -544,10 +545,12 @@ def ensure_categories(api, specs, existing_groups):
 
 
 def lock_other_categories(api, managed_slugs):
-    """No other category may be open to OpenWorks or to everyone (OpenWorks are members too)."""
+    """No other category may be open to OpenWorks or to everyone (OpenWorks are members too).
+    Returns what couldn't be done."""
     print("Other categories (OpenWorks must not see them)")
     cats, uncategorized = load_categories(api)
     any_found = False
+    problems = []
     for cat in cats:
         if cat["slug"] in managed_slugs or cat["id"] == uncategorized:
             continue
@@ -568,11 +571,25 @@ def lock_other_categories(api, managed_slugs):
             keep["clinicians"] = min(dropped.values())
         if api.dry_run:
             say("would fix", f"{cat['name']}: {describe(perms)} -> {describe(keep)}")
-        else:
+            continue
+        try:
             api.put(f"/categories/{cat['id']}.json", {"name": cat["name"], "permissions": keep})
             say("fixed", f"{cat['name']}: {describe(keep)}")
+        except SetupError as err:
+            if "pre-seeded" not in str(err):
+                raise
+            # Discourse won't change who sees its own Site Feedback (or Staff) category, and says
+            # to delete it instead. Nothing here uses it: feedback goes to Steady development.
+            try:
+                api.delete(f"/categories/{cat['id']}.json")
+                say("removed", f"{cat['name']}: Discourse's own category, open to everyone; not used here")
+            except SetupError as err2:
+                say("WRONG", f"{cat['name']} stays open to everyone ({describe(perms)}): it can't be closed, and "
+                             f"deleting it failed: {err2}")
+                problems.append(f"{cat['name']}: open to everyone; delete it (it must hold no topics first)")
     if not any_found:
         say("ok", "none")
+    return problems
 
 
 # --- welcome topic --------------------------------------------------------------------
@@ -834,7 +851,7 @@ def _brand_palettes_and_theme(api, problems):
 
 def _brand_texts(api, problems):
     for key, value in TEXTS.items():
-        current = api.get(f"/admin/customize/site_texts/{key}.json", allow_404=True)
+        current = api.get(f"/admin/customize/site_texts/{key}.json?locale=en", allow_404=True)
         if current is None:
             say("skipped", f"{key}: not in this Discourse version")
             continue
@@ -1014,6 +1031,9 @@ def main(argv=None):
     parser.add_argument("--leave-other-categories", action="store_true",
                         help="don't close other categories (General, Site Feedback, ...) to OpenWorks")
     parser.add_argument("--skip-welcome", action="store_true", help="don't post the welcome topic")
+    parser.add_argument("--revoke-key", action="store_true",
+                        help=f"at the end, remove the API key(s) described '{KEY_DESCRIPTION}', this one last "
+                             "(community/run-setup.sh makes such a key for one run)")
     parser.add_argument("--skip-brand", action="store_true",
                         help="leave the look alone (logo, palettes, theme, wording: community/brand/)")
     parser.add_argument("--stats-account", action="store_true",
@@ -1043,6 +1063,15 @@ def main(argv=None):
         return 2
 
     api = Discourse(args.url, api_key, api_user, args.dry_run)
+    try:
+        return run(api, args, groups, categories)
+    finally:
+        if args.revoke_key:
+            revoke_keys(args.url, api_key, api_user)
+
+
+def run(api, args, groups, categories):
+    api_user = api.headers["Api-Username"]
     print(f"{'Dry run against' if args.dry_run else 'Setting up'} {api.base}\n")
     try:
         me = api.get(f"/u/{urllib.parse.quote(api_user)}.json")
@@ -1052,7 +1081,9 @@ def main(argv=None):
         group_ids = ensure_groups(api, groups)
         cat_ids = ensure_categories(api, categories, set(group_ids))
         if not args.leave_other_categories:
-            lock_other_categories(api, {c["slug"] for c in categories})
+            mismatched_categories = lock_other_categories(api, {c["slug"] for c in categories})
+        else:
+            mismatched_categories = []
         unknown, mismatched = apply_settings(api, args, group_ids)
         if not args.skip_welcome:
             ensure_welcome(api, cat_ids.get("announcements"))
@@ -1068,6 +1099,10 @@ def main(argv=None):
         print("Not offered by this Discourse (check by hand in Admin > Settings, or in community.yml):")
         for name in unknown:
             print(f"  - {name}")
+    if mismatched_categories:
+        print("Categories that are still open to everyone (OpenWorks included):")
+        for p in mismatched_categories:
+            print(f"  - {p}")
     if brand_problems:
         print("The look wasn't finished (the rest was done; run it again after fixing):")
         for p in brand_problems:
@@ -1077,10 +1112,26 @@ def main(argv=None):
         for name in mismatched:
             print(f"  - {name}")
         return 1
-    if brand_problems:
+    if brand_problems or mismatched_categories:
         return 1
     print("Dry run finished; nothing was changed." if args.dry_run else "Done.")
     return 0
+
+
+
+def revoke_keys(url, api_key, api_user):
+    """Removes this run's one-off key (and any other left behind under the same description),
+    through the API: the key in use goes last. Used by community/run-setup.sh."""
+    api = Discourse(url, api_key, api_user, False)
+    try:
+        listing = api.get("/admin/api/keys.json") or {}
+        keys = [k for k in listing.get("keys", []) if k.get("description") == KEY_DESCRIPTION and not k.get("revoked_at")]
+        keys.sort(key=lambda k: k.get("created_at") or "")
+        for k in keys:
+            api.delete(f"/admin/api/keys/{k['id']}.json")
+        print(f"\nRemoved the one-off key ({len(keys)} '{KEY_DESCRIPTION}' key(s) in all).")
+    except SetupError as err:
+        print(f"\nCouldn't remove the one-off key: {err}\nRemove it by hand: docs/COMMUNITY.md, step 4.", file=sys.stderr)
 
 
 if __name__ == "__main__":

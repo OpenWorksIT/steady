@@ -36,6 +36,10 @@ class Forum:
             13: {"title": "Admin Guide: Getting Started", "user": -1},
             14: {"title": "Terms of Service", "user": -1},
         }
+        self.keys = [{"id": 1, "description": "setup.py", "created_at": "2026-11-03T10:00:00Z", "revoked_at": None},
+                     {"id": 2, "description": "openworks-stats", "created_at": "2026-11-03T11:00:00Z", "revoked_at": None},
+                     {"id": 3, "description": "setup.py", "created_at": "2026-11-03T12:00:00Z", "revoked_at": None}]
+        self.deleted_keys = []
         self.writes = []
         self.lock = threading.Lock()
 
@@ -49,6 +53,13 @@ class Forum:
         route = p.path
         if method != "GET":
             self.writes.append((method, route))
+        if route == "/admin/api/keys.json":
+            return {"keys": sorted(self.keys, key=lambda k: k["created_at"], reverse=True)}
+        m = re.fullmatch(r"/admin/api/keys/(\d+)\.json", route)
+        if m and method == "DELETE":
+            self.deleted_keys.append(int(m.group(1)))
+            self.keys = [k for k in self.keys if k["id"] != int(m.group(1))]
+            return {"success": "OK"}
         if route == "/admin/site_settings.json":
             return {"site_settings": [{"setting": k, "value": v} for k, v in self.settings.items()]}
         m = re.fullmatch(r"/admin/site_settings/(\w+)\.json", route)
@@ -99,6 +110,10 @@ class Forum:
         m = re.fullmatch(r"/admin/customize/site_texts/(.+)\.json", route)
         if m:
             key = m.group(1)
+            # Discourse wants the locale, in the query (reading) or the body (writing)
+            locale = p.query if method == "GET" else "locale=" + json.loads(body)["site_text"].get("locale", "")
+            if "locale=en" not in locale:
+                return (400, {"errors": ["You supplied invalid parameters to the request: locale"]})
             if key not in self.texts:
                 return 404
             if method == "PUT":
@@ -172,9 +187,12 @@ def serve(forum):
             with forum.lock:
                 out = forum.handle(self.command, self.path, body, self.headers.get("Content-Type", ""))
             if out == 404:
-                self.send_response(404)
+                out = (404, {"errors": ["not found"]})
+            if isinstance(out, tuple):
+                self.send_response(out[0])
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(b'{"errors":["not found"]}')
+                self.wfile.write(json.dumps(out[1]).encode())
                 return
             raw = json.dumps(out).encode()
             self.send_response(200)
@@ -268,6 +286,98 @@ class LookTest(unittest.TestCase):
         self.assertIn("palettes_and_theme", problems[0])
         self.assertTrue(f.texts["js.composer.reply_placeholder"].startswith("Type here. Never"))
         self.assertNotIn(10, f.topics)
+
+
+class Categories:
+    """Discourse's own categories: Site Feedback's security can't change, General's can."""
+
+    PRESEEDED = "This is a pre-seeded category and the security settings cannot be edited. If you do not wish to use this category, delete it instead of repurposing it."
+
+    def __init__(self, feedback_has_topics=False):
+        self.cats = {1: ("Uncategorized", "uncategorized", {"everyone": 1}),
+                     2: ("Site Feedback", "site-feedback", {"everyone": 1}),
+                     3: ("Staff", "staff", {"staff": 1}),
+                     4: ("General", "general", {"everyone": 1}),
+                     5: ("Announcements", "announcements", {"clinicians": 2})}
+        self.feedback_has_topics = feedback_has_topics
+        self.writes = []
+        self.lock = threading.Lock()
+
+    def handle(self, method, path, body, ctype):
+        route = urlparse(path).path
+        if method != "GET":
+            self.writes.append((method, route))
+        if route == "/site.json":
+            return {"uncategorized_category_id": 1,
+                    "categories": [{"id": i, "name": n, "slug": sl} for i, (n, sl, _) in self.cats.items()]}
+        m = re.fullmatch(r"/c/(\d+)/show\.json", route)
+        if m:
+            _, _, perms = self.cats[int(m.group(1))]
+            return {"category": {"group_permissions": [{"group_name": g, "permission_type": v} for g, v in perms.items()]}}
+        m = re.fullmatch(r"/categories/(\d+)\.json", route)
+        if m:
+            cid = int(m.group(1))
+            if method == "PUT":
+                if cid in (2, 3):
+                    return (422, {"errors": [self.PRESEEDED]})
+                name, slug, _ = self.cats[cid]
+                self.cats[cid] = (name, slug, json.loads(body)["permissions"])
+                return {}
+            if method == "DELETE":
+                if self.feedback_has_topics:
+                    return (403, {"errors": ["You are not permitted to view the requested resource."]})
+                del self.cats[cid]
+                return {"success": "OK"}
+        return 404
+
+
+class CategoriesTest(unittest.TestCase):
+    def run_lock(self, forum):
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            out = io.StringIO()
+            with redirect_stdout(out):
+                problems = setup.lock_other_categories(api, {"announcements"})
+            return problems, out.getvalue()
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_discourses_locked_category_is_deleted_and_the_rest_closed(self):
+        forum = Categories()
+        problems, out = self.run_lock(forum)
+        self.assertEqual(problems, [], out)
+        self.assertNotIn(2, forum.cats)                                   # Site Feedback: deleted
+        self.assertEqual(forum.cats[4][2], {"clinicians": 1})             # General: clinicians only
+        self.assertEqual(forum.cats[3][2], {"staff": 1})                  # Staff: untouched
+        self.assertEqual(forum.cats[5][2], {"clinicians": 2})             # ours: untouched
+        self.assertNotIn(("PUT", "/categories/3.json"), forum.writes)
+        self.assertIn("removed   Site Feedback", out)
+
+    def test_one_that_cant_go_is_reported_and_the_rest_still_done(self):
+        forum = Categories(feedback_has_topics=True)
+        problems, out = self.run_lock(forum)
+        self.assertEqual(len(problems), 1, out)
+        self.assertIn("Site Feedback", problems[0])
+        self.assertIn("WRONG", out)
+        self.assertEqual(forum.cats[4][2], {"clinicians": 1})
+
+
+class KeyTest(unittest.TestCase):
+    def test_revoke_removes_the_one_off_keys_this_one_last(self):
+        forum = Forum()
+        srv = serve(forum)
+        try:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                setup.revoke_keys(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system")
+            self.assertEqual(forum.deleted_keys, [1, 3])
+            self.assertEqual([k["description"] for k in forum.keys], ["openworks-stats"])
+            self.assertIn("Removed the one-off key", out.getvalue())
+        finally:
+            srv.shutdown()
+            srv.server_close()
 
 
 if __name__ == "__main__":

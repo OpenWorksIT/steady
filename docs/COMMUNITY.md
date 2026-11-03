@@ -19,6 +19,7 @@ The kit is in `community/`:
 | `community.caddy` | The forum's site for the Caddy in front of it (HTTPS). |
 | `signin/` | The sign-in bridge at signin.steadyapp.co.za: the forum trusts it, and it trusts a short note signed by a practice's Steady server. Go, standard library only. |
 | `setup.py` | Sets up groups, categories, permissions, site settings, the welcome post and the look through the Discourse API. Safe to run again. |
+| `run-setup.sh` | Runs `setup.py` on the forum's server in one go: a one-off key made, used and removed. |
 | `brand/` | The look: logo, icons, share image, fonts (Barlow, Atkinson Hyperlegible Next) and the theme. |
 | `test_setup.py` | Tests for `setup.py`'s look, against a stand-in for the Discourse API. |
 | `stats.py` | Prints the forum's activity counts for OpenWorks IT. Numbers only. |
@@ -278,23 +279,21 @@ Docker's private networks, so its sign-in limits count visitors, not Caddy.
 
 ## 4. Run setup.py
 
-OpenWorks holds no admin account on the forum. For the setup it uses a key made on the server,
-and removes it afterwards:
+OpenWorks holds no admin account on the forum. For the setup it uses a one-off key made on the
+server, and removes it afterwards. On the server, in the Steady checkout (`/opt/steady-ops`, or
+`/opt/steady` while trying it out on vps1):
 
 ```bash
-sudo docker exec community rake 'api_key:create_master[setup.py]'     # prints the key once
+sudo community/run-setup.sh --dry-run      # shows what it would change
+sudo community/run-setup.sh                # does it
 ```
 
-On your own computer, in the Steady repository:
-
-```bash
-export DISCOURSE_URL=https://community.steadyapp.co.za
-export DISCOURSE_API_USERNAME=system
-read -rs DISCOURSE_API_KEY && export DISCOURSE_API_KEY    # paste the key; it isn't shown or saved
-
-python3 community/setup.py --dry-run                   # shows what it would change
-python3 community/setup.py --stats-account             # does it
-```
+Each run makes the key inside the forum's container, runs `setup.py` with it, and removes the
+key again through the forum's API, whatever happened. Making the key starts the forum's app
+once: a minute or two, with nothing on the screen meanwhile. `setup.py` then takes 2 to 4
+minutes the first time, pausing now and then ("rate limited, waiting ... s"): the forum takes 60
+admin requests a minute. Arguments go on to `setup.py`, for example `--stats-account` or
+`--practice vr="VR Clinical Psychology"`.
 
 (The API isn't a page in a browser, so the "inside Steady only" rule doesn't stop it; the key
 does the guarding.)
@@ -303,8 +302,9 @@ It:
 
 - creates the groups `clinicians` and `openworks`
 - creates the five categories with the permissions in "Who sees what"
-- closes every other category (Discourse's own General, Site Feedback and so on) to OpenWorks
-  and to "everyone", and opens it to clinicians instead
+- closes every other category (Discourse's own General and so on) to OpenWorks and to
+  "everyone", and opens it to clinicians instead. Discourse's own Site Feedback can't be closed
+  (Discourse won't change who sees it), so it is deleted: feedback goes to Steady development
 - sets the site settings: sign-in required, sign-in through Steady only, earlier versions of
   edited posts visible to staff only, permanent delete allowed, daily backups (seven kept),
   personal messages for both groups
@@ -319,24 +319,20 @@ Run it again any time. It changes only what differs. Lines marked `WRONG` need f
 `--practice vr="VR Clinical Psychology"`.
 
 **Discourse's own welcome page.** Until the forum has an admin, its front page is Discourse's
-"Congratulations, you installed Discourse!", even for someone signed in through Steady. Kempie's
-first visit makes him admin, which ends it. To try the forum before he has been (the test
-server, for one), end it on the server:
+"Congratulations, you installed Discourse!", even for someone signed in through Steady.
+Kempie's first visit makes him admin, which ends it; `run-setup.sh` ends it too, so the forum
+can be tried before he has been (the test server, for one).
 
-```bash
-sudo docker exec community rails runner 'SiteSetting.has_login_hint = false; SiteSetting.global_notice = ""'
-```
-
-Then remove the key: once Kempie is admin, **Admin > Advanced > API keys > setup.py > Revoke**;
-before that, on the server:
+**If a key is left behind** (the run was cut off before the end): once Kempie is admin,
+**Admin > Advanced > API keys > setup.py > Revoke**; before that, on the server:
 
 ```bash
 sudo docker exec community rails runner 'ApiKey.where(description: "setup.py").destroy_all'
 ```
 
-(`docker exec community` runs one command in the forum's container and comes back. Don't paste
-several lines after `./launcher enter community`: that opens a shell in the container, and the
-lines after it go to the wrong place.)
+(`docker exec community` runs one command in the forum's container and comes back, after a
+minute or two. Don't paste several lines after `./launcher enter community`: that opens a shell
+in the container, and the lines after it go to the wrong place.)
 
 ## 5. First visits
 
@@ -556,5 +552,6 @@ The bridge says why it refused someone in its log, never with names or addresses
 | 502 from Caddy | The `community` container isn't running (`sudo ./launcher start community`), the bridge isn't (`docker compose -f community/signin/compose.yml ps`), or one isn't on the `community-edge` network (`docker network inspect community-edge`). |
 | Rebuild stops with out-of-memory errors | Check swap is on (`swapon --show`). |
 | A setting can't be changed in Admin | It is pinned in `community.yml`. Change it there and rebuild. |
-| `setup.py` says HTTP 403 | Wrong key or username (`system` with a key from `rake`), or it was revoked. |
+| `setup.py` says HTTP 403 | Wrong key or username (`system`, with the key `run-setup.sh` makes), or it was revoked. |
+| `run-setup.sh` sits for minutes at "Making a one-off key" | The forum's app is starting in the container, which is slow on a busy server; more than 5 minutes means it's short of memory (`free -h`). |
 | `stats.py` says the key was refused | The key was revoked, or the `openworks-stats` account was suspended or deleted. |
