@@ -61,16 +61,15 @@ welcome post and the "If someone posts patient information" steps below back the
 | Steady development | Read, post and reply | No | Read, post and reply |
 | Tea room (introductions, the work and life around it; Discourse's General, renamed) | Read, post and reply | No | Numbers only |
 | A practice's private category (optional) | That practice only | No | Numbers only |
-| Personal messages | Their own | Not given them (see below) | Their own, including ones clinicians send to OpenWorks |
+| Personal messages | Their own | None | Their own, including ones clinicians send to OpenWorks |
 
 Forum admins (the community lead) can see everything. Admins and moderators can always post in
 Announcements.
 
 **Practice administrators** (the `practice-admins` group) see the Steady manual and nothing
-else: they read it and ask in its replies, which clinicians and OpenWorks read too. `setup.py`
-doesn't let them send personal messages the way it lets clinicians and OpenWorks; Discourse's
-own trust level 1 (reached after some reading) still would, unless
-`personal_message_enabled_groups` is narrowed in Admin > Settings.
+else: they read it and ask in its replies, which clinicians and OpenWorks read too. They can't
+send personal messages: `setup.py` allows them to admins, moderators, clinicians and OpenWorks
+only, and not by trust level (Discourse's default lets anyone at trust level 1 send them).
 
 **Talking to OpenWorks.** Post in Steady development and mention `@openworks`, or send a
 personal message to `@openworks` (the group) or to one of its people. A mention of `@openworks`

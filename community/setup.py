@@ -486,14 +486,15 @@ def _with_groups(current_value, group_ids, names):
 
 
 def _pm_groups(current_value, group_ids):
-    """Let clinicians and OpenWorks send personal messages whatever their trust level. Never
-    practice administrators: they ask in the Steady manual's replies."""
+    """Personal messages: staff, clinicians and OpenWorks, whatever their trust level, and nobody
+    else. Discourse's default also lets anyone at trust level 1 send them, which would include
+    practice administrators after a little reading: they ask in the Steady manual's replies."""
     if current_value is None or not group_ids:
         return None
-    ids = [i for i in str(current_value).split("|") if i]
+    ids = ["1", "2"]  # admins, moderators
     for name in ("clinicians", "openworks"):
         gid = group_ids.get(name)
-        if gid is not None and str(gid) not in ids:
+        if gid is not None:
             ids.append(str(gid))
     return "|".join(ids)
 

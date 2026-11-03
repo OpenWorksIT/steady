@@ -620,7 +620,8 @@ class PracticeAdminsTest(unittest.TestCase):
 
     def test_no_personal_messages_for_them(self):
         ids = {"clinicians": 41, "practice-admins": 42, "openworks": 43}
-        self.assertEqual(setup._pm_groups("11", ids), "11|41|43")
+        # not even through trust level 1 (group 11), Discourse's default
+        self.assertEqual(setup._pm_groups("1|2|11", ids), "1|2|41|43")
 
     def test_no_practice_takes_their_group_name(self):
         with self.assertRaises(setup.argparse.ArgumentTypeError):
