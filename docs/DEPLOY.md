@@ -269,7 +269,9 @@ green and can't be deleted or force-pushed; `working` can't be deleted or force-
 branches CI publishes (`web-dist`, `web-dist-test`, `previews`) can be written only by GitHub
 Actions, so not even an owner's token can swap a web build; release tags (`v*`, `web-v*`) only
 by an admin, never moved or deleted. The `signing` environment (the store and test-build keys)
-is open to `main` and `test` only (Settings > Environments > signing > Deployment branches).
+is open to `main` and `test` only. `deploy/github-settings.sh` sets all of this from your own
+computer (GitHub CLI signed in as an admin; safe to run again), and `--retire-v1` drops the old
+`v1` branch's ruleset and signing access once vps1 follows `test`.
 
 One-time setup for signing: `git config --global gpg.format ssh` and
 `git config --global user.signingkey ~/.ssh/id_ed25519.pub`.
