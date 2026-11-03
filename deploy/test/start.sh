@@ -63,7 +63,7 @@ EOF
   echo "Created deploy/test/.env"
 fi
 # added to test stacks set up before the Community tab
-grep -q '^STEADY_COMMUNITY_KEY=' .env || printf '\n# The community's sign-in bridge (docs/COMMUNITY.md)\nSTEADY_COMMUNITY_KEY=%s\n' "$(rand 36)" >> .env
+grep -q '^STEADY_COMMUNITY_KEY=' .env || printf '\n# The community sign-in bridge (docs/COMMUNITY.md)\nSTEADY_COMMUNITY_KEY=%s\n' "$(rand 36)" >> .env
 umask 022
 set -a; . ./.env; set +a
 
