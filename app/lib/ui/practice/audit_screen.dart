@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Settings > Audit report (master clinician and practice admin): who opened or changed what, for
-// a patient's access request (POPIA section 23) or a review. Reading it is logged too.
+// Settings > Practice > Audit report (master clinician and practice admin): who opened or changed
+// what, for a patient's access request (POPIA section 23) or a review. Reading it is logged too.
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';

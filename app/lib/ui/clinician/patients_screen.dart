@@ -5,7 +5,7 @@ import '../../app_state.dart';
 import '../../export/export_actions.dart';
 import '../../models.dart';
 import '../../services/api.dart';
-import '../settings_sheet.dart';
+import '../settings_screen.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'clinician_shell.dart';
@@ -87,7 +87,7 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
               PopupMenuItem(value: 'all', child: ListTile(leading: Icon(Icons.table_chart_outlined), title: Text('Export all my patients to Excel'), subtitle: Text('The last 12 months'))),
             ],
           ),
-          IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: () => showSettingsSheet(context)),
+          const SettingsButton(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

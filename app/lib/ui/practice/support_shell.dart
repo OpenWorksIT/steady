@@ -14,7 +14,7 @@ import '../clinician/feedback_inbox_screen.dart';
 import '../clinician/server_updates_screen.dart';
 import '../community/community_rules.dart';
 import '../community/community_tab.dart';
-import '../settings_sheet.dart';
+import '../settings_screen.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -122,7 +122,7 @@ class _SupportStaffScreenState extends State<SupportStaffScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const BrandedTitle(Text('Staff')),
-        actions: [IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: () => showSettingsSheet(context))],
+        actions: const [SettingsButton()],
       ),
       body: Loader<({List<Person> staff, String serverBuild})>(
         key: _key,

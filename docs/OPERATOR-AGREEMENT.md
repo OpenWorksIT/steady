@@ -264,7 +264,7 @@ Recorded in Steady when the Practice signs, and printed with each signed copy:
   included, and the server refuses to change or delete one at all. Signing again (new details,
   such as a new Information Officer) adds a row; the newest counts.
 - The master clinician, the practice admin and OpenWorks support open the signed copy under
-  Settings > The practice > Operator agreement, and can download it as a PDF. It holds no patient
+  Settings > Practice > Operator agreement, and can download it as a PDF. It holds no patient
   information.
 - `sudo ./accounts.sh check` says whether the current version is signed, `audit-server.sh` fails
   until it is, and the fleet view shows it for every server.

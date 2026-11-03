@@ -43,7 +43,7 @@ what to look at there, and what it can't see.
 - [ ] Staff: everyone uses two-step sign-in (`sudo ./accounts.sh list`); accounts of people who left are stopped.
 - [ ] The operator agreement: the current version is signed (`audit-server.sh`, the fleet view).
 - [ ] Patients: the People screen shows nobody stuck on an older consent statement who still uses Steady; no deletion request older than 25 days.
-- [ ] Feedback tickets: each one answered or planned (Settings > Feedback tickets).
+- [ ] Feedback tickets: each one answered or planned (Settings > Practice > Feedback tickets).
 
 ## 3. vps1 (the test server, the fleet view and the forum)
 

@@ -149,7 +149,7 @@ box ticked (they are the practice's Information Officer unless they untick it an
 else), type their full name, tick that they're authorised to sign for the practice, and tap Sign.
 Nothing else in the app opens for them until it's signed; other staff aren't asked. A new version
 of the agreement is asked for the same way the next time they open Steady. The signed copy is
-under Settings > The practice > Operator agreement (master clinician, practice admin and
+under Settings > Practice > Operator agreement (master clinician, practice admin and
 OpenWorks support), with a PDF to download, and `accounts.sh check` says whether the current
 version is signed. Before the first practice signs, fill in OpenWorks' blanks in the text (see the
 notes in OPERATOR-AGREEMENT.md).

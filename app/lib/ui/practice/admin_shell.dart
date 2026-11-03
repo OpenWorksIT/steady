@@ -7,5 +7,5 @@ import 'people_screen.dart';
 class AdminShell extends StatelessWidget {
   const AdminShell({super.key});
   @override
-  Widget build(BuildContext context) => const PeopleScreen();
+  Widget build(BuildContext context) => const PeopleScreen(home: true);
 }

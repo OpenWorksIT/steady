@@ -8,7 +8,7 @@ import '../../app_state.dart';
 import '../../models.dart';
 import '../../services/push.dart';
 import '../../wearable/wearable_sync.dart';
-import '../settings_sheet.dart';
+import '../settings_screen.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'activity_screens.dart';
@@ -127,13 +127,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
       appBar: AppBar(
         title: BrandedTitle(Text(state.config.practiceName,
             overflow: TextOverflow.ellipsis, style: context.tt.labelLarge?.copyWith(color: context.sc.ink2, letterSpacing: 0.6))),
-        actions: [
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => showSettingsSheet(context),
-          ),
-        ],
+        actions: const [SettingsButton()],
       ),
       body: BrandBackdrop(child: Loader<_HomeData>(
         key: _reloadKey,

@@ -109,6 +109,6 @@ marked as a test server.
 7. Export for AI note-taking twice: the second offers "since the last export" and says part 2.
 8. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
    On a fresh test server, the master clinician is asked to sign the operator agreement first;
-   Settings > The practice > Operator agreement then shows it and downloads the PDF.
+   Settings > Practice > Operator agreement then shows it and downloads the PDF.
 9. "Lost your phone? Lock your account" on the sign-in screen, then restore it as OpenWorks.
 10. `./backup.sh` and a restore to a scratch machine.
