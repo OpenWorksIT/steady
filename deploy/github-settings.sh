@@ -7,6 +7,8 @@
 #                                           to the signing environment (once vps1 follows test)
 #
 # What it sets:
+#   (repository)      merged branches are kept: GitHub no longer deletes working or test after
+#                     a merge
 #   Main, Test        only through a pull request with CI green; never deleted or force-pushed
 #   Working           never deleted or force-pushed
 #   CI-built branches web-dist, web-dist-*, previews: written only by GitHub Actions, so not even
@@ -43,6 +45,9 @@ upsert() {
 branch_ruleset() {
   upsert "$1" "{\"name\":\"$1\",\"target\":\"branch\",\"enforcement\":\"active\",\"conditions\":{\"ref_name\":{\"include\":$2,\"exclude\":[]}},\"rules\":$3,\"bypass_actors\":${4:-[]}}"
 }
+
+# merging working into test, or test into main, must never delete the branch it came from
+gh api -X PATCH "repos/$REPO" -F delete_branch_on_merge=false --jq '"Branches stay after a merge: \(.delete_branch_on_merge | not)"'
 
 echo "Rulesets on $REPO:"
 branch_ruleset "Main" '["~DEFAULT_BRANCH"]' "[{\"type\":\"deletion\"},{\"type\":\"non_fast_forward\"},$PR_RULE,$CHECKS_RULE]"
