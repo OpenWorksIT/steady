@@ -121,8 +121,10 @@ h1, h2, h3, h4, .fancy-title, .category-title-header .category-title-name {
 }
 .category-boxes .category-box { background: var(--steady-card, var(--secondary)); border-color: var(--steady-line, var(--primary-low)); }
 
-// no maker's badge
+// no maker's badge; no link to Discourse's kanban boards, which nothing here uses
 .powered-by-discourse { display: none !important; }
+.sidebar-section-link-wrapper:has(> a[href$="/boards"]),
+.sidebar-section-link[href$="/boards"] { display: none !important; }
 
 // the footer: the deep band of steadyapp.co.za, with the one rule everyone needs to see
 .steady-footer {

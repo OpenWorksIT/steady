@@ -172,8 +172,10 @@ sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-si
 - Sign-in tries are limited to 8 per address (IPv6: per /64) per 15 minutes. Wrong
   authenticator codes after a right password are limited to 10 per name, so someone without the
   password can't lock you out. A code works only once.
-- Sessions end after 30 minutes without a click (the pages' own refresh doesn't count), after
-  8 hours, and when the fleet view restarts.
+- A session lasts while its tab is open, for a screen that stays on: every page holds a hidden
+  frame (`/alive`, no scripts) that asks once a minute, and that keeps it going. It ends when you
+  sign out, when the browser closes (the cookie is for the browser session only), when the fleet
+  view restarts, or 10 minutes after the tab closed or the computer went to sleep.
 - Pages aren't compressed (the Caddy site has no `encode`), so the form tokens can't be guessed
   through compression.
 - A leaked fleet key lets someone restart a server or install a release OpenWorks has already

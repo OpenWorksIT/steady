@@ -29,6 +29,7 @@ class Forum:
         self.schemes = [{"id": -1, "name": "Light", "is_base": True, "colors": []}]
         self.themes = [{"id": 1, "name": "Foundation", "user_selectable": True, "default": True, "component": False, "theme_fields": []}]
         self.texts = {k: "Discourse's own" for k in setup.TEXTS if k != "js.welcome_banner.search_placeholder"}
+        self.restricted_texts = set()  # Discourse's RESTRICTED_KEYS: refused with 403
         self.topics = {
             10: {"title": "Welcome to Discourse! :wave:", "user": -1},
             11: {"title": "FAQ/Guidelines", "user": -1, "post": 110, "raw": "Discourse provides tools..."},
@@ -114,6 +115,8 @@ class Forum:
             locale = p.query if method == "GET" else "locale=" + json.loads(body)["site_text"].get("locale", "")
             if "locale=en" not in locale:
                 return (400, {"errors": ["You supplied invalid parameters to the request: locale"]})
+            if key in self.restricted_texts:
+                return (403, {"errors": ["This email template can't be modified."]})
             if key not in self.texts:
                 return 404
             if method == "PUT":
@@ -191,6 +194,8 @@ def serve(forum):
             if isinstance(out, tuple):
                 self.send_response(out[0])
                 self.send_header("Content-Type", "application/json")
+                for k, v in (out[2] if len(out) > 2 else {}).items():
+                    self.send_header(k, v)
                 self.end_headers()
                 self.wfile.write(json.dumps(out[1]).encode())
                 return
@@ -286,6 +291,213 @@ class LookTest(unittest.TestCase):
         self.assertIn("palettes_and_theme", problems[0])
         self.assertTrue(f.texts["js.composer.reply_placeholder"].startswith("Type here. Never"))
         self.assertNotIn(10, f.topics)
+
+
+class TopicsForum:
+    """Topics with external ids, as Discourse keeps them."""
+
+    def __init__(self):
+        self.topics = {}  # id -> {title, raw, category, external_id, pinned, wiki, post}
+        self.writes = []
+        self.lock = threading.Lock()
+
+    def handle(self, method, path, body, ctype):
+        route = urlparse(path).path
+        if method != "GET":
+            self.writes.append((method, route))
+        m = re.fullmatch(r"/t/external_id/([\w-]+)\.json", route)
+        if m:
+            for tid, t in self.topics.items():
+                if t["external_id"] == m.group(1):
+                    return (301, {}, {"Location": f"{self.base}/t/some-slug/{tid}"})
+            return 404
+        m = re.fullmatch(r"/t/some-slug/(\d+)\.json", route)
+        if m:
+            t = self.topics[int(m.group(1))]
+            return {"id": int(m.group(1)), "title": t["title"], "pinned": t["pinned"],
+                    "post_stream": {"posts": [{"id": t["post"], "wiki": t["wiki"]}]}}
+        if route == "/uploads.json" and method == "POST":
+            fields, data = parse_multipart(body, ctype)
+            assert fields["upload_type"] == "composer", fields
+            sha = hashlib.sha1(data).hexdigest()
+            self.uploads = getattr(self, "uploads", {})
+            self.uploads[sha] = self.uploads.get(sha, 0) + 1
+            return {"url": f"/uploads/default/original/1X/{sha}.webp", "short_url": f"upload://{sha[:12]}.webp",
+                    "width": 780, "height": 1688}
+        if route == "/posts.json" and method == "POST":
+            b = json.loads(body)
+            assert "](images/" not in b["raw"] and "](shots/" not in b["raw"], "a screenshot wasn't uploaded"
+            tid = len(self.topics) + 100
+            self.topics[tid] = {"title": b["title"], "raw": b["raw"], "category": b["category"],
+                                "external_id": b["external_id"], "pinned": False, "wiki": False, "post": tid * 10}
+            return {"id": tid * 10, "topic_id": tid}
+        m = re.fullmatch(r"/t/(\d+)/status\.json", route)
+        if m and method == "PUT":
+            self.topics[int(m.group(1))]["pinned"] = json.loads(body)["enabled"] == "true"
+            return {}
+        m = re.fullmatch(r"/posts/(\d+)(/wiki)?\.json", route)
+        if m:
+            t = next(t for t in self.topics.values() if t["post"] == int(m.group(1)))
+            if m.group(2) and method == "PUT":
+                t["wiki"] = json.loads(body)["wiki"] == "true"
+                return {}
+            if method == "PUT":
+                t["raw"] = json.loads(body)["post"]["raw"]
+            return {"raw": t["raw"]}
+        return 404
+
+
+class TopicsTest(unittest.TestCase):
+    def setUp(self):
+        self.forum = TopicsForum()
+        self.srv = serve(self.forum)
+        self.forum.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+        self.cats = {slug: i for i, slug in enumerate(sorted({t["category"] for t in setup.load_topics()}), 1)}
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+    def run_topics(self, update=False, dry_run=False):
+        api = setup.Discourse(self.forum.base, "k", "system", dry_run)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            setup.ensure_topics(api, self.cats, type("A", (), {"update_topics": update})())
+        return out.getvalue()
+
+    def test_posted_once_pinned_and_wikis_then_left_alone(self):
+        files = setup.load_topics()
+        self.assertGreater(len(files), 20)
+        for t in files:
+            self.assertGreaterEqual(len(t["title"]), 15, t["key"])   # Discourse's shortest title
+            self.assertLessEqual(len(t["raw"]), 32000, t["key"])     # and longest post
+            self.assertNotIn("steady:", t["raw"][:80], t["key"])
+        out = self.run_topics(dry_run=True)
+        self.assertEqual(self.forum.writes, [])
+        self.assertEqual(out.count("would add"), len(files))
+
+        self.run_topics()
+        f = self.forum
+        self.assertEqual(len(f.topics), len(files))
+        by_title = {t["title"]: t for t in f.topics.values()}
+        for t in files:
+            got = by_title[t["title"]]
+            self.assertEqual(got["category"], self.cats[t["category"]])
+            self.assertEqual(got["pinned"], "pinned" in t["flags"], t["key"])
+            self.assertEqual(got["wiki"], "wiki" in t["flags"], t["key"])
+        # the manual's screenshots: each uploaded once, and referred to by its upload:// address
+        manual = [t for t in f.topics.values() if "upload://" in t["raw"]]
+        self.assertGreaterEqual(len(manual), 8)
+        self.assertTrue(all(n == 1 for n in f.uploads.values()), f.uploads)
+        self.assertEqual(len(f.uploads), len({os.path.join(t["folder"], m.group(2)) for t in files
+                                              for m in setup.TOPIC_IMAGE.finditer(t["raw"])}))
+        self.assertRegex(manual[0]["raw"], r"!\[[^\]|]*\|780x1688\]\(upload://")
+        # posted last first: the first file of a category is the newest there
+        order = [t["title"] for t in sorted(f.topics.values(), key=lambda t: -t["post"])]
+        self.assertEqual(order[0], files[0]["title"])
+
+        # again: nothing changes (the forum's upload:// addresses count as the same images)
+        f.writes.clear()
+        out = self.run_topics()
+        self.assertEqual(f.writes, [])
+        self.assertEqual(out.count("  ok "), len(files))
+
+        # edited in the forum: left alone, unless asked
+        tid = next(iter(f.topics))
+        f.topics[tid]["raw"] = "edited by Kempie"
+        out = self.run_topics()
+        self.assertEqual(f.topics[tid]["raw"], "edited by Kempie")
+        self.assertIn("--update-topics replaces it", out)
+        self.run_topics(update=True)
+        self.assertNotEqual(f.topics[tid]["raw"], "edited by Kempie")
+
+
+class TeaRoomTest(unittest.TestCase):
+    def test_discourses_general_becomes_the_tea_room(self):
+        forum = Categories()
+        calls = []
+        orig = forum.handle
+
+        def more(method, path, body, ctype):
+            route = urlparse(path).path
+            calls.append((method, route, json.loads(body) if body and body[:1] == b"{" else None))
+            if route == "/c/4/show.json":
+                return {"category": {"topic_url": "/t/about-the-general-category/2", "group_permissions": []}}
+            if route == "/t/about-the-general-category/2.json":
+                return {"post_stream": {"posts": [{"id": 20}]}}
+            if route == "/posts/20.json":
+                return {}
+            if route == "/groups.json":
+                return {"groups": []}
+            return orig(method, path, body, ctype)
+
+        forum.handle = more
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            spec = next(c for c in setup.CATEGORIES if c["slug"] == "tea-room")
+            with redirect_stdout(io.StringIO()):
+                ids = setup.ensure_categories(api, [spec], {"clinicians"})
+            self.assertEqual(ids, {"tea-room": 4})
+            put = next(b for m, r, b in calls if m == "PUT" and r == "/categories/4.json")
+            self.assertEqual((put["name"], put["slug"], put["permissions"]), ("Tea room", "tea-room", {"clinicians": setup.FULL}))
+            post = next(b for m, r, b in calls if m == "PUT" and r == "/posts/20.json")
+            self.assertEqual(post["post"]["raw"], spec["description"])
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
+class SidebarTest(unittest.TestCase):
+    def test_everyones_side_menu_gets_the_categories_in_order(self):
+        forum = Forum()
+        forum.settings["default_navigation_menu_categories"] = "4"   # Discourse's General
+        sent = []
+        orig = forum.handle
+
+        def spy(method, path, body, ctype):
+            if method == "PUT" and "default_navigation_menu_categories" in path:
+                sent.append(json.loads(body))
+            return orig(method, path, body, ctype)
+
+        forum.handle = spy
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            with redirect_stdout(io.StringIO()):
+                setup.ensure_sidebar(api, {"announcements": 5, "clinical-practice": 6, "research-and-studies": 7})
+                setup.ensure_sidebar(api, {"announcements": 5, "clinical-practice": 6, "research-and-studies": 7})
+            self.assertEqual(forum.settings["default_navigation_menu_categories"], "5|6|7")
+            self.assertEqual(len(sent), 1)                       # the second run changes nothing
+            self.assertEqual(sent[0]["update_existing_user"], "true")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
+class TextsTest(unittest.TestCase):
+    def test_a_text_discourse_refuses_doesnt_stop_the_others(self):
+        forum = Forum()
+        first = next(iter(setup.TEXTS))
+        forum.restricted_texts.add(first)
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            problems = []
+            with redirect_stdout(io.StringIO()):
+                setup._brand_texts(api, problems)
+            self.assertEqual(len(problems), 1, problems)
+            self.assertIn(first, problems[0])
+            for key in setup.TEXTS:
+                if key not in (first, "js.welcome_banner.search_placeholder"):
+                    self.assertEqual(forum.texts[key], setup.TEXTS[key], key)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_no_text_discourse_never_lets_change(self):
+        # Discourse's site_texts_controller RESTRICTED_KEYS
+        self.assertNotIn("js.powered_by_discourse", setup.TEXTS)
 
 
 class Categories:
