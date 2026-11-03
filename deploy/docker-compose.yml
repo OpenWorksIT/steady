@@ -20,7 +20,7 @@ x-logging: &logging
 services:
   caddy:
     logging: *logging
-    image: caddy:2
+    image: caddy:2.11.7 # pinned: Dependabot proposes updates as pull requests into working
     restart: unless-stopped
     ports:
       - "80:80"
@@ -51,6 +51,9 @@ services:
               "--migrationsDir=/pb/pb_migrations", "--automigrate=false", "--origins=https://${STEADY_DOMAIN}"]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+    # at most 512 processes and threads (PocketBase uses a few dozen): code that keeps starting
+    # them can't choke the rest of the server
+    pids_limit: 512
     environment:
       # only for servers set up before branding moved to deploy/brand (./brand.sh)
       STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-}
