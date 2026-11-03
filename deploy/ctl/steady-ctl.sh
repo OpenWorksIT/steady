@@ -225,6 +225,8 @@ update() {
   put updating null
   docker image prune -f > /dev/null 2>&1 || true
   check
+  # the fleet view sees the server as it is after the update, not 6 hours later
+  systemctl start --no-block steady-audit.service > /dev/null 2>&1 || true
 }
 
 main "$@"

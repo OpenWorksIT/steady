@@ -4,6 +4,10 @@
 #
 #   sudo ./audit-server.sh                 # the host, Docker, files, and the live site
 #   sudo ./audit-server.sh --domain steady.example.co.za   # if STEADY_DOMAIN isn't in .env
+#   sudo ./audit-server.sh --quiet --json /var/lib/steady/ctl/out/audit.json
+#                                          # what the steady-audit service runs every 6 hours:
+#                                          # the results as JSON, which the server hands to
+#                                          # OpenWorks' fleet view with its status (docs/FLEET.md)
 #
 # Covers: SSH, the firewall, what listens on the network, automatic security updates, pending
 # updates, disk encryption, file permissions of .env and secrets (with the Firebase key for
@@ -15,16 +19,35 @@
 set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 
-FAILS=0; WARNS=0
-ok()   { printf '  OK    %s\n' "$*"; }
-warn() { printf '  WARN  %s\n' "$*"; WARNS=$((WARNS + 1)); }
-fail() { printf '  FAIL  %s\n' "$*"; FAILS=$((FAILS + 1)); }
-head_() { printf '\n%s\n' "$*"; }
+QUIET=no; JSON=""; DOMAIN_ARG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --domain) DOMAIN_ARG="${2:-}"; shift 2 ;;
+    --json) JSON="${2:-}"; [ -n "$JSON" ] || { echo "--json needs a file" >&2; exit 2; }; shift 2 ;;
+    --quiet) QUIET=yes; shift ;;
+    *) echo "usage: audit-server.sh [--domain NAME] [--quiet] [--json FILE]" >&2; exit 2 ;;
+  esac
+done
+
+# every result goes to a file as well as the screen, so checks run in a pipeline count too
+RESULTS="$(mktemp)"; trap 'rm -f "$RESULTS" "$RESULTS.json"' EXIT
+SECTION=""
+say()  { [ "$QUIET" = yes ] || printf "$@"; }
+rec()  { printf '%s\t%s\t%s\n' "$1" "$SECTION" "$(printf '%s' "$2" | tr '\t\n' '  ')" >> "$RESULTS"; }
+ok()   { say '  OK    %s\n' "$*"; rec ok "$*"; }
+warn() { say '  WARN  %s\n' "$*"; rec warn "$*"; }
+fail() { say '  FAIL  %s\n' "$*"; rec fail "$*"; }
+head_() { say '\n%s\n' "$*"; SECTION="$*"; }
+# extra lines (firewall rules, accounts.sh's report): on screen only
+info() { if [ "$QUIET" = yes ]; then cat >/dev/null; else sed 's/^/        /'; fi; }
 envv() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/^"//; s/"$//'; }
 
 DOMAIN="$(envv STEADY_DOMAIN)"
-[ "${1:-}" = "--domain" ] && DOMAIN="${2:-}"
-[ "$(id -u)" = 0 ] || echo "(not root: some checks will be skipped)"
+[ -n "$DOMAIN_ARG" ] && DOMAIN="$DOMAIN_ARG"
+[ "$(id -u)" = 0 ] || say '%s\n' "(not root: some checks will be skipped)"
+# a test server says so in .env: it may follow a branch unsigned and go without backups
+TEST_SERVER=no
+grep -qE '^STEADY_UNSIGNED=yes|^STEADY_TRACK=' .env 2>/dev/null && TEST_SERVER=yes
 
 head_ "SSH"
 if command -v sshd >/dev/null; then
@@ -47,7 +70,7 @@ head_ "Firewall and listening ports"
 if command -v ufw >/dev/null && ufw status verbose 2>/dev/null | grep -q 'Status: active'; then
   ufw status verbose 2>/dev/null | grep -q 'Default: deny (incoming)\|Default: reject (incoming)' \
     && ok "ufw is on and refuses incoming connections by default" || fail "ufw is on but lets incoming connections in by default: ufw default deny incoming"
-  ufw status 2>/dev/null | sed -n '5,40p' | sed 's/^/        /'
+  ufw status 2>/dev/null | sed -n '5,40p' | info
 elif command -v nft >/dev/null && nft list ruleset 2>/dev/null | grep -Eq 'hook input .*policy (drop|reject)'; then
   ok "nftables drops incoming connections unless a rule allows them"
 elif command -v iptables >/dev/null && iptables -S INPUT 2>/dev/null | head -1 | grep -Eq '^-P INPUT (DROP|REJECT)'; then
@@ -56,14 +79,14 @@ else
   fail "no firewall drops incoming connections (Docker's own rules don't count): ufw default deny incoming, or an nftables input chain with policy drop"
 fi
 if command -v ss >/dev/null; then
-  ss -H -tlnp 2>/dev/null | awk '{print $4, $6}' | while read -r addr proc; do
+  while read -r addr proc; do
     port="${addr##*:}"
     case "$addr" in 127.*|\[::1\]*|::1*) continue ;; esac
     case "$port" in
       22|80|443) ok "listening on $addr ($proc)" ;;
       *) warn "listening on $addr ($proc): is it meant to be reachable from outside?" ;;
     esac
-  done
+  done < <(ss -H -tlnp 2>/dev/null | awk '{print $4, $6}')
 fi
 
 head_ "Updates"
@@ -111,7 +134,13 @@ if [ -f .env ]; then
   [ "$(envv STEADY_REQUIRE_2FA)" = off ] && fail "STEADY_REQUIRE_2FA=off: staff sign in without two-step" || ok "two-step sign-in is required for staff"
   [ -n "$(envv STEADY_SMTP_HOST)" ] && ok "email is set up: staff link their devices" || warn "no STEADY_SMTP_HOST: staff devices aren't linked (docs/DEPLOY.md 5a)"
   [ "$(envv STEADY_DEVICE_LINK)" = off ] && warn "STEADY_DEVICE_LINK=off: device linking is switched off" || true
-  [ -s secrets/allowed_signers ] && ok "updates install only releases signed by OpenWorks (secrets/allowed_signers)" || fail "no secrets/allowed_signers: updates follow GitHub's main branch unsigned (docs/DEPLOY.md, signed releases)"
+  if [ -s secrets/allowed_signers ]; then
+    ok "updates install only releases signed by OpenWorks (secrets/allowed_signers)"
+  elif [ "$TEST_SERVER" = yes ]; then
+    warn "a test server: updates follow GitHub's $(envv STEADY_TRACK | grep . || echo main) branch unsigned, as .env says (never on a practice's server)"
+  else
+    fail "no secrets/allowed_signers: updates follow GitHub's main branch unsigned (docs/DEPLOY.md, signed releases)"
+  fi
 else
   fail "no deploy/.env here"
 fi
@@ -124,9 +153,9 @@ if [ -d secrets ]; then
     [ -f "$f" ] || continue
     { [ "$(stat -c %u "$f")" = 0 ] && [ -z "$(find "$f" -perm /go+w)" ]; } || fail "$f must belong to root and be writable only by root: chown root:root $f && chmod 644 $f"
   done
-  find secrets -type f ! -name '*.pub' ! -name allowed_signers ! -name vapid.pem ! -name fcm.json -perm /o+r 2>/dev/null | while read -r f; do
+  while read -r f; do
     fail "$f is world-readable"
-  done
+  done < <(find secrets -type f ! -name '*.pub' ! -name allowed_signers ! -name vapid.pem ! -name fcm.json -perm /o+r 2>/dev/null)
   # Android notifications: the service-account key of OpenWorks IT's Firebase project, read by
   # the relay (uid 65532) and nobody else
   f=secrets/fcm.json
@@ -165,8 +194,22 @@ if command -v docker >/dev/null; then
     for p in $ports; do
       case "$p" in 127.0.0.1:*|:80|:443|0.0.0.0:80|0.0.0.0:443) ;; *) warn "$name publishes $p on the network" ;; esac
     done
+    pids="$(docker inspect -f '{{.HostConfig.PidsLimit}}' "$c" 2>/dev/null)"
+    ro="$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$c" 2>/dev/null)"
+    case "$name" in
+      *pocketbase*)
+        if [ "${pids:-0}" -gt 0 ] 2>/dev/null; then ok "$name: at most $pids processes"; else warn "$name has no process limit (update Steady: docker-compose.yml sets 512)"; fi
+        v="$(docker exec "$c" /pb/pocketbase --version 2>/dev/null | awk '{print $NF}')"
+        [ -n "$v" ] && ok "runs PocketBase $v" ;;
+      *caddy*)
+        [ "$ro" = true ] && ok "$name: read-only file system" || warn "$name can write to its own file system (update Steady)"
+        v="$(docker exec "$c" caddy version 2>/dev/null | awk '{print $1}')"
+        [ -n "$v" ] && ok "runs Caddy $v" ;;
+      *pusher*)
+        [ "$ro" = true ] && ok "$name: read-only file system" || warn "$name can write to its own file system (update Steady)" ;;
+    esac
   done
-  docker compose ps --format '{{.Name}} {{.Status}}' 2>/dev/null | grep -v -i 'up' | while read -r l; do fail "not running: $l"; done
+  while read -r l; do fail "not running: $l"; done < <(docker compose ps --format '{{.Name}} {{.Status}}' 2>/dev/null | grep -v -i 'up')
 fi
 
 head_ "Backups"
@@ -180,9 +223,17 @@ if grep -q 'backup.sh' <<<"$cron"; then
     find "$dir" -name '*.age' 2>/dev/null | head -1 | grep -q . || fail "backups in $dir aren't age-encrypted"
   fi
   grep -Eq 'rclone|rsync|restic|scp|aws s3' <<<"$cron" && ok "something copies backups off the server" || warn "no off-site copy of the backups found in cron"
+elif [ "$TEST_SERVER" = yes ]; then
+  warn "no nightly backup in cron (a test server; a practice's server needs one: docs/DEPLOY.md, step 7)"
 else
   fail "no nightly backup in cron (docs/DEPLOY.md, step 7)"
 fi
+# the copy taken before each update is encrypted only once the backup key's public half is on the
+# server (deploy/ctl/steady-ctl.sh)
+plain="$(find /var/backups/steady -maxdepth 1 -name 'steady-pre-update-*.tar.gz' 2>/dev/null | wc -l)"
+[ "${plain:-0}" -eq 0 ] && ok "the copies taken before updates are encrypted (or there are none)" \
+  || warn "$plain copies taken before updates aren't encrypted: put the backup key's public half in secrets/backup.age.pub, then delete them from /var/backups/steady"
+
 
 head_ "The site from outside"
 if [ -n "$DOMAIN" ] && command -v curl >/dev/null && ! curl -s -o /dev/null --max-time 15 "https://$DOMAIN/api/health"; then
@@ -235,7 +286,7 @@ fi
 
 head_ "Steady's own checks"
 if [ -x ./accounts.sh ] && out="$(./accounts.sh check 2>&1)"; then
-  sed 's/^/        /' <<<"$out"
+  info <<<"$out"
   grep -q 'rate limits: on' <<<"$out" && ok "rate limits are on" || fail "rate limits are off"
   grep -q 'dashboard: closed' <<<"$out" && ok "the dashboard is closed inside the container too" || fail "the dashboard answers inside the container"
   grep -q 'operator agreement: signed' <<<"$out" && ok "the practice has signed the current operator agreement" \
@@ -247,5 +298,30 @@ else
   fail "accounts.sh couldn't run (is the server up? docker compose ps)"
 fi
 
-printf '\n%d to fix, %d to look at.\n' "$FAILS" "$WARNS"
+FAILS="$(grep -c '^fail' "$RESULTS")"; WARNS="$(grep -c '^warn' "$RESULTS")"
+say '\n%d to fix, %d to look at.\n' "$FAILS" "$WARNS"
+
+# for the fleet view: the results, the time and the code that ran them, written in one go
+if [ -n "$JSON" ]; then
+  python3 - "$RESULTS" "$RESULTS.json" "$(hostname)" "$(git -C .. rev-parse --short HEAD 2>/dev/null)" \
+    "$(cat /var/lib/steady/release 2>/dev/null)" <<'PY' && install -m 644 "$RESULTS.json" "$JSON"
+import datetime, json, sys
+src, dst, host, code, release = sys.argv[1:6]
+items = []
+for line in open(src, encoding="utf-8", errors="replace"):
+    parts = line.rstrip("\n").split("\t", 2)
+    if len(parts) == 3 and parts[0] in ("ok", "warn", "fail"):
+        items.append({"level": parts[0], "section": parts[1][:60], "text": parts[2].strip()[:300]})
+out = {
+    "format": 1,
+    "at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "host": host[:80], "code": code[:40], "release": release[:40],
+    "fails": sum(i["level"] == "fail" for i in items),
+    "warns": sum(i["level"] == "warn" for i in items),
+    "oks": sum(i["level"] == "ok" for i in items),
+    "items": items[:300],
+}
+json.dump(out, open(dst, "w"))
+PY
+fi
 [ "$FAILS" -eq 0 ]

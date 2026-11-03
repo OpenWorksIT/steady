@@ -124,6 +124,25 @@ function ctlStatus(ctlDir) {
   return readJsonFile(ctlOut(ctlDir) + "/status.json");
 }
 
+/**
+ * The latest security and privacy check (deploy/audit-server.sh, run by the steady-audit service
+ * every 6 hours into out/audit.json), for the fleet view, or null. Only its own fields, cut to
+ * size: the file is written by root, but nothing in it should be trusted beyond its shape.
+ */
+function ctlAudit(ctlDir) {
+  var a = readJsonFile(ctlOut(ctlDir) + "/audit.json");
+  if (!a || typeof a !== "object" || !Array.isArray(a.items)) return null;
+  var str = function (v, n) { return typeof v === "string" ? v.slice(0, n) : ""; };
+  var items = [];
+  for (var i = 0; i < a.items.length && items.length < 300; i++) {
+    var it = a.items[i] || {};
+    if (["ok", "warn", "fail"].indexOf(it.level) < 0) continue;
+    items.push({ level: it.level, section: str(it.section, 60), text: str(it.text, 300) });
+  }
+  var count = function (level) { return items.filter(function (x) { return x.level === level; }).length; };
+  return { at: str(a.at, 30), code: str(a.code, 40), release: str(a.release, 40), fails: count("fail"), warns: count("warn"), oks: count("ok"), items: items };
+}
+
 function ctlPending(ctlDir) {
   var t = readText(ctlSub(ctlDir, "in") + "/request");
   return t === null ? null : (t.replace(/[^a-z-]/g, "") || null);
@@ -144,6 +163,7 @@ module.exports = {
   iosUrl: iosUrl,
   joinPage: joinPage,
   ctlStatus: ctlStatus,
+  ctlAudit: ctlAudit,
   ctlPending: ctlPending,
   ctlRequest: ctlRequest
 };

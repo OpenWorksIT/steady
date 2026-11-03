@@ -29,7 +29,11 @@ an update comes in as a pull request and goes the same way as Steady's own chang
 
 ## 2. Each practice server
 
-- [ ] `sudo ./audit-server.sh`: nothing to fix. Explain or fix each warning that's new since last month.
+Most of this is on the fleet view (https://fleet.steadyapp.co.za): each server's security and
+privacy checks run every 6 hours and show there, with the privacy numbers. The list below is
+what to look at there, and what it can't see.
+
+- [ ] The fleet view's Checks column: all clear, or each item explained or fixed. A check that has stopped running says so.
 - [ ] Settings > Server and updates: on the newest signed release, last update succeeded.
 - [ ] Settings > Server health: disk under 70 %, no memory or load trouble.
 - [ ] Backups: last night's backup is there (`audit-server.sh` says so). Once a quarter, restore one to a scratch machine with `restore-data.sh` and open it.
