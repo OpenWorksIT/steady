@@ -12,7 +12,7 @@
 #   sudo ./accounts.sh set thandi@yourpractice.co.za master|server-admin|active on|off
 #                                         # "active on" unlocks an account its owner locked
 #   sudo ./accounts.sh audit [--patient <id>] [--actor <id>] [--days 90]
-#   sudo ./accounts.sh check              # proxy, rate limits, dashboard, operator agreement
+#   sudo ./accounts.sh check                                     # proxy, rate limits, dashboard
 #   sudo ./accounts.sh demo-patients <psychologist email> [--remove]   # 3 fictional RADR patients
 #   sudo ./accounts.sh rotate-sessions    # signs EVERYONE out (new token secrets): after a
 #                                         # restore, or if a copy of the data may have leaked
@@ -86,11 +86,6 @@ case "$cmd" in
       "rate limits: " + (if .rateLimits.enabled then "on" else "OFF" end),
       "request logs kept: \(.logs.maxDays) days"'
     printf 'dashboard: '; pbx curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090/_/ | sed 's/^404$/closed/'
-    # the practice's operator agreement with OpenWorks (signed by the master clinician in the app)
-    api GET /api/steady/ops/operator-agreement | jq -r '
-      "operator agreement: " + (if .signed then "signed (version \(.version), \(.signedAt[0:10]))"
-        else "NOT SIGNED (version \(.version)" + (if .lastSignedVersion != "" then "; \(.lastSignedVersion) was signed" else "" end) + ")" end),
-      "operator agreement text: " + (if .blanks then "HAS BLANKS for OpenWorks to fill in" else "complete" end)'
     ;;
   list)
     api GET /api/steady/ops/accounts | jq -r '

@@ -37,7 +37,6 @@ const _actions = {
   'account.create': 'Added a staff account',
   'audit.read': 'Read the audit report',
   'people.list': 'Opened the practice\'s people',
-  'operator-agreement.sign': 'Signed the operator agreement',
 };
 
 String _describe(String action) {

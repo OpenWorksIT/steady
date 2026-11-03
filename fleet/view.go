@@ -195,7 +195,6 @@ func facts(st *Status, now time.Time) []Fact {
 		{"Backups", intText(get(d, "host", "backups", "count")) + " files, " + bytesOrQ(get(d, "host", "backups", "bytes"))},
 		{"Staff sign-in by email code", yesNo(get(d, "signIn", "linkedDevices"))},
 		{"Deletion requests waiting", intText(get(d, "counts", "deletionRequests"))},
-		{"Operator agreement", agreementText(get(d, "operatorAgreement"))},
 	}
 	if lu, ok := d["lastUpdate"].(map[string]any); ok {
 		res := "worked"
@@ -226,25 +225,6 @@ func bytesOrQ(v any) string {
 		return bytesText(f)
 	}
 	return "?"
-}
-
-// agreementText: whether the practice signed the current operator agreement (Steady 1.0.5 on).
-func agreementText(v any) string {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return "?"
-	}
-	if m["signed"] == true {
-		at := parseTime(m["signedAt"])
-		if at.IsZero() {
-			return "signed, version " + str(m["version"])
-		}
-		return "signed, version " + str(m["version"]) + ", on " + at.Format("2 Jan 2006")
-	}
-	if last := str(m["lastSignedVersion"]); last != "" {
-		return "NOT SIGNED: version " + str(m["version"]) + " waits for the master clinician (version " + last + " was signed)"
-	}
-	return "NOT SIGNED: version " + str(m["version"]) + " waits for the master clinician"
 }
 
 func yesNo(v any) string {
