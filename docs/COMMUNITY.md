@@ -1,11 +1,12 @@
-# The Steady community forum
+# Steady Community
 
 A private forum for psychologists at practices that use Steady: the **Community** tab in the
 Steady app and web app. They talk about the science, build questionnaires together, plan studies
 across practices, and shape how Steady develops. The first community is VR Clinical Psychology
 (three psychologists). Kempie van Rooyen is the community lead.
 
-It runs [Discourse](https://www.discourse.org) (free software, GPL v2) at
+Steady Community is built on [Discourse](https://www.discourse.org) (free software, GPL v2),
+with Steady's own look and words in place of Discourse's ("How it looks" below). It runs at
 community.steadyapp.co.za, on OpenWorks' own server, separate from any practice's Steady server.
 It opens only inside Steady, signed in as whoever is signed in to Steady ("Signing in through
 Steady" below). It holds no patient data, and nothing else passes between it and Steady.
@@ -17,7 +18,9 @@ The kit is in `community/`:
 | `community.yml.example` | The Discourse container settings: address, mail, and the hard rules pinned so no admin can switch them off by accident. |
 | `community.caddy` | The forum's site for the Caddy in front of it (HTTPS). |
 | `signin/` | The sign-in bridge at signin.steadyapp.co.za: the forum trusts it, and it trusts a short note signed by a practice's Steady server. Go, standard library only. |
-| `setup.py` | Sets up groups, categories, permissions, site settings and the welcome post through the Discourse API. Safe to run again. |
+| `setup.py` | Sets up groups, categories, permissions, site settings, the welcome post and the look through the Discourse API. Safe to run again. |
+| `brand/` | The look: logo, icons, share image, fonts (Barlow, Atkinson Hyperlegible Next) and the theme. |
+| `test_setup.py` | Tests for `setup.py`'s look, against a stand-in for the Discourse API. |
 | `stats.py` | Prints the forum's activity counts for OpenWorks IT. Numbers only. |
 
 ## The rules
@@ -76,7 +79,7 @@ clinical areas. They can't keep out someone who reads the database directly.
 The community opens only inside Steady: the **Community** tab of the app and the web app, for
 psychologists (and OpenWorks support). It opens as whoever is signed in to Steady, with no
 second sign-in. Opened straight in a browser (a bookmark, a link in an email), it shows "The
-Steady community opens inside Steady" instead.
+Steady Community opens inside Steady" instead.
 
 Each practice has its own Steady server, so the forum trusts OpenWorks' **sign-in bridge**
 (`community/signin/`, at signin.steadyapp.co.za), through Discourse's own way of handing sign-in
@@ -236,7 +239,7 @@ sudo cp community/community.caddy /opt/shap/deploy/vps/sites/community.caddy
 cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
-`https://signin.steadyapp.co.za` should say "The Steady community opens inside Steady", with a
+`https://signin.steadyapp.co.za` should say "Steady Community opens inside Steady", with a
 padlock.
 
 ## 3. Install Discourse
@@ -309,6 +312,7 @@ It:
   personal messages for both groups
 - checks the pinned settings it can read back, and that no outside sign-in is enabled
 - posts the welcome and guidelines topic in Announcements and pins it
+- gives the forum the Steady Community look ("How it looks")
 - with `--stats-account`: creates the `openworks-stats` account and prints its key once (see
   "Activity counts for OpenWorks")
 
@@ -338,6 +342,37 @@ admin).
 
 Later admin work is Kempie's, in the community, or by making a temporary Global key for himself
 (Admin > Advanced > API keys) and running `setup.py`, then revoking it.
+
+## How it looks
+
+Steady Community looks like steadyapp.co.za, not like Discourse: the Steady mark and the name
+"Steady Community" at the top, the site's paper, ink, teal and tide blue, Barlow for headings and
+Atkinson Hyperlegible Next (made for low-vision readers) for reading, rounded buttons, and the
+site's deep band at the foot of every page with the one rule: no patient-identifying
+information, ever. The box members type in says the same. It follows a phone's or computer's
+dark mode.
+
+`setup.py` applies it from `community/brand/`, through the API:
+
+| What | Where |
+|---|---|
+| The logo (light and dark), the small mark, the email logo, the icons, the share image | `brand/*.png`, uploaded into the logo and icon site settings |
+| Colours | Two palettes in `setup.py` (`PALETTES`): "Steady Community" and "Steady Community, dark" |
+| Fonts, styles, the footer | The theme "Steady Community" (`brand/theme/`), the default for everyone; Discourse's own themes are no longer offered to members |
+| Words | `TEXTS` in `setup.py`: the box members type in, the welcome above the lists, and the places Discourse names itself |
+| Discourse's own topics | Its welcome topic and admin guide are removed; its guidelines topic gets Steady Community's (`GUIDELINES_RAW`). Its terms and privacy topics stay (`/tos`, `/privacy`) |
+
+Settings: `enable_powered_by_discourse` off (no "Powered by Discourse") and Discourse's tutorial
+bot off.
+
+To change something, edit the file in `community/brand/` (or `PALETTES`, `TEXTS` in `setup.py`)
+and run `setup.py` again: it changes only what differs, and the forum shows it at once. The
+wordmarks and `og.png` were drawn from the mark and the two fonts; if the name changes, draw
+them again the same way. `python3 community/test_setup.py` checks the script against a stand-in
+for Discourse.
+
+The fonts are under the SIL Open Font License (`brand/fonts/LICENSE-*.txt`). Discourse itself
+is GPL v2; nothing in its source is changed, only its settings, theme and texts.
 
 ## Adding a practice
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Steady community forum: site-wide activity counts for OpenWorks IT's fleet view.
+# Steady Community (the forum): site-wide activity counts for OpenWorks IT's fleet view.
 #
 # Copyright (C) 2026 OpenWorks IT (Pty) Ltd. GNU AGPL v3 or later; see LICENSE.
 #
