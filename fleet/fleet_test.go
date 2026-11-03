@@ -114,7 +114,7 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 		case r.URL.Path == "/api/steady/fleet" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			json.NewEncoder(w).Encode(map[string]any{
 				"practice": "VR Clinical Psychology", "health": map[string]any{"status": "good", "reasons": []any{}},
-				"version":           map[string]any{"code": "83f8776", "managed": true, "signed": true, "behind": 0},
+				"version":           map[string]any{"code": "83f8776", "managed": true, "signed": true, "behind": 0, "latest": map[string]any{"sha": "83f87760000", "release": "v1.0.2"}},
 				"host":              map[string]any{"disk": map[string]any{"total": 25e9, "used": 5e9}, "memory": map[string]any{"total": 2e9, "available": 1e9}, "backups": map[string]any{"newest": time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), "count": 3, "bytes": 1e6}},
 				"counts":            map[string]any{"patients": 12, "staff": 4, "checkins7d": 60, "olderConsent": 3, "deletionOverdue": 0, "staffWithoutTwoStep": 1},
 				"operatorAgreement": map[string]any{"version": "1.0", "signed": true, "signedAt": "2026-11-03T08:00:00Z"},
@@ -219,7 +219,8 @@ func TestSignInAndPages(t *testing.T) {
 	// the overview shows the server
 	res, _ = c.Get(site.URL + "/")
 	page := body(t, res)
-	for _, want := range []string{"VR Clinical Psychology", "83f8776", "up to date", "20% of", "5 h ago", "60",
+	// its version as a number: it runs the latest signed release (1.0.2), though it doesn't report versions yet
+	for _, want := range []string{"VR Clinical Psychology", "<code>1.0.2</code>", "up to date", "20% of", "5 h ago", "60",
 		"1 to fix, 1 to look at", "3 on an older consent statement, 1 staff without two-step sign-in"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("overview lacks %q", want)
@@ -683,5 +684,29 @@ func TestMakeChecks(t *testing.T) {
 	}
 	if p.Servers[1].FixW != "50.00" || p.Servers[1].LookW != "50.00" {
 		t.Fatalf("bar: %+v", p.Servers[1])
+	}
+}
+
+func TestVersionText(t *testing.T) {
+	ver := func(v map[string]any) string { return versionText(map[string]any{"version": v}) }
+	cases := []struct {
+		v    map[string]any
+		want string
+	}{
+		{map[string]any{"code": "48e2af3", "current": map[string]any{"version": "1.0.5"}}, "1.0.5"},
+		{map[string]any{"code": "b489d65", "current": map[string]any{"version": "1.1.0 test 23"}}, "1.1.0 test 23"},
+		// a server from before versions: the release's number when it runs the latest release
+		{map[string]any{"code": "48e2af3", "latest": map[string]any{"sha": "48e2af3aaaa", "release": "v1.0.5"}}, "1.0.5"},
+		// ...and its code when it doesn't
+		{map[string]any{"code": "6bc38d5", "latest": map[string]any{"sha": "48e2af3aaaa", "release": "v1.0.5"}}, "6bc38d5"},
+		{map[string]any{}, "?"},
+	}
+	for _, c := range cases {
+		if got := ver(c.v); got != c.want {
+			t.Errorf("%v: %q, want %q", c.v, got, c.want)
+		}
+	}
+	if releaseText(map[string]any{"version": map[string]any{"latest": map[string]any{"release": "v1.0.5"}}}) != "1.0.5" {
+		t.Error("release text")
 	}
 }

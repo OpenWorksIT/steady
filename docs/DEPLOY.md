@@ -297,8 +297,9 @@ token or a compromised build can't reach it:
    `STEADY_TRACK=test` in `.env` (vps1), the `test` branch and the web app CI built from it
    (`web-dist-test`), to try a release on a test server before it's signed.
 2. To release, on OpenWorks' own computer, once CI's "Test builds" has run for that commit:
-   `deploy/release.sh 1.0.0`. It checks the web app was built from the same commit, shows what
-   changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >
+   `deploy/release.sh`. The number comes from `VERSION` (a large update adds .1, a small one
+   .0.1: [VERSIONS.md](VERSIONS.md)). It checks the web app was built from the same commit and
+   carries that number, shows what changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >
    Server and updates and install it at the next "Update now" (or `update.sh`).
 
 What a server checks before installing (from 1.0.4): the tag's signature, that the signed tag

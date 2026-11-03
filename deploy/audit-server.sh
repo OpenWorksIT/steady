@@ -307,7 +307,8 @@ say '\n%d to fix, %d to look at.\n' "$FAILS" "$WARNS"
 
 # for the fleet view: the results, the time and the code that ran them, written in one go
 if [ -n "$JSON" ]; then
-  python3 - "$RESULTS" "$RESULTS.json" "$(hostname)" "$(git -C .. rev-parse --short HEAD 2>/dev/null)" \
+  # the code as people read its version ("1.0.5", "1.1.0 test 23"), its commit for older checkouts
+  python3 - "$RESULTS" "$RESULTS.json" "$(hostname)" "$(./version.sh HEAD .. 2>/dev/null || git -C .. rev-parse --short HEAD 2>/dev/null)" \
     "$(cat /var/lib/steady/release 2>/dev/null)" <<'PY' && install -m 644 "$RESULTS.json" "$JSON"
 import datetime, json, sys
 src, dst, host, code, release = sys.argv[1:6]

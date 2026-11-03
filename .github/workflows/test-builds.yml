@@ -29,6 +29,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          # the whole history and the release tags: the version counts changes since the last release
+          fetch-depth: 0
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
@@ -54,6 +56,14 @@ jobs:
         run: |
           echo "STEADY_BUILD=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
           echo "STEADY_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          # the version people see (docs/VERSIONS.md): on main, the release this build becomes once
+          # deploy/release.sh signs it (VERSION); elsewhere "1.1.0 test 23"
+          ver="$(tr -d ' \r\n' < VERSION)"
+          if [ "$GITHUB_REF_NAME" = main ] && ! git rev-parse -q --verify "refs/tags/v$ver" >/dev/null; then
+            echo "STEADY_VERSION=$ver" >> "$GITHUB_ENV"
+          else
+            echo "STEADY_VERSION=$(deploy/version.sh)" >> "$GITHUB_ENV"
+          fi
           if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
             echo "$KEYSTORE_B64" | base64 -d > app/android/app/steady-release.jks
             printf 'storeFile=steady-release.jks\nstorePassword=%s\nkeyAlias=steady\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > app/android/key.properties
@@ -81,7 +91,7 @@ jobs:
           flutter build apk --release --target-platform android-arm64 \
             --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
             --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
-            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE --dart-define=STEADY_VERSION="$STEADY_VERSION" 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: build web
         working-directory: app
@@ -92,7 +102,7 @@ jobs:
           (cd android && ./gradlew --stop) > /dev/null 2>&1 || true
           pkill -f KotlinCompileDaemon || true
           flutter build web --verbose --release --no-web-resources-cdn \
-            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../web.txt || { echo "::error title=flutter build web::$(sed 's/%/%25/g' ../web.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+            --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE --dart-define=STEADY_VERSION="$STEADY_VERSION" 2>&1 | tee ../web.txt || { echo "::error title=flutter build web::$(sed 's/%/%25/g' ../web.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: package
         run: |
@@ -110,11 +120,12 @@ jobs:
           if [ "$REF" = main ]; then dist=web-dist; else dist="web-dist-$REF"; fi
           mkdir -p app/build/web/download
           cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/download/steady.apk
-          printf '{"build":"%s","date":"%s","signing":"%s"}\n' "$STEADY_BUILD" "$STEADY_BUILD_DATE" "$STEADY_SIGNING" > app/build/web/download/version.json
+          jq -n --arg build "$STEADY_BUILD" --arg version "$STEADY_VERSION" --arg date "$STEADY_BUILD_DATE" --arg signing "$STEADY_SIGNING" \
+            '{build: $build, version: $version, date: $date, signing: $signing}' > app/build/web/download/version.json
           cd app/build/web
           git init -q -b web-dist
           git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" add -A
-          git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" commit -qm "Web app built from ${GITHUB_SHA::7}"
+          git -c user.name="OpenWorks IT" -c user.email="noreply@openworks.co.za" commit -qm "Web app built from ${GITHUB_SHA::7}" -m "Steady $STEADY_VERSION"
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$dist"
           rm -rf .git
 
@@ -137,7 +148,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
-          title="Test build ($(date -u +%Y-%m-%d) ${GITHUB_SHA::7})"
+          title="Test build: Steady $STEADY_VERSION ($(date -u +%Y-%m-%d))"
           notes="For testing only. Install steady-test.apk on Android; new patients scan the invite QR code, others enter the server address. steady-web.zip is the web app (servers also get it from the web-dist branch)."
           {
             # replace the files in place rather than deleting the release first, so a failed

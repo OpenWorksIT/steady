@@ -39,6 +39,9 @@ class AppConfig {
   /// The newest Android build on the server ('' if none) and where to download it.
   final String appBuild, apkPath;
 
+  /// The Android app on the server, as people read its version ('' for builds before versions).
+  final String appVersion;
+
   /// Whether that build installs over older copies (signed with the permanent key).
   final bool appUpdatable;
   final List<CrisisLine> crisisLines;
@@ -58,6 +61,7 @@ class AppConfig {
     required this.crisisLines,
     this.twoStep = 'staff',
     this.appBuild = '',
+    this.appVersion = '',
     this.apkPath = '',
     this.appUpdatable = false,
     this.brandTagline = '',
@@ -102,6 +106,7 @@ class AppConfig {
         twoStep: '${j['twoStep'] ?? 'staff'}',
         crisisLines: _withBuiltInLines(asList(j['crisisLines']).map((e) => CrisisLine.fromJson(asMap(e))).toList()),
         appBuild: '${asMap(j['app'])['build'] ?? ''}',
+        appVersion: '${asMap(j['app'])['version'] ?? ''}',
         apkPath: '${asMap(j['app'])['apk'] ?? ''}',
         appUpdatable: asMap(j['app'])['updatable'] == true,
         brandTagline: '${asMap(j['brand'])['tagline'] ?? ''}',
