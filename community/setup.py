@@ -67,7 +67,7 @@ GROUPS = [
     {
         "name": "openworks",
         "full_name": "OpenWorks IT",
-        "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements and Steady development only. Mention @openworks there, or send a personal message.",
+        "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements, the Steady manual and Steady development only. Mention @openworks there, or send a personal message.",
         "visibility_level": VIS_LOGGED_ON,
         "members_visibility_level": VIS_LOGGED_ON,
         "mentionable_level": ALIAS_EVERYONE,
@@ -82,6 +82,14 @@ CATEGORIES = [
         "color": "1E4A5A",
         "text_color": "FFFFFF",
         "description": "News for the community from the community lead and OpenWorks IT. Clinicians can reply.",
+        "permissions": {"clinicians": CREATE_POST, "openworks": FULL},
+    },
+    {
+        "name": "Steady manual",
+        "slug": "manual",
+        "color": "2C5F7C",
+        "text_color": "FFFFFF",
+        "description": "How to use Steady, step by step with screenshots: for psychologists, practice administrators and the master psychologist, and what patients see. Questions in the replies: OpenWorks IT reads and answers here.",
         "permissions": {"clinicians": CREATE_POST, "openworks": FULL},
     },
     {
@@ -162,10 +170,10 @@ Data from studies run across practices will only ever be shared here as totals a
 | Area | Who can read it |
 |---|---|
 | The science, Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
-| Announcements, Steady development | Clinicians and OpenWorks IT |
+| Announcements, Steady manual, Steady development | Clinicians and OpenWorks IT |
 | A practice's private category (if it has one) | That practice's psychologists only |
 
-OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
+OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements, the Steady manual and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
 
 To ask OpenWorks something, post in Steady development and mention @openworks, or send them a personal message. A mention of @openworks anywhere else reaches nobody, because they can't see it.
 
@@ -831,7 +839,7 @@ Talk about patterns, methods and made-up examples. If you see something that bre
 
 ## Who runs it
 
-Kempie van Rooyen is the community lead. OpenWorks IT builds and hosts Steady and the community, and can read only Announcements and Steady development. To reach them, post in Steady development or send @openworks a personal message.
+Kempie van Rooyen is the community lead. OpenWorks IT builds and hosts Steady and the community, and can read only Announcements, the Steady manual and Steady development. To reach them, post in Steady development or send @openworks a personal message.
 """
 
 
@@ -1054,10 +1062,34 @@ def load_topics():
                 flags = {x.strip() for x in m.group(1).split(",") if x.strip()}
                 rest = rest[1:]
             key = f"{cat}/{name[:-3]}"
-            topics.append({"key": key, "category": cat, "title": title, "flags": flags,
+            topics.append({"key": key, "category": cat, "title": title, "flags": flags, "folder": folder,
                            "raw": "\n".join(rest).strip() + "\n",
                            "external_id": "steady-" + hashlib.sha1(key.encode()).hexdigest()[:16]})
     return topics
+
+
+TOPIC_IMAGE = re.compile(r"!\[([^\]]*)\]\(((?:images|shots)/[^)\s]+\.(?:png|jpe?g|webp|gif))\)")
+ANY_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
+def _same_text(a, b):
+    """Two posts say the same, images aside (in the forum they're upload:// addresses)."""
+    return ANY_IMAGE.sub("![]()", a).strip() == ANY_IMAGE.sub("![]()", b).strip()
+
+
+def _with_uploads(api, topic, done):
+    """The post with each of its screenshots uploaded (once a run; Discourse keeps one copy of
+    each file anyway) and referred to the way Discourse's own editor does."""
+    def put(m):
+        alt, rel = m.group(1).replace("|", " ").strip(), m.group(2)
+        path = os.path.join(topic["folder"], rel)
+        if path not in done:
+            up = api.post_file("/uploads.json", path, {"upload_type": "composer", "synchronous": "true"})
+            done[path] = up
+        up = done[path]
+        size = f"|{up['width']}x{up['height']}" if up.get("width") and up.get("height") else ""
+        return f"![{alt}{size}]({up.get('short_url') or up['url']})"
+    return TOPIC_IMAGE.sub(put, topic["raw"])
 
 
 def _find_topic(api, external_id):
@@ -1078,6 +1110,7 @@ def _find_topic(api, external_id):
 def ensure_topics(api, cat_ids, args):
     topics = load_topics()
     print(f"The first topics ({len(topics)} in community/topics/)")
+    uploaded = {}
     # posted last first, so each category lists them in order (newest at the top)
     for t in reversed(topics):
         cat_id = cat_ids.get(t["category"])
@@ -1090,22 +1123,23 @@ def ensure_topics(api, cat_ids, args):
             if api.dry_run:
                 say("would add", label)
                 continue
-            made = api.post("/posts.json", {"title": t["title"], "raw": t["raw"], "category": cat_id,
-                                            "external_id": t["external_id"]})
+            made = api.post("/posts.json", {"title": t["title"], "raw": _with_uploads(api, t, uploaded),
+                                            "category": cat_id, "external_id": t["external_id"]})
             topic_id, post_id = made["topic_id"], made["id"]
             say("added", label)
         else:
             topic_id = found["id"]
             post_id = found["post_stream"]["posts"][0]["id"]
             raw = (api.get(f"/posts/{post_id}.json") or {}).get("raw", "")
-            if raw.strip() == t["raw"].strip():
+            if _same_text(raw, t["raw"]):
                 say("ok", label)
             elif not args.update_topics:
                 say("left", f"{label}: differs from its file (edited in the forum?); --update-topics replaces it")
             elif api.dry_run:
                 say("would set", f"{label} to its file")
             else:
-                api.put(f"/posts/{post_id}.json", {"post": {"raw": t["raw"], "edit_reason": "Steady Community"}})
+                api.put(f"/posts/{post_id}.json", {"post": {"raw": _with_uploads(api, t, uploaded),
+                                                            "edit_reason": "Steady Community"}})
                 say("set", f"{label} to its file")
         if api.dry_run:
             continue
