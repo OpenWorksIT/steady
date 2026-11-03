@@ -112,7 +112,7 @@ code. The bridge keeps nothing: a sign-in under way is held in memory for two mi
 | Practice admin, patients | No Community tab, and refused |
 | Staff without two-step sign-in | Refused until they set it up in Steady |
 
-Each sign-in is in the practice's access log (Settings > Audit report: "Signed in to the
+Each sign-in is in the practice's access log (Settings > Practice > Audit report: "Signed in to the
 community forum").
 
 **Email addresses.** The bridge's settings list, for each practice, the addresses its
