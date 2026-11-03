@@ -74,7 +74,7 @@ Before a password reset, adding staff, an export, deleting an account, reading t
 
 ## Your first screen
 
-Psychologists (including the master psychologist) start on **Patients**. Until you invite someone, it says **No patients yet**. The practice administrator starts on **Practice** (see Part 2).
+Psychologists (including the master psychologist) start on **Patients**. Until you invite someone, it says **No patients yet**. The practice administrator starts on **Practice** (see *For practice administrators and the master psychologist*).
 
 ![A psychologist's first screen](images/10-staff-first-screen.webp)
 

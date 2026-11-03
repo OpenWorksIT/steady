@@ -50,7 +50,7 @@ All exports ask you to confirm it's you and are recorded in the audit report.
 
 *Purpose: carry out a patient's deletion request.*
 
-Patients ask from the app (see Part 3). The request shows at the top of the patient's page: **Asked to delete their account**. Steady tells the patient it will be done within 30 days.
+Patients ask from the app (see *What your patients see*). The request shows at the top of the patient's page: **Asked to delete their account**. Steady tells the patient it will be done within 30 days.
 
 1. First export what belongs in your clinical records: tap **PDF report** or **Excel**. You must keep those.
 2. Tap **Delete account**.

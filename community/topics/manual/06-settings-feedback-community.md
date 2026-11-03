@@ -6,7 +6,7 @@
 
 Tap the gear on **Patients**.
 
-- **Practice**: the library, feedback tickets and, for the master psychologist, more (see Part 2).
+- **Practice**: the library, feedback tickets and, for the master psychologist, more (see *For practice administrators and the master psychologist*).
 - **Notifications**: whether notifications are on.
 - **Archived patients**.
 - **Change password**, **Two-step sign-in** and **Your devices**.
