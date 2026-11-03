@@ -434,20 +434,70 @@ func TestMessagesCantComeFromALink(t *testing.T) {
 	}
 }
 
-func TestAutoRefreshDoesntKeepYouIn(t *testing.T) {
+func TestAnOpenTabStaysSignedIn(t *testing.T) {
 	app, site, _, u, _ := setup(t)
 	start := time.Now()
 	clock := start
 	app.now = func() time.Time { return clock }
 	c := signIn(t, site, u, start)
-	// the page refreshes itself every minute for 40 minutes
-	for m := 1; m <= 40; m++ {
+	// a whole day with the tab open: only its /alive frame asks, once a minute
+	for m := 1; m <= 24*60; m++ {
 		clock = start.Add(time.Duration(m) * time.Minute)
-		res, _ := c.Get(site.URL + "/?auto=1")
-		body(t, res)
-		if m > 31 && res.StatusCode != http.StatusSeeOther {
-			t.Fatalf("still signed in after %d idle minutes", m)
+		res, _ := c.Get(site.URL + "/alive")
+		b := body(t, res)
+		if res.StatusCode != 200 || res.Header.Get("Refresh") != "60" || !strings.Contains(b, "alive") {
+			t.Fatalf("signed out after %d minutes with the tab open: %d %q", m, res.StatusCode, b)
 		}
+	}
+	if res, _ := c.Get(site.URL + "/"); res.StatusCode != 200 {
+		t.Fatalf("overview after a day: %d", res.StatusCode)
+	}
+	// every page carries the frame, and may frame only this site
+	res, _ := c.Get(site.URL + "/todo")
+	page := body(t, res)
+	if !strings.Contains(page, `<iframe class="alive" src="/alive"`) || !strings.Contains(res.Header.Get("Content-Security-Policy"), "frame-src 'self'") ||
+		!strings.Contains(res.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") || res.Header.Get("X-Frame-Options") != "DENY" {
+		t.Fatal("no /alive frame, or the frame rules are wrong")
+	}
+	res, _ = c.Get(site.URL + "/alive")
+	body(t, res)
+	if !strings.Contains(res.Header.Get("Content-Security-Policy"), "frame-ancestors 'self'") || res.Header.Get("X-Frame-Options") != "SAMEORIGIN" {
+		t.Fatal("/alive may be framed by other sites")
+	}
+}
+
+func TestAClosedTabSignsOut(t *testing.T) {
+	app, site, _, u, _ := setup(t)
+	start := time.Now()
+	clock := start
+	app.now = func() time.Time { return clock }
+	c := signIn(t, site, u, start)
+	// the tab closes: nothing asks for 11 minutes
+	clock = start.Add(11 * time.Minute)
+	res, _ := c.Get(site.URL + "/alive")
+	if b := body(t, res); res.Header.Get("Refresh") != "" || !strings.Contains(b, "signed out") {
+		t.Fatalf("still alive after the tab closed: %q", b)
+	}
+	if res, _ := c.Get(site.URL + "/"); res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("still signed in after the tab closed: %d", res.StatusCode)
+	}
+	// and signed out, /alive keeps nobody in
+	res, _ = client().Get(site.URL + "/alive")
+	if res.Header.Get("Refresh") != "" {
+		t.Fatal("/alive keeps reloading for nobody")
+	}
+	body(t, res)
+}
+
+func TestTheSignInCookieIsForTheBrowserSessionOnly(t *testing.T) {
+	_, site, _, u, _ := setup(t)
+	c := client()
+	code, _ := totpAt(u.TOTP, time.Now().Unix()/30)
+	res, _ := c.PostForm(site.URL+"/login", url.Values{"name": {u.Name}, "password": {"a long enough password"}, "code": {code}})
+	body(t, res)
+	sc := res.Header.Get("Set-Cookie")
+	if !strings.HasPrefix(sc, cookieName+"=") || strings.Contains(sc, "Max-Age") || strings.Contains(sc, "Expires") {
+		t.Fatalf("the cookie outlives the browser: %s", sc)
 	}
 }
 
