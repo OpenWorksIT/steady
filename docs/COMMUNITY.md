@@ -39,7 +39,7 @@ These hold for everyone, admins included.
    No case details that together could point to one person. The welcome post says this first.
 4. **Study data only as totals.** When practices run studies together, results are shared here
    only as aggregates (counts, averages), never as individual records. That work is for later.
-5. **OpenWorks IT sees two areas only:** Announcements and Steady development. Everywhere else it
+5. **OpenWorks IT sees three areas only:** Announcements, the Steady manual and Steady development. Everywhere else it
    sees only numbers (how many topics, posts and active members), never titles or text.
 
 Rules 1 and 2, and the outside-services part of rule 5, are enforced by the forum's settings,
@@ -51,6 +51,7 @@ welcome post and the "If someone posts patient information" steps below back the
 | Area | Clinicians | OpenWorks IT |
 |---|---|---|
 | Announcements | Read and reply | Read, post and reply |
+| Steady manual (how to use Steady, with screenshots) | Read and reply | Read, post and reply |
 | The science (how each part of Steady works and why, with references) | Read and reply | Numbers only |
 | Clinical practice | Read, post and reply | Numbers only |
 | Research and studies | Read, post and reply | Numbers only |
@@ -303,7 +304,7 @@ does the guarding.)
 It:
 
 - creates the groups `clinicians` and `openworks`
-- creates the seven categories with the permissions in "Who sees what" (the Tea room is
+- creates the eight categories with the permissions in "Who sees what" (the Tea room is
   Discourse's own General, renamed), and lists them in everyone's side menu
 - closes every other category (Discourse's own General and so on) to OpenWorks and to
   "everyone", and opens it to clinicians instead. Discourse's own Site Feedback can't be closed
@@ -355,7 +356,8 @@ Later admin work is Kempie's, in the community, or by making a temporary Global 
 ## The first topics
 
 So that the first psychologists find a community rather than an empty forum, `setup.py` posts
-the topics in `community/topics/<category>/`: the Science section (one topic per part of
+the topics in `community/topics/<category>/`: the Steady manual (ten topics, step by step with
+screenshots from `manual/images/`, uploaded with the post), the Science section (one topic per part of
 Steady: the check-in, flags, each questionnaire, watch data, RADR, the patient list, the
 exercises), and starters in every other category (a de-identifying checklist, introductions in
 the Tea room, the reading list, how studies will work, how to report a problem, and more).

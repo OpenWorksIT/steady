@@ -316,8 +316,17 @@ class TopicsForum:
             t = self.topics[int(m.group(1))]
             return {"id": int(m.group(1)), "title": t["title"], "pinned": t["pinned"],
                     "post_stream": {"posts": [{"id": t["post"], "wiki": t["wiki"]}]}}
+        if route == "/uploads.json" and method == "POST":
+            fields, data = parse_multipart(body, ctype)
+            assert fields["upload_type"] == "composer", fields
+            sha = hashlib.sha1(data).hexdigest()
+            self.uploads = getattr(self, "uploads", {})
+            self.uploads[sha] = self.uploads.get(sha, 0) + 1
+            return {"url": f"/uploads/default/original/1X/{sha}.webp", "short_url": f"upload://{sha[:12]}.webp",
+                    "width": 780, "height": 1688}
         if route == "/posts.json" and method == "POST":
             b = json.loads(body)
+            assert "](images/" not in b["raw"] and "](shots/" not in b["raw"], "a screenshot wasn't uploaded"
             tid = len(self.topics) + 100
             self.topics[tid] = {"title": b["title"], "raw": b["raw"], "category": b["category"],
                                 "external_id": b["external_id"], "pinned": False, "wiki": False, "post": tid * 10}
@@ -376,11 +385,18 @@ class TopicsTest(unittest.TestCase):
             self.assertEqual(got["category"], self.cats[t["category"]])
             self.assertEqual(got["pinned"], "pinned" in t["flags"], t["key"])
             self.assertEqual(got["wiki"], "wiki" in t["flags"], t["key"])
+        # the manual's screenshots: each uploaded once, and referred to by its upload:// address
+        manual = [t for t in f.topics.values() if "upload://" in t["raw"]]
+        self.assertGreaterEqual(len(manual), 8)
+        self.assertTrue(all(n == 1 for n in f.uploads.values()), f.uploads)
+        self.assertEqual(len(f.uploads), len({os.path.join(t["folder"], m.group(2)) for t in files
+                                              for m in setup.TOPIC_IMAGE.finditer(t["raw"])}))
+        self.assertRegex(manual[0]["raw"], r"!\[[^\]|]*\|780x1688\]\(upload://")
         # posted last first: the first file of a category is the newest there
         order = [t["title"] for t in sorted(f.topics.values(), key=lambda t: -t["post"])]
         self.assertEqual(order[0], files[0]["title"])
 
-        # again: nothing changes
+        # again: nothing changes (the forum's upload:// addresses count as the same images)
         f.writes.clear()
         out = self.run_topics()
         self.assertEqual(f.writes, [])
