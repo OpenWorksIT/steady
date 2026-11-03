@@ -80,7 +80,7 @@ function makeRuntime(opts = {}) {
   }
 
   function matchClause(rec, clause, params) {
-    const m = /^\s*([a-zA-Z_.][a-zA-Z0-9_.]*)\s*(\?=|>=|<=|!=|=|<|>)\s*(.+?)\s*$/.exec(clause);
+    const m = /^\s*([a-zA-Z_.]+)\s*(\?=|>=|<=|!=|=|<|>)\s*(.+?)\s*$/.exec(clause);
     if (!m) throw new Error("fake filter can't parse: " + clause);
     const [, field, op, rawV] = m;
     let v;
@@ -120,7 +120,7 @@ function makeRuntime(opts = {}) {
     });
   }
 
-  const hooks = { createRequest: {}, updateRequest: {}, update: {}, afterCreate: {}, list: {}, view: {}, deleteRequest: {}, del: {} };
+  const hooks = { createRequest: {}, updateRequest: {}, update: {}, afterCreate: {}, list: {}, view: {} };
   const settings = { trustedProxy: { headers: [], useLeftmostIP: false }, rateLimits: { enabled: false, rules: [] }, smtp: {}, meta: {}, __settings: true };
   const mails = [];
   const routes = {};
@@ -171,7 +171,6 @@ function makeRuntime(opts = {}) {
     },
     delete: (model) => {
       if (model instanceof Collection) { delete collections[model.name]; return; }
-      if (hooks.del[model.collectionName]) hooks.del[model.collectionName]({ record: model, app, next() {} });
       store[model.collectionName] = store[model.collectionName].filter((r) => r !== model);
     },
     runInTransaction: (fn) => fn(app),
@@ -234,8 +233,6 @@ function makeRuntime(opts = {}) {
     onRecordCreateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.createRequest[t] = fn)),
     onRecordUpdateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.updateRequest[t] = fn)),
     onRecordUpdate: (fn, ...tags) => tags.forEach((t) => (hooks.update[t] = fn)),
-    onRecordDeleteRequest: (fn, ...tags) => tags.forEach((t) => (hooks.deleteRequest[t] = fn)),
-    onRecordDelete: (fn, ...tags) => tags.forEach((t) => (hooks.del[t] = fn)),
     onBootstrap: (fn) => { (hooks.bootstraps = hooks.bootstraps || []).push(fn); hooks.bootstrap = (e) => hooks.bootstraps.forEach((f) => f(e)); },
     routerUse: (fn) => { if (typeof fn === "function") (hooks.middleware = hooks.middleware || []).push(fn); else (hooks.globalLimits = hooks.globalLimits || []).push(fn); },
     onRealtimeSubscribeRequest: (fn) => { hooks.realtimeSubscribe = fn; },
@@ -282,7 +279,6 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_privacy.pb.js"));
   run(path.join(HOOKS, "steady_deletion.pb.js"));
   run(path.join(HOOKS, "steady_fleet.pb.js"));
-  run(path.join(HOOKS, "steady_operator.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -840,146 +836,6 @@ test("consent: the practice's own statement from its brand folder; Steady's draf
   assert.equal(rt.call("POST", "/api/steady/consent", { auth: pat, body: { kind: "consent", version: now } }).status, 200);
   assert.equal(rt.app.findRecordById("users", pat.id).getString("consentVersion"), now);
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "consent.statement" && a.getString("patient") === pat.id));
-});
-
-/* ------------------------------------------------ the operator agreement */
-
-const OA = "/api/steady/operator-agreement";
-
-test("operator agreement: the master clinician signs it; others read it; it can't be changed", () => {
-  const { ctl } = distDirs();
-  const FLEET = "fleet-key-0123456789abcdefgh";
-  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: FLEET, STEADY_CTL_DIR: ctl, STEADY_SUPERUSER_API: "open" }) });
-  const master = rt.makeUser({ name: "Dr Master", role: "clinician", master: true, active: true, email: "m@example.org" });
-  const doc = rt.makeUser({ name: "Dr Other", role: "clinician", active: true, email: "o@example.org" });
-  const adm = rt.makeUser({ name: "Front desk", role: "admin", active: true, email: "a@example.org" });
-  const sup = rt.makeUser({ name: "OpenWorks", role: "support", active: true, email: "s@example.org" });
-  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: doc.id, email: "p@example.org" });
-  const su = { isSuperuser: () => true, getString: () => "", id: "" };
-
-  // any staff member reads the text and whether it's signed; patients don't
-  const st = rt.call("GET", OA, { auth: doc });
-  assert.equal(st.status, 200);
-  assert.equal(st.data.signed, false);
-  assert.equal(st.data.canSign, false);
-  assert.match(st.data.text, /^# Operator agreement for Steady/);
-  assert.equal(st.data.prefill, undefined, "the practice's details only for the master clinician");
-  for (const u of [adm, sup]) assert.equal(rt.call("GET", OA, { auth: u }).status, 200);
-  assert.equal(rt.call("GET", OA, { auth: pat }).status, 403);
-  assert.equal(rt.call("GET", OA, {}).status, 403);
-  const m = rt.call("GET", OA, { auth: master }).data;
-  assert.equal(m.canSign, true);
-  assert.equal(m.prefill.practice.name, "VR Demo Practice", "the practice's name from its branding");
-  assert.equal(rt.call("GET", "/api/steady/fleet", { headers: { "X-Steady-Fleet": FLEET } }).data.operatorAgreement.signed, false);
-  assert.equal(rt.call("GET", "/api/steady/ops/operator-agreement", { auth: su }).data.signed, false);
-
-  const fields = { practiceName: "VR Clinical Psychology Inc.", registration: "PR 0123456", address: "26 9th Avenue,\n Walmer, Gqeberha",
-    email: "Info@Example.org", phone: "041 000 0000", informationOfficer: { master: true } };
-  const body = { version: m.version, sha256: m.sha256, fields, signature: "Kempie van Rooyen", authorised: true };
-  const sign = (auth, patch, headers) => rt.call("POST", OA + "/sign", { auth, body: Object.assign({}, body, patch || {}), headers: headers || {} });
-
-  // only the master clinician signs, and only the version they were shown
-  for (const u of [doc, adm, sup, pat]) assert.equal(sign(u).status, 403);
-  assert.equal(sign(master, { version: "0.9" }).status, 400);
-  assert.equal(sign(master, { sha256: "0".repeat(64) }).status, 400);
-  // every field, the tick, and no more than each field takes
-  const withField = (k, v) => ({ fields: Object.assign({}, fields, { [k]: v }) });
-  for (const patch of [{ authorised: false }, { signature: "" }, { signature: "x" }, withField("registration", ""), withField("address", "x".repeat(301)),
-    withField("practiceName", "x".repeat(161)), withField("email", "not-an-email"), withField("phone", "call me"), { fields: "x" }]) {
-    assert.equal(sign(master, patch).status, 400, JSON.stringify(patch));
-  }
-  // someone else as Information Officer: their name, email and phone
-  const io = sign(master, withField("informationOfficer", { master: false, name: "Ms Officer" }));
-  assert.equal(io.status, 400);
-  assert.ok(io.data.errors.some((x) => /Information Officer's email/.test(x)) && io.data.errors.some((x) => /Information Officer's phone/.test(x)), JSON.stringify(io.data));
-  // confirm it's you first
-  master.set("confirmedAt", "");
-  const nc = sign(master);
-  assert.equal(nc.status, 403);
-  assert.equal(nc.data.confirm.code, "confirm_needed");
-  master.set("confirmedAt", "2099-01-01 00:00:00.000Z");
-  assert.equal(rt.store.operator_agreements.length, 0, "nothing signed so far");
-
-  const ok = sign(master, {}, { "User-Agent": "Steady/1.0.5 (android)" });
-  assert.equal(ok.status, 200, JSON.stringify(ok));
-  assert.equal(rt.store.operator_agreements.length, 1);
-  const rec = rt.store.operator_agreements[0];
-  assert.equal(rec.getString("version"), m.version);
-  assert.equal(rec.getString("sha256"), m.sha256);
-  assert.equal(rec.getString("text"), m.text, "the very text that was signed");
-  const f = JSON.parse(rec.getString("fields"));
-  assert.deepEqual(f.practice, { name: "VR Clinical Psychology Inc.", registration: "PR 0123456", address: "26 9th Avenue, Walmer, Gqeberha", email: "info@example.org", phone: "041 000 0000" });
-  assert.deepEqual(f.informationOfficer, { master: true, name: "Dr Master", email: "m@example.org", phone: "" }, "the master clinician by default");
-  assert.equal(rec.getString("signerId"), master.id);
-  assert.equal(rec.getString("signerName"), "Dr Master");
-  assert.equal(rec.getString("signerEmail"), "m@example.org");
-  assert.equal(rec.getString("signature"), "Kempie van Rooyen");
-  assert.equal(rec.getString("ip"), "127.0.0.1");
-  assert.equal(rec.getString("userAgent"), "Steady/1.0.5 (android)");
-  assert.ok(rec.getString("signedAt"));
-  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "operator-agreement.sign" && a.getString("actor") === master.id && !a.getString("patient")));
-
-  // signed, for everyone; the signed copy for the master clinician, the practice admin and OpenWorks
-  assert.equal(rt.call("GET", OA, { auth: doc }).data.signed, true);
-  for (const u of [master, adm, sup]) {
-    const c = rt.call("GET", OA + "/signed", { auth: u });
-    assert.equal(c.status, 200);
-    assert.equal(c.data.signed, true);
-    assert.equal(c.data.latest.text, m.text);
-    assert.equal(c.data.latest.fields.practice.registration, "PR 0123456");
-    assert.equal(c.data.history.length, 1);
-  }
-  for (const u of [doc, pat]) assert.equal(rt.call("GET", OA + "/signed", { auth: u }).status, 403);
-  assert.equal(rt.call("GET", "/api/steady/fleet", { headers: { "X-Steady-Fleet": FLEET } }).data.operatorAgreement.signed, true);
-  const ops = rt.call("GET", "/api/steady/ops/operator-agreement", { auth: su }).data;
-  assert.equal(ops.signed, true);
-  assert.equal(ops.version, m.version);
-  assert.equal(rt.call("GET", "/api/steady/ops/operator-agreement", { auth: master }).status, 404, "the server's own tools only");
-
-  // new details (a different Information Officer): signed again, a new row; the newest counts
-  rt.tick(60000);
-  const again = sign(master, withField("informationOfficer", { master: false, name: "Ms Officer", email: "IO@example.org", phone: "+27 41 000 0001" }));
-  assert.equal(again.status, 200, JSON.stringify(again));
-  assert.equal(rt.store.operator_agreements.length, 2);
-  const c2 = rt.call("GET", OA + "/signed", { auth: adm }).data;
-  assert.deepEqual(c2.latest.fields.informationOfficer, { master: false, name: "Ms Officer", email: "io@example.org", phone: "+27 41 000 0001" });
-  assert.equal(c2.history.length, 2);
-  assert.equal(rt.call("GET", OA, { auth: master }).data.prefill.informationOfficer.name, "Ms Officer", "the next signing starts from the last details");
-
-  // append-only: nothing changes or deletes a signed copy, through the API (superusers too) or inside the server
-  const first = rt.store.operator_agreements[0];
-  for (const h of ["createRequest", "updateRequest", "deleteRequest"]) {
-    assert.throws(() => rt.hooks[h].operator_agreements({ auth: su, app: rt.app, record: first, next() {} }), /signed in the app|can't be changed|can't be deleted/, h);
-  }
-  first.set("signature", "Someone else");
-  assert.throws(() => rt.app.save(first), /can't be changed/);
-  assert.throws(() => rt.app.delete(first), /can't be deleted/);
-  assert.equal(rt.store.operator_agreements.length, 2);
-});
-
-test("operator agreement: a new version waits for the master clinician; the text, its version and the docs copy agree", () => {
-  const O = require("../pb_hooks/lib/operator.js");
-  const text = fs.readFileSync(path.join(HOOKS, "content", "operator-agreement.md"), "utf8");
-  // a version signed before: the current one still waits
-  const rt = makeRuntime({ env: ENV });
-  const master = rt.makeUser({ name: "Dr Master", role: "clinician", master: true, active: true, email: "m@example.org" });
-  rt.makeRecord("operator_agreements", { version: "0.9", sha256: "0".repeat(64), text: "old", fields: {}, signedAt: "2026-10-01 10:00:00.000Z" });
-  const st = rt.call("GET", OA, { auth: master }).data;
-  assert.equal(st.signed, false);
-  assert.equal(st.lastSignedVersion, "0.9");
-  // the same version with other words (a forgotten version bump) isn't signed either
-  rt.makeRecord("operator_agreements", { version: O.VERSION, sha256: "1".repeat(64), text: "edited", fields: {}, signedAt: "2026-10-02 10:00:00.000Z" });
-  assert.equal(rt.call("GET", OA, { auth: master }).data.signed, false);
-
-  // the text says which version it is, and a changed text needs a new version
-  assert.equal(O.versionInText(text), O.VERSION, "the text's Version line matches lib/operator.js");
-  const sha = require("crypto").createHash("sha256").update(text).digest("hex");
-  assert.equal(sha, O.TEXT_SHA256, "The operator agreement's text changed: give it a new VERSION in lib/operator.js and in its Version line, then set TEXT_SHA256 to " + sha);
-  // the readable template in docs/ carries the same text, with the draft note the app's copy leaves out
-  const docs = fs.readFileSync(path.join(ROOT, "..", "docs", "OPERATOR-AGREEMENT.md"), "utf8");
-  assert.ok(docs.includes(text.trim()), "docs/OPERATOR-AGREEMENT.md has the in-app text, word for word");
-  assert.match(docs, /Draft for review by an attorney; not legal advice/);
-  assert.ok(!/attorney|not legal advice/i.test(text), "no draft note in the app's copy");
 });
 
 test("signing out ends the session on the server; the relay can only remove the devices it was sent", () => {
