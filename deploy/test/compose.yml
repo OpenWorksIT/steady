@@ -17,7 +17,6 @@ services:
     pids_limit: 512   # as on practice servers
     environment:
       STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-VR Clinical Psychology}
-      STEADY_CONSENT_VERSION: test-1
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
       # the Cloudflare tunnel passes the visitor's address in this header

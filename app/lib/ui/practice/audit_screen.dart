@@ -22,7 +22,7 @@ const _actions = {
   'patient.export': 'Exported a patient',
   'patients.export': 'Exported all patients',
   'patient.flag.review': 'Marked a flag as reviewed',
-  'patient.export.heidi': 'Exported a patient for Heidi',
+  'patient.export.heidi': 'Exported a patient for AI note-taking',
   'account.self-lock': 'Locked their own account',
   'account.device.linked': 'Linked a device',
   'account.device.removed': 'Removed a device',

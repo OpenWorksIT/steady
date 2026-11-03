@@ -82,7 +82,7 @@ text, Schedule and PDF.
    day, read the reasoning and the data behind it, and mark a flag as reviewed. Its chip says who and
    when; once all are reviewed, Demo C moves down the list. Nothing about RADR is red or reads as an
    alert, and a patient with a PHQ-9 item 9 answer stays above Demo C.
-5. Export for Heidi twice: the second offers "since the last export" and says part 2.
+5. Export for AI note-taking twice: the second offers "since the last export" and says part 2.
 6. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
    On a fresh test server, the master clinician is asked to sign the operator agreement first;
    Settings > The practice > Operator agreement then shows it and downloads the PDF.

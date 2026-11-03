@@ -363,7 +363,8 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   // config is public
   const cfg = rt.call("GET", "/api/steady/config");
   assert.equal(cfg.data.practiceName, "VR Demo Practice");
-  assert.match(cfg.data.consentText, /DRAFT/);
+  assert.match(cfg.data.consentText, /Your clinical record/);
+  assert.equal(cfg.data.consentDraft, false);
   assert.equal(cfg.data.crisisLines[0].number, "0800 567 567");
 
   // a patient can't create invites
@@ -830,12 +831,15 @@ test("dist: with an iOS link set, iPhones get TestFlight steps; bad links are ig
   assert.equal(rt.call("GET", "/join", { headers: iphone }).status, 302);
 });
 
-test("consent: the practice's own statement from its brand folder; Steady's draft is flagged", () => {
-  // without one, patients would agree to Steady's draft: the config says so
+test("consent: Steady's own statement, versioned by its text; a practice's own from its brand folder", () => {
+  // without one, patients agree to Steady's own statement: final, its version a fingerprint of
+  // the text, and its contact line pointing to the practice until the operator agreement is signed
   const plain = makeRuntime({ env: Object.assign({}, ENV, { STEADY_BRAND_DIR: path.join(os.tmpdir(), "no-brand-here") }) });
   const c0 = plain.call("GET", "/api/steady/config").data;
-  assert.equal(c0.consentDraft, true);
-  assert.match(c0.consentText, /DRAFT/);
+  assert.equal(c0.consentDraft, false);
+  assert.match(c0.consentVersion, /^steady-[0-9a-f]{12}$/);
+  assert.doesNotMatch(c0.consentText, /DRAFT|\{contact\}|\[Practice|Heidi/);
+  assert.match(c0.consentText, /Its Information Officer is its master psychologist/);
   // the practice's statement, installed with brand.sh: its own version, no draft
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "steady-consent-"));
   fs.writeFileSync(path.join(dir, "brand.json"), JSON.stringify({ name: "VR Clinical Psychology", consentVersion: "vr-2026-11" }));
@@ -925,8 +929,14 @@ test("operator agreement: the master clinician signs it; others read it; it can'
   master.set("confirmedAt", "2099-01-01 00:00:00.000Z");
   assert.equal(rt.store.operator_agreements.length, 0, "nothing signed so far");
 
+  const before = rt.call("GET", "/api/steady/config").data;
   const ok = sign(master, {}, { "User-Agent": "Steady/1.0.5 (android)" });
   assert.equal(ok.status, 200, JSON.stringify(ok));
+  // Steady's consent statement now names the practice and its Information Officer, without a new
+  // version (patients aren't asked to agree again for new contact details)
+  const after = rt.call("GET", "/api/steady/config").data;
+  assert.match(after.consentText, /VR Clinical Psychology Inc\., 26 9th Avenue, Walmer, Gqeberha\. Email info@example\.org, phone 041 000 0000\. Information Officer: /);
+  assert.equal(after.consentVersion, before.consentVersion);
   assert.equal(rt.store.operator_agreements.length, 1);
   const rec = rt.store.operator_agreements[0];
   assert.equal(rec.getString("version"), m.version);

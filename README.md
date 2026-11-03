@@ -4,7 +4,7 @@ Between-session check-ins for a psychology practice. One app for Android, iPhone
 
 - **Patients** do a quick daily check-in (mood, anxiety, sleep and energy on a 1 to 5 scale, plus a few words), complete the questionnaires and exercises their psychologist sends them, and see their own timeline.
 - **Watch data (optional)**: patients can share a daily summary of heart rate, sleep, steps and blood oxygen from Health Connect or Apple Health. Psychologists see it against each patient's own usual range, and in RADR, which shows how far a patient is from their own normal to improve care, with every number explained and flags they can mark as reviewed. No alerts: RADR only orders the psychologist's list, after answers waiting for review.
-- **Psychologists** see their patients most concerning first, send questionnaires or exercises (once, daily or weekly), keep short notes, mark flags as reviewed, and export a patient's record as a PDF, an Excel workbook or a text PDF for Heidi (only what's new since the last one).
+- **Psychologists** see their patients most concerning first, send questionnaires or exercises (once, daily or weekly), keep short notes, mark flags as reviewed, and export a patient's record as a PDF, an Excel workbook or a text PDF for AI note-taking tools (only what's new since the last one).
 - **The practice**: a master clinician and a practice admin manage accounts and see each patient's connection status (never their data); OpenWorks IT support looks after the server and sees no patients in the app.
 
 Built by [OpenWorks IT](https://openworks.co.za), with the clinical science and research of Kempie van Rooyen and VR Clinical Psychology (see [Credits](#credits)). Free software under the GNU AGPL v3 or later.

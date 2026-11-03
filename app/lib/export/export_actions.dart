@@ -80,11 +80,11 @@ Future<void> exportHeidiPdf(BuildContext context, String patientId) async {
     context: context,
     builder: (c) => StatefulBuilder(
       builder: (c, setLocal) => AlertDialog(
-        title: const Text('Export for Heidi'),
+        title: const Text('Export for AI note-taking'),
         content: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('A PDF written for Heidi to read as context: how to read it, the data with dates, and what not to infer. '
-                'Add it to the session in Heidi.'),
+            const Text('A PDF written for an AI scribe to read as context: how to read it, the data with dates, and what not to infer. '
+                'Add it to the session in your note-taking tool. Once exported, it is part of your clinical record.'),
             const SizedBox(height: 10),
             for (final o in [
               if (last != null)
@@ -116,7 +116,7 @@ Future<void> exportHeidiPdf(BuildContext context, String patientId) async {
                 },
               ),
             const SizedBox(height: 6),
-            Text('Tip: in Heidi, link the session to the patient\'s profile, so each new file adds to what Heidi already has.',
+            Text('Tip: in your AI scribe, link the session to the patient\'s profile, so each new file adds to what it already has.',
                 style: Theme.of(c).textTheme.bodySmall),
           ]),
         ),
@@ -128,7 +128,7 @@ Future<void> exportHeidiPdf(BuildContext context, String patientId) async {
     ),
   );
   if (go != true || !context.mounted) return;
-  if (!await _confirm(context, 'for Heidi')) return;
+  if (!await _confirm(context, 'for AI note-taking')) return;
   if (!context.mounted) return;
   await _run(context, () async {
     final from = switch (kind) { HeidiKind.since => dayText(nextFrom!), HeidiKind.range => dayText(chosen!.start), HeidiKind.all => null };
@@ -138,8 +138,8 @@ Future<void> exportHeidiPdf(BuildContext context, String patientId) async {
     final p = bundle.patients.first;
     final bytes = await buildHeidiPdf(bundle, p, kind: kind, previous: last);
     final part = kind == HeidiKind.since && last != null ? '-part${last.part + 1}' : '';
-    await saveBytes(bytes, 'steady-heidi-${fileSafe(p.name)}-${dayText(bundle.generatedAt)}$part.pdf', 'application/pdf',
-        subject: 'Steady for Heidi: ${p.name}');
+    await saveBytes(bytes, 'steady-ai-notes-${fileSafe(p.name)}-${dayText(bundle.generatedAt)}$part.pdf', 'application/pdf',
+        subject: 'Steady for AI notes: ${p.name}');
     if (kind != HeidiKind.range) {
       await api.markHeidiExport(patientId,
           kind: kind == HeidiKind.since ? 'since' : 'all', from: p.from == null ? (from ?? dayText(today)) : dayText(p.from!), to: to);

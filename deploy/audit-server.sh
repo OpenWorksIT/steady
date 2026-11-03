@@ -207,7 +207,7 @@ try: print("yes" if json.load(sys.stdin).get("consentDraft") else "no")
 except Exception: print("?")' 2>/dev/null || echo "?")"
   case "$draft" in
     no) ok "patients agree to the practice's own consent statement" ;;
-    yes) fail "patients are agreeing to Steady's DRAFT consent statement: install the practice's own (consent.md, ./brand.sh)" ;;
+    yes) fail "patients are agreeing to a consent statement marked as a draft or with placeholders left (BRAND.md)" ;;
     *) warn "couldn't read the consent statement's status (Steady older than 1.0.4?)" ;;
   esac
   if command -v openssl >/dev/null; then

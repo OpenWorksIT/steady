@@ -95,9 +95,11 @@ main() {
   fi
 
   echo "Building and starting..."
-  # newer base images and Caddy too, not only Steady's own code (they carry security fixes)
-  docker compose pull --ignore-buildable -q 2>/dev/null || docker compose pull -q caddy 2>/dev/null || true
-  docker compose build --pull
+  # Only the versions this release names: Caddy, PocketBase and the base images are pinned in the
+  # repository, and a newer one arrives as a pull request that runs on the test branch (vps1)
+  # first and reaches main only when OpenWorks says so (docs/UPKEEP.md). Nothing is pulled fresh
+  # from Docker Hub here, so an outside update can't change a practice's server on its own.
+  docker compose build
   docker compose up -d
 
   # each build leaves the previous images behind; without this they slowly fill the disk

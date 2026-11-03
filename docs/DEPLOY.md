@@ -28,10 +28,11 @@ Edit `.env`:
 | `PUSHER_SECRET` | From `gen-keys.sh` |
 | `APNS_*` | See step 3 |
 
-The consent statement patients agree to is the practice's own, installed with its branding as
-`consent.md` (step 4a, [BRAND.md](BRAND.md)). Until then patients see Steady's draft
-(`server/pb_hooks/content/consent.md`), and the fleet view and `audit-server.sh` say so. A
-changed statement is a new version: patients who agreed to an earlier one are asked to read and
+The consent statement patients agree to is Steady's own (`server/pb_hooks/content/consent.md`):
+one statement for every practice, signed off with Steady's science. Its contact line is filled in
+from the operator agreement the master clinician signs (the practice's details and its
+Information Officer). A practice that needs its own statement instead has it installed with its
+branding as `consent.md` ([BRAND.md](BRAND.md)). A changed statement is a new version: patients who agreed to an earlier one are asked to read and
 agree to it the next time they open the app (from Steady 1.0.4; older copies of the app don't
 ask). The practice's People screen shows who still has an older consent.
 
@@ -319,8 +320,11 @@ Three branches, and changes move one way:
 | `main` | production | a pull request from `test`, with CI green | practice servers, only as a signed release (`release.sh`) |
 
 So an update to Caddy, PocketBase, Go or any package (Dependabot opens those as pull requests
-into `working`) runs on vps1 before any practice gets it. Caddy and PocketBase are pinned to
-exact versions; nothing a practice server runs changes without a pull request.
+into `working`) runs on vps1 before any practice gets it, and reaches `main` only when OpenWorks
+says so. Caddy, PocketBase and the base images are pinned to exact versions, and `update.sh`
+pulls nothing fresh from Docker Hub: nothing a practice server runs changes without a pull
+request. The monthly round of these updates, and the rest of Steady's upkeep, is in
+[UPKEEP.md](UPKEEP.md).
 
 GitHub rulesets keep it that way: `main` and `test` change only through a pull request with CI
 green and can't be deleted or force-pushed; `working` can't be deleted or force-pushed; the

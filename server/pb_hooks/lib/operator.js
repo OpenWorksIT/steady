@@ -13,7 +13,7 @@
  */
 
 var VERSION = "1.0";
-var TEXT_SHA256 = "929849a1f70d920d8e5f921a9558803078854676936d608393aa0cf1b1fe257f";
+var TEXT_SHA256 = "7cc980bae828e82d72f2ed519e337c7f9dae780c140df9342ec08d553c938017";
 
 /** Blanks still to be filled in, in the text: "[To complete: ...]". */
 var BLANK = /\[To complete:/;

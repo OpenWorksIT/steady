@@ -12,8 +12,8 @@ data, not alerts, and always below answers waiting for review such as PHQ-9 item
 
 Kempie van Rooyen (VR Clinical Psychology) approved RADR for use in care; its ethics and patient
 consent sit with him. Patients agree to share watch data separately (the watch consent in the app,
-`wearable-2`), which says the data may be added to their clinical record and used in their care,
-including in AI note-taking tools such as Heidi.
+`wearable-2`), which says the data may be added to their clinical record, where the psychologist decides how
+it is used in their care.
 
 ## What the research says, in short
 

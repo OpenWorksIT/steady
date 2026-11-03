@@ -64,7 +64,6 @@ services:
       STEADY_MONITOR_KEY: ${STEADY_MONITOR_KEY:-}
       STEADY_FLEET_KEY: ${STEADY_FLEET_KEY:-}
       STEADY_COMMUNITY_URL: ${STEADY_COMMUNITY_URL:-}
-      STEADY_CONSENT_VERSION: ${STEADY_CONSENT_VERSION}
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
       # the iPhone app: TestFlight public link while in testing, later the App Store link

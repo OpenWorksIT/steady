@@ -12,7 +12,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 ## 1. The parties
 
-1.1 OpenWorks: OpenWorks IT (Pty) Ltd, registration number [To complete: company registration number], of [To complete: physical address], Gqeberha, South Africa. Email: info@openworks.co.za. WhatsApp: +27 76 768 9155. Information Officer: [To complete: name], info@openworks.co.za.
+1.1 OpenWorks: OpenWorks IT (Pty) Ltd, registration number [To complete: company registration number], of 24 Pelican Road, Port Elizabeth, 6070, South Africa. Email: info@openworks.co.za. Phone and WhatsApp: 076 768 9155. Information Officer: Tiaan van der Merwe, info@openworks.co.za.
 
 1.2 The Practice: the practice named in the Schedule, with the registration or practice number, physical address and contact details recorded there when this agreement is signed.
 
@@ -164,9 +164,9 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 ## 13. Clinical records
 
-13.1 Patient Information in Steady is the Practice's. It becomes part of the Practice's clinical record when a psychologist exports it from Steady into the Practice's own records, for example as a PDF report, a workbook or a summary for a note-taking service.
+13.1 Patient Information in Steady is the Practice's. It becomes part of the Practice's clinical record when a psychologist exports it from Steady into the Practice's own records, for example as a PDF report, a workbook or a summary for the clinician's own tools.
 
-13.2 From then on, the exported copy is the Practice's alone. Its storage, security, retention and any further sharing are the Practice's responsibility, and OpenWorks does not process it.
+13.2 From then on, the exported copy is part of the Practice's clinical record and the Practice's alone. Its storage, security, retention and any further sharing, including with any tool a clinician uses, are the Practice's responsibility. OpenWorks does not process it, and OpenWorks' responsibility for it ends when it is exported.
 
 13.3 The Practice and its clinicians are responsible for clinical decisions and for how they use what Steady shows. Steady is not monitored around the clock and is not an emergency service.
 
@@ -222,7 +222,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 20.3 Steady keeps a record of each signature that can't be changed through the app: the version of this agreement, its full text and that text's SHA-256 fingerprint, the details in the Schedule, the signer's account, name and email, and the time, internet address and app used. That record is evidence of this agreement and its terms.
 
-20.4 OpenWorks makes this agreement available in Steady and is bound by it when the Practice signs. Signed for OpenWorks by [To complete: name and capacity], who is authorised to do so.
+20.4 OpenWorks makes this agreement available in Steady and is bound by it when the Practice signs. Signed for OpenWorks by Tiaan van der Merwe, Director, Founder and Principal Engineer, who is authorised to do so.
 
 20.5 The master clinician, the practice administrator and OpenWorks can open the signed agreement in Steady at any time and download it as a PDF.
 
@@ -285,19 +285,19 @@ Steady after the update.
 
 ### Blanks for OpenWorks to fill in before release
 
-These details weren't found in the Steady repository or on openworks.co.za, so they're left as
-`[To complete: ...]` in the text (`accounts.sh check` and `audit-server.sh` warn while any are
-left):
+Left as `[To complete: ...]` in the text (`accounts.sh check` and `audit-server.sh` warn while any
+are left):
 
 - OpenWorks IT (Pty) Ltd's company registration number (clause 1.1).
-- Its physical address (clause 1.1; only "Gqeberha" is published).
-- OpenWorks' own Information Officer (clause 1.1).
-- Where domains.co.za keeps the Steady mailbox's mail (clause 7.1).
-- Who signs for OpenWorks, and in what capacity (clause 20.4).
+- Where domains.co.za keeps the Steady mailbox's mail (clause 7.1): to check with domains.co.za.
 
-Used from what is published: the company name (README and the Steady privacy policy),
-info@openworks.co.za and Gqeberha (openworks.co.za and the Steady privacy policy), and the
-WhatsApp number on openworks.co.za (+27 76 768 9155).
+Filled in on 3 November: the address (24 Pelican Road, Port Elizabeth, 6070), the Information
+Officer (Tiaan van der Merwe), the phone and WhatsApp number, and who signs for OpenWorks (Tiaan
+van der Merwe, Director, Founder and Principal Engineer).
+
+The live list of what a lawyer should confirm, across this agreement, the consent statement and
+the privacy policy, is kept in the "Steady: for a lawyer to confirm" document; the points below
+are this agreement's.
 
 ### Points for the attorney
 

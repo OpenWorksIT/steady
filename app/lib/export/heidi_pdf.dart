@@ -80,7 +80,7 @@ Future<Uint8List> buildHeidiPdf(ExportBundle bundle, ExportPatient p, {required 
   final bold = pw.Font.ttf(await rootBundle.load('assets/fonts/DejaVuSans-Bold.ttf'));
   final doc = pw.Document(
     theme: pw.ThemeData.withFont(base: base, bold: bold),
-    title: 'Steady for Heidi: ${p.name}',
+    title: 'Steady for AI notes: ${p.name}',
     author: bundle.clinician,
     creator: 'Steady (OpenWorks IT), $kHeidiFormat',
   );
@@ -123,7 +123,7 @@ Future<Uint8List> buildHeidiPdf(ExportBundle bundle, ExportPatient p, {required 
         if (kind == HeidiKind.range) ('Note', 'Chosen dates: not part of the series of exports.'),
       ]),
       _box([
-        _para('Tip for the clinician: in Heidi, link this session to the patient\'s profile, so this context carries forward to later '
+        _para('Tip for the clinician: in your AI scribe, link this session to the patient\'s profile, so this context carries forward to later '
             'sessions. Each new Steady file then simply adds to it.'),
       ]),
       if (changedFrom != null)
@@ -218,7 +218,7 @@ List<pw.Widget> _howToRead(ExportPatient p, {required bool short, required Strin
   return [
     _h2(short ? '1. How to read this file (short version; part 1 of the series has the full one)' : '1. How to read this file'),
     _box([
-      _para('For Heidi and the clinician. This file comes from Steady, a between-session check-in app. The patient used it at home '
+      _para('For the AI scribe and the clinician. This file comes from Steady, a between-session check-in app. The patient used it at home '
           'between sessions; their psychologist sees the same data in the app. Use it as context for the session note: what the '
           'patient reported and what their watch recorded, with dates. Everything below is measured or reported data plus how it '
           'was calculated. It contains no diagnosis and no clinical judgement.'),

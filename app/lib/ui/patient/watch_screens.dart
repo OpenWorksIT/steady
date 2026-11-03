@@ -177,8 +177,7 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
             Text('Your clinical record', style: context.tt.titleMedium),
             const SizedBox(height: 6),
             bullet('Watch data you share may be added to your clinical record at $practice.'),
-            bullet('Your psychologist may then use it as part of your care, including in AI note-taking tools such as Heidi, which help '
-                'them write up your sessions.'),
+            bullet('Once it is in your clinical record, your psychologist decides how to use it in your care.'),
             bullet('If you stop sharing, nothing new is added. What you already shared stays in your record.'),
             const SizedBox(height: 12),
             Card(
