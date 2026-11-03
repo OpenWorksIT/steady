@@ -196,5 +196,12 @@
     "status": "waiting",
     "waiting": "the lawyer",
     "link": "https://claude.ai/artifact/3uxjZFBuz2rXNBRFcGSE4N"
+  },
+  {
+    "title": "App polish from the manual's walk-through",
+    "detail": "Found while screenshotting every screen for the training manual:\n- the floating Feedback button covers content on phones (the two-step key, Steps, a RADR switch, the version line) and sits over dialogs' dimmed background\n- \"Questionnaire\" breaks as \"Questionn/aire\" in the builder at phone width; RADR's \"3 of 4 domains away from usual\" is cut off\n- wording: \"You asked on just now.\", \"On just now.\", \"1 days with data\", \"1 more in your library need a licence check\", \"This phone: …\" on the web\n- dates written four ways (2026-11-03, 3/11/2026 21:18, 10/11/2026, 3 Nov)\n- the audit report shows raw action names (ops.account.create, feedback.sent, instrument.create, invite.create, live.notifications)\n- avatar initials count the title (\"D(\", \"DE\" for Dr ... Example)\n- \"Tap a flag to see why\" only offers Mark as reviewed; the why is behind the (i) on the list\n- DEMO C's flags show twice on a computer, without dates\n- Stable and Archive take effect on one tap with no confirmation; archived patients aren't marked in People\n- feedback tickets can't be opened\n- Reset password is offered for a stopped account (it doesn't restore access)\n- the web Community tab shows the browser's raw error if the forum can't be reached\n- the invite dialog always says iPhones open Steady in the browser; the Android join page offers only the APK (a Play Store link once it's live)\n- an exercise finished early counts as completed; the week's screen-reader label says \"No check-in\" after today's; the administrator's invite dialog says \"your patient\"; the consent statement shows as plain text",
+    "area": "OpenWorks",
+    "priority": "soon",
+    "status": "todo"
   }
 ]
