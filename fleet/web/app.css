@@ -60,5 +60,6 @@ textarea,select{font:inherit;padding:9px 11px;border:1px solid var(--line);borde
 p.progress{display:flex;align-items:center;gap:12px}p.progress svg{max-width:320px}
 .b-track{fill:var(--line)}.b-done{fill:var(--good)}
 :focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+iframe.alive{position:absolute;width:0;height:0;border:0;visibility:hidden}
 footer{max-width:1200px;margin:30px auto;padding:0 20px;color:var(--ink2);font-size:.8rem}
 @media (max-width:640px){dl{grid-template-columns:1fr}dt{margin-top:6px}}
