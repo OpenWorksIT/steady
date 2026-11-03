@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Where things are: a psychologist's bottom bar is Patients, Alerts and (when the server has it)
-// Community; the gear opens Settings as a page; Settings > Practice holds the library and the
-// practice's own business, each for whoever had it before.
+// Community; a practice admin's is People and Community, or no bar without the community; the
+// gear opens Settings as a page; Settings > Practice holds the library and the practice's own
+// business, each for whoever had it before.
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -10,8 +11,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:steady/app_state.dart';
+import 'package:steady/models.dart';
 import 'package:steady/services/api.dart';
 import 'package:steady/ui/clinician/clinician_shell.dart';
+import 'package:steady/ui/practice/admin_shell.dart';
 import 'package:steady/ui/practice/practice_screen.dart';
 import 'package:steady/ui/settings_screen.dart';
 import 'package:steady/ui/theme.dart';
@@ -84,6 +87,33 @@ void main() {
     expect(find.widgetWithText(Badge, '2'), findsOneWidget, reason: 'the unread count stays on Alerts');
     await tester.pumpWidget(bar(community: true));
     expect(labels(), ['Patients', 'Alerts', 'Community']);
+  });
+
+  testWidgets("a practice admin's tabs are People and, when the server has it, Community", (tester) async {
+    expect(adminTabs(community: false).map((d) => d.label).toList(), ['People'], reason:'one tab: no bar, People is the whole screen');
+    await tester.pumpWidget(MaterialApp(
+      theme: buildTheme(Brightness.light),
+      home: Scaffold(bottomNavigationBar: NavigationBar(destinations: adminTabs(community: true))),
+    ));
+    expect(tester.widgetList<NavigationDestination>(find.byType(NavigationDestination)).map((d) => d.label).toList(), ['People', 'Community']);
+  });
+
+  testWidgets("the practice admin's shell: People first, and Community only when the server has it", (tester) async {
+    final state = await _signedIn('admin');
+    await tester.pumpWidget(_app(state, const AdminShell()));
+    await tester.pump();
+    expect(find.byType(NavigationBar), findsNothing, reason: 'no bar without the community');
+    expect(find.widgetWithText(AppBar, 'Practice'), findsOneWidget, reason: 'the people stay their first screen');
+
+    state.config = AppConfig.fromJson({'communityUrl': 'https://community.steadyapp.co.za'});
+    state.changed();
+    await tester.pump();
+    expect(tester.widgetList<NavigationDestination>(find.byType(NavigationDestination)).map((d) => d.label).toList(), ['People', 'Community']);
+    expect(find.widgetWithText(AppBar, 'Practice'), findsOneWidget, reason: 'still People first');
+    expect(find.widgetWithText(AppBar, 'Community'), findsNothing);
+    await tester.tap(find.byIcon(Icons.forum_outlined));
+    await tester.pump();
+    expect(find.widgetWithText(AppBar, 'Community'), findsOneWidget);
   });
 
   testWidgets('the gear opens Settings as a page with a back button, not a pop-up', (tester) async {

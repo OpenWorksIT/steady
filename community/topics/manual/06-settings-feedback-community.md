@@ -37,11 +37,11 @@ To see what the practice has raised and where it stands, go to **Settings > Prac
 
 ## Community
 
-If your practice takes part in the Steady community, psychologists have a **Community** tab in the bottom bar (see the patient list screenshot above). It opens the community forum inside Steady, already signed in as you.
+If your practice takes part in the Steady community, psychologists have a **Community** tab in the bottom bar (see the patient list screenshot above). It opens the community forum inside Steady, already signed in as you. Practice administrators have the **Community** tab too, and see only the Steady manual there.
 
 **Good to know**
 
-- It's for psychologists only, and needs two-step sign-in. Practice administrators and patients don't have it.
+- It needs two-step sign-in. Patients don't have it.
 - It opens only inside Steady, never on its own web address. In a web browser, it works only on your practice's own Steady address.
 - Opening the community is recorded in the audit report.
 

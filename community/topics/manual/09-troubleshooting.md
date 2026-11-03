@@ -24,7 +24,7 @@
 
 **I can't send a questionnaire from the library.** It may still need a licence check: open it under **Needs a licence check** and confirm the practice may use it.
 
-**I don't see the Community tab.** Your practice may not take part in the community yet, or you may be using the web version on an address other than your practice's own Steady address. It's for psychologists only.
+**I don't see the Community tab.** Your practice may not take part in the community yet, or you may be using the web version on an address other than your practice's own Steady address. It's for psychologists and practice administrators.
 
 **Can a patient see my notes or their scores?** No. Notes are for you and colleagues you share the patient with. Scores, bands and flags go only to the psychologist.
 

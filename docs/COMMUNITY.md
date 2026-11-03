@@ -2,8 +2,9 @@
 
 A private forum for psychologists at practices that use Steady: the **Community** tab in the
 Steady app and web app. They talk about the science, build questionnaires together, plan studies
-across practices, and shape how Steady develops. The first community is VR Clinical Psychology
-(three psychologists). Kempie van Rooyen is the community lead.
+across practices, and shape how Steady develops. Practice administrators have the tab too, and
+see only the Steady manual there. The first community is VR Clinical Psychology (three
+psychologists). Kempie van Rooyen is the community lead.
 
 Steady Community is built on [Discourse](https://www.discourse.org) (free software, GPL v2),
 with Steady's own look and words in place of Discourse's ("How it looks" below). It runs at
@@ -28,9 +29,9 @@ The kit is in `community/`:
 
 These hold for everyone, admins included.
 
-1. **Psychologists only, inside Steady.** The forum has no accounts of its own and no sign-up,
-   and it doesn't open on its own in a browser: everyone comes in through the Community tab, as
-   who they are in Steady.
+1. **Psychologists only, inside Steady** (and practice administrators, for the Steady manual
+   only). The forum has no accounts of its own and no sign-up, and it doesn't open on its own
+   in a browser: everyone comes in through the Community tab, as who they are in Steady.
 2. **Steady's sign-in for everyone**: password, authenticator code and a linked device, at the
    person's own practice. No forum passwords. No sign-in through Google, Facebook, Apple,
    Microsoft, GitHub or any other outside service. No emailed sign-in links.
@@ -43,26 +44,33 @@ These hold for everyone, admins included.
    sees only numbers (how many topics, posts and active members), never titles or text.
 
 Rules 1 and 2, and the outside-services part of rule 5, are enforced by the forum's settings,
-the sign-in bridge and the forum's Caddy site. Rule 5 is enforced by category permissions. Rules 3 and 4 depend on the people posting; the
+the sign-in bridge and the forum's Caddy site. Rule 5, and practice administrators' part of
+rule 1, are enforced by category permissions. Rules 3 and 4 depend on the people posting; the
 welcome post and the "If someone posts patient information" steps below back them up.
 
 ## Who sees what
 
-| Area | Clinicians | OpenWorks IT |
-|---|---|---|
-| Announcements | Read and reply | Read, post and reply |
-| Steady manual (how to use Steady, with screenshots) | Read and reply | Read, post and reply |
-| The science (how each part of Steady works and why, with references) | Read and reply | Numbers only |
-| Clinical practice | Read, post and reply | Numbers only |
-| Research and studies | Read, post and reply | Numbers only |
-| Questionnaires and tools | Read, post and reply | Numbers only |
-| Steady development | Read, post and reply | Read, post and reply |
-| Tea room (introductions, the work and life around it; Discourse's General, renamed) | Read, post and reply | Numbers only |
-| A practice's private category (optional) | That practice only | Numbers only |
-| Personal messages | Their own | Their own, including ones clinicians send to OpenWorks |
+| Area | Clinicians | Practice administrators | OpenWorks IT |
+|---|---|---|---|
+| Announcements | Read and reply | No | Read, post and reply |
+| Steady manual (how to use Steady, with screenshots) | Read and reply | Read and reply | Read, post and reply |
+| The science (how each part of Steady works and why, with references) | Read and reply | No | Numbers only |
+| Clinical practice | Read, post and reply | No | Numbers only |
+| Research and studies | Read, post and reply | No | Numbers only |
+| Questionnaires and tools | Read, post and reply | No | Numbers only |
+| Steady development | Read, post and reply | No | Read, post and reply |
+| Tea room (introductions, the work and life around it; Discourse's General, renamed) | Read, post and reply | No | Numbers only |
+| A practice's private category (optional) | That practice only | No | Numbers only |
+| Personal messages | Their own | Not given them (see below) | Their own, including ones clinicians send to OpenWorks |
 
-Admins (the community lead) can see everything. Admins and moderators can always post in
+Forum admins (the community lead) can see everything. Admins and moderators can always post in
 Announcements.
+
+**Practice administrators** (the `practice-admins` group) see the Steady manual and nothing
+else: they read it and ask in its replies, which clinicians and OpenWorks read too. `setup.py`
+doesn't let them send personal messages the way it lets clinicians and OpenWorks; Discourse's
+own trust level 1 (reached after some reading) still would, unless
+`personal_message_enabled_groups` is narrowed in Admin > Settings.
 
 **Talking to OpenWorks.** Post in Steady development and mention `@openworks`, or send a
 personal message to `@openworks` (the group) or to one of its people. A mention of `@openworks`
@@ -81,9 +89,9 @@ clinical areas. They can't keep out someone who reads the database directly.
 ## Signing in through Steady
 
 The community opens only inside Steady: the **Community** tab of the app and the web app, for
-psychologists (and OpenWorks support). It opens as whoever is signed in to Steady, with no
-second sign-in. Opened straight in a browser (a bookmark, a link in an email), it shows "The
-Steady Community opens inside Steady" instead.
+psychologists, practice administrators (the Steady manual only) and OpenWorks support. It opens
+as whoever is signed in to Steady, with no second sign-in. Opened straight in a browser (a
+bookmark, a link in an email), it shows "The Steady Community opens inside Steady" instead.
 
 Each practice has its own Steady server, so the forum trusts OpenWorks' **sign-in bridge**
 (`community/signin/`, at signin.steadyapp.co.za), through Discourse's own way of handing sign-in
@@ -112,21 +120,25 @@ code. The bridge keeps nothing: a sign-in under way is held in memory for two mi
 | In Steady | In the community |
 |---|---|
 | Psychologist, address on the practice's list | `clinicians`, and the practice's own group if it has one |
+| Practice administrator, address on the practice's list | `practice-admins` only: the Steady manual |
 | OpenWorks support, through the server marked `support`, address on the OpenWorks list | `openworks` only |
-| Practice admin, patients | No Community tab, and refused |
+| Patients | No Community tab, and refused |
 | Staff without two-step sign-in | Refused until they set it up in Steady |
 
 Each sign-in is in the practice's access log (Settings > Practice > Audit report: "Signed in to the
 community forum").
 
 **Email addresses.** The bridge's settings list, for each practice, the addresses its
-psychologists use: its own domain (`@vrpsych.co.za`), or single addresses (always for Gmail and
-other public mail services). OpenWorks support's addresses are listed one by one, and come in
-only through the one server marked `support`, which OpenWorks alone runs. No address or domain
-may be on two lists, and the bridge refuses to start if one is. So a practice can only ever bring
-in its own people: it can't sign anyone in as another practice's psychologist, as Kempie, or as
-OpenWorks. Someone who already has a forum account with their address carries on with it; if
-their address moves to another practice's list, they leave the old practice's group.
+psychologists and practice administrators use (one list covers both; the role in Steady decides
+which groups they join): its own domain (`@vrpsych.co.za`), or single addresses (always for
+Gmail and other public mail services). OpenWorks support's addresses are listed one by one, and
+come in only through the one server marked `support`, which OpenWorks alone runs. No address or
+domain may be on two lists, and the bridge refuses to start if one is. So a practice can only
+ever bring in its own people: it can't sign anyone in as another practice's psychologist, as
+Kempie, or as OpenWorks. Someone who already has a forum account with their address carries on with it; if
+their address moves to another practice's list, they leave the old practice's group, and if
+their role in Steady changes (an administrator who becomes a psychologist, or the other way
+round), their groups follow at their next sign-in.
 
 Kempie's address is the forum's developer address (`community.yml`): his account is made admin
 when he arrives. Only VR's list covers it.
@@ -218,15 +230,16 @@ sudo chown 65532:65532 /var/lib/steady-signin/config.json && sudo chmod 600 /var
 
 - `id`: lower-case letters, digits and dashes. It is part of every forum account made through
   that practice: **never change it** once people have signed in.
-- `name`: shown beside its psychologists' names in the forum.
+- `name`: shown beside its psychologists' and administrators' names in the forum.
 - `url`: the practice's Steady address.
-- `emails`: its psychologists' addresses, or its own domain (see "Email addresses" above).
+- `emails`: its psychologists' and practice administrators' addresses, or its own domain (see
+  "Email addresses" above).
 - `openworks`: OpenWorks IT's support addresses, one by one.
 - `support` (one server only): OpenWorks support comes in through this one, a server OpenWorks
   alone runs (the test server). Anyone who can make a support account there could come in as
   OpenWorks, so never a practice's.
 - `groups` (optional): the practice's private group, e.g. `["practice-vr"]` (see "Adding a
-  practice").
+  practice"), for its psychologists only: its administrators never join it.
 
 Changes are picked up within seconds; no restart needed. Check the file:
 
@@ -303,15 +316,17 @@ does the guarding.)
 
 It:
 
-- creates the groups `clinicians` and `openworks`
+- creates the groups `clinicians`, `practice-admins` and `openworks`
 - creates the eight categories with the permissions in "Who sees what" (the Tea room is
-  Discourse's own General, renamed), and lists them in everyone's side menu
-- closes every other category (Discourse's own General and so on) to OpenWorks and to
-  "everyone", and opens it to clinicians instead. Discourse's own Site Feedback can't be closed
-  (Discourse won't change who sees it), so it is deleted: feedback goes to Steady development
+  Discourse's own General, renamed), and lists them in everyone's side menu (each member sees
+  only the ones open to them)
+- closes every other category (Discourse's own General and so on) to OpenWorks, practice
+  administrators and "everyone", and opens it to clinicians instead. Discourse's own Site
+  Feedback can't be closed (Discourse won't change who sees it), so it is deleted: feedback goes
+  to Steady development
 - sets the site settings: sign-in required, sign-in through Steady only, earlier versions of
   edited posts visible to staff only, permanent delete allowed, daily backups (seven kept),
-  personal messages for both groups
+  personal messages for clinicians and OpenWorks (not practice administrators)
 - checks the pinned settings it can read back, and that no outside sign-in is enabled
 - posts the welcome and guidelines topic in Announcements and pins it
 - posts the first topics, from `community/topics/` ("The first topics")
@@ -342,7 +357,8 @@ in the container, and the lines after it go to the wrong place.)
 ## 5. First visits
 
 Kempie first: in Steady, **Community**. His address is in `DISCOURSE_DEVELOPER_EMAILS`, so his
-account is made admin as he arrives. The other VR psychologists just choose Community too.
+account is made admin as he arrives. The other VR psychologists just choose Community too, and
+so does VR's practice administrator, who lands in `practice-admins` and sees the Steady manual.
 Nobody is invited; nobody chooses a forum password.
 
 OpenWorks staff choose Community in Steady with their OpenWorks support account on the server
@@ -412,11 +428,12 @@ is GPL v2; nothing in its source is changed, only its settings, theme and texts.
 
 1. **Its Steady server:** a key and the three lines in its `.env` (step 2). For the web app's
    Community tab, a `steadyapp.co.za` address (see "Web addresses").
-2. **The bridge:** its entry in `config.json`, with its own `id`, key and address list.
+2. **The bridge:** its entry in `config.json`, with its own `id`, key and address list. The
+   one list covers the practice's psychologists and its practice administrators.
 3. **Optional, a private area:** `python3 community/setup.py --practice <id>="<Practice name>"`
    (with a key, as in step 4) makes the group `practice-<id>` and its category. Add
-   `"groups": ["practice-<id>"]` to the practice's entry, and its psychologists join the group
-   as they arrive.
+   `"groups": ["practice-<id>"]` to the practice's entry, and its psychologists (not its
+   administrators) join the group as they arrive.
 
 ## The test server in the community
 
@@ -566,7 +583,7 @@ The bridge says why it refused someone in its log, never with names or addresses
 
 | Symptom | Check |
 |---|---|
-| No Community tab | The practice's server lacks one of the three `.env` lines (step 2), the key is under 32 characters, or `docker compose up -d` wasn't run after adding them. Only psychologists and OpenWorks support get the tab. |
+| No Community tab | The practice's server lacks one of the three `.env` lines (step 2), the key is under 32 characters, or `docker compose up -d` wasn't run after adding them. Only psychologists, practice administrators and OpenWorks support get the tab. |
 | "The community isn't available" | The bridge's `config.json` is missing or wrong: `signin check` (step 2) says what. |
 | "Your practice's Steady isn't set up for the community, or its key doesn't match" | The practice's `key` in `config.json` isn't the same as `STEADY_COMMUNITY_KEY` on its server, or the practice isn't in `config.json`. |
 | "...sends people to ..., not here" | `STEADY_COMMUNITY_SIGNIN` on that server isn't `https://signin.steadyapp.co.za`. |

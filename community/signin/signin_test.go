@@ -151,7 +151,7 @@ func TestThePsychologistInSteadyArrives(t *testing.T) {
 	want := map[string]string{
 		"nonce": "a1b2c3d4e5f6a7b8", "external_id": "vr:abcdefghij12345", "email": "kempie@vrpsych.example",
 		"name": "Dr Kempie van Rooyen", "title": "VR Clinical Psychology", "add_groups": "clinicians,practice-vr",
-		"remove_groups": "openworks", "require_activation": "false",
+		"remove_groups": "practice-admins,openworks", "require_activation": "false",
 	}
 	for k, x := range want {
 		if v.Get(k) != x {
@@ -173,7 +173,7 @@ func TestOpenWorksSupportJoinsOpenWorksOnly(t *testing.T) {
 	r := newRig(t, settings())
 	c := r.enter(testKey, r.note("support", "it@openworks.example"))
 	v := forumGets(t, r.get(forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login"), c))
-	if v.Get("add_groups") != "openworks" || v.Get("remove_groups") != "clinicians,practice-vr" || v.Get("external_id") != "test:abcdefghij12345" || v.Get("title") != "OpenWorks IT" {
+	if v.Get("add_groups") != "openworks" || v.Get("remove_groups") != "clinicians,practice-admins,practice-vr" || v.Get("external_id") != "test:abcdefghij12345" || v.Get("title") != "OpenWorks IT" {
 		t.Fatalf("support: %v", v)
 	}
 }
@@ -182,8 +182,59 @@ func TestMovingPracticeLeavesTheOldPracticesGroup(t *testing.T) {
 	r := newRig(t, settings())
 	c := r.enter(testKey, r.note("clinician", "tester@gmail.com"))
 	v := forumGets(t, r.get(forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login"), c))
-	if v.Get("add_groups") != "clinicians" || v.Get("remove_groups") != "openworks,practice-vr" {
+	if v.Get("add_groups") != "clinicians" || v.Get("remove_groups") != "practice-admins,openworks,practice-vr" {
 		t.Fatalf("groups: %v", v)
+	}
+}
+
+func TestThePracticeAdminSeesTheManualOnly(t *testing.T) {
+	r := newRig(t, settings())
+	// on the practice's own list, like its psychologists
+	c := r.enter(vrKey, r.note("admin", "Desk@VRpsych.example"))
+	v := forumGets(t, r.get(forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login"), c))
+	want := map[string]string{
+		"external_id": "vr:abcdefghij12345", "email": "desk@vrpsych.example", "title": "VR Clinical Psychology",
+		// never clinicians, OpenWorks or the practice's private group (that's for its psychologists)
+		"add_groups": "practice-admins", "remove_groups": "clinicians,openworks,practice-vr",
+	}
+	for k, x := range want {
+		if v.Get(k) != x {
+			t.Errorf("%s = %q, want %q", k, v.Get(k), x)
+		}
+	}
+}
+
+func TestRefusalsSayWhoTheCommunityIsFor(t *testing.T) {
+	r := newRig(t, settings())
+	for _, n := range []note{r.note("patient", "p@vrpsych.example"), r.note("support", "it@openworks.example")} {
+		w := r.get(steadySays(vrKey, n))
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "psychologists, practice administrators and OpenWorks IT") {
+			t.Errorf("%s: %d %s", n.Role, w.Code, w.Body.String())
+		}
+	}
+}
+
+// Someone whose role changes in Steady (an administrator who becomes a psychologist, or the
+// other way round) ends up in the right groups at their next sign-in.
+func TestGroupsFollowTheRole(t *testing.T) {
+	c := &Config{}
+	b, _ := json.Marshal(settings())
+	json.Unmarshal(b, c)
+	if err := c.validate(); err != nil {
+		t.Fatal(err)
+	}
+	vr := c.practice("vr")
+	for role, want := range map[string][2]string{
+		"clinician": {"clinicians,practice-vr", "practice-admins,openworks"},
+		"admin":     {"practice-admins", "clinicians,openworks,practice-vr"},
+		"support":   {"openworks", "clinicians,practice-admins,practice-vr"},
+		// refused before it gets here; if one ever did, it would join nothing
+		"patient": {"", "clinicians,practice-admins,openworks,practice-vr"},
+	} {
+		add, remove := groupsFor(role, vr, c)
+		if got := [2]string{strings.Join(add, ","), strings.Join(remove, ",")}; got != want {
+			t.Errorf("%s: add %q remove %q, want %q", role, got[0], got[1], want)
+		}
 	}
 }
 
@@ -270,8 +321,17 @@ func TestSteadysNoteIsChecked(t *testing.T) {
 			n.Aud = "https://signin.elsewhere.example"
 			return steadySays(vrKey, n)
 		},
-		"the practice admin": func(r *rig) string { return steadySays(vrKey, r.note("admin", "desk@vrpsych.example")) },
-		"a patient":          func(r *rig) string { return steadySays(vrKey, r.note("patient", "p@vrpsych.example")) },
+		"a patient": func(r *rig) string { return steadySays(vrKey, r.note("patient", "p@vrpsych.example")) },
+		"a practice admin not on the practice's list": func(r *rig) string {
+			return steadySays(vrKey, r.note("admin", "desk@elsewhere.example"))
+		},
+		"another practice's admin": func(r *rig) string {
+			// the test server vouching for a VR address
+			return steadySays(testKey, r.note("admin", "desk@vrpsych.example"))
+		},
+		"a practice admin with OpenWorks' address": func(r *rig) string {
+			return steadySays(testKey, r.note("admin", "it@openworks.example"))
+		},
 		"another practice's psychologist": func(r *rig) string {
 			// the test server vouching for a VR address
 			return steadySays(testKey, r.note("clinician", "kempie@vrpsych.example"))
@@ -421,6 +481,7 @@ func TestSettingsAreChecked(t *testing.T) {
 		"short key":             func(m map[string]any) { practice(m, 1)["key"] = "short" },
 		"practice over http":    func(m map[string]any) { practice(m, 1)["url"] = "http://test.example.org" },
 		"the clinicians group":  func(m map[string]any) { practice(m, 0)["groups"] = []string{"clinicians"} },
+		"the admins' group":     func(m map[string]any) { practice(m, 0)["groups"] = []string{"practice-admins"} },
 		"a group of admins":     func(m map[string]any) { practice(m, 0)["groups"] = []string{"admins x"} },
 		"no address list":       func(m map[string]any) { delete(practice(m, 1), "emails") },
 		"an empty list":         func(m map[string]any) { practice(m, 1)["emails"] = []string{} },

@@ -49,8 +49,9 @@ routerAdd("GET", "/api/steady/config", (e) => {
     deviceLink: require(`${__hooks}/lib/devices.js`).required(),
     // the newest Android build on this server, so older copies can offer the update
     app: require(`${__hooks}/lib/dist.js`).appInfo(s.publicDir()),
-    // the Steady community for psychologists (docs/COMMUNITY.md): its Community tab opens it,
-    // signed in through Steady; only when this server is set up for it (lib/community.js)
+    // the Steady community for psychologists and practice admins (docs/COMMUNITY.md): its
+    // Community tab opens it, signed in through Steady; only when this server is set up for it
+    // (lib/community.js)
     communityUrl: (require(`${__hooks}/lib/community.js`).config() || { forum: "" }).forum
   });
 });
