@@ -1,0 +1,42 @@
+// Steady's Android push bridge: Firebase Cloud Messaging only (no Analytics, no
+// google-services plugin; the app passes its Firebase settings in at run time).
+// SPDX-License-Identifier: AGPL-3.0-or-later
+group = "za.co.openworks.steady.fcm"
+version = "0.1.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+
+android {
+    namespace = "za.co.openworks.steady.fcm"
+    compileSdk = 36
+
+    defaultConfig {
+        // the app's own minimum (Health Connect)
+        minSdk = 26
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // the same Firebase release FlutterFire's firebase_core 5.1.0 builds on
+    implementation platform("com.google.firebase:firebase-bom:35.0.2")
+    implementation "com.google.firebase:firebase-messaging"
+}

@@ -2,7 +2,7 @@
 //
 // Shown once on first launch, before sign-in. DRAFT for the practice to approve.
 // Change [privacyNoticeVersion] whenever the text changes so everyone sees it again.
-const privacyNoticeVersion = 'privacy-3';
+const privacyNoticeVersion = 'privacy-4';
 
 const privacyNoticeTitle = 'Your privacy';
 
@@ -36,10 +36,10 @@ const privacyNoticeSections = <(String, String)>[
     'How it is protected',
     'Information travels over encrypted connections and is stored on the practice\'s own servers in South Africa. '
         'Your psychologist can only see their own patients, and who opens your record, and when, is logged. Practice '
-        'staff sign in with a password, a code and a device they have linked. Notifications reach your phone through '
-        'Apple or your Android phone\'s notification service and only say that there is something new: never your '
-        'name, scores or what you wrote. Emails to you are only about your account (such as a deletion you asked '
-        'for) and never contain what you shared.',
+        'staff sign in with a password, a code and a device they have linked. Notifications reach Android phones '
+        'through Google\'s Firebase Cloud Messaging and iPhones through Apple, and only ever say "New notification": '
+        'never your name, scores or what you wrote. Emails to you are only about your account (such as a deletion you '
+        'asked for) and never contain what you shared.',
   ),
   (
     'Your rights under POPIA',

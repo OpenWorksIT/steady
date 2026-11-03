@@ -8,8 +8,8 @@
 # matching signed web-v1.0.0 tag (the very build the signed release names). A push to GitHub,
 # a stolen token or a compromised CI run can then not reach a practice's server. OpenWorks signs
 # releases with deploy/release.sh. Without the file it follows the main and web-dist branches,
-# as test servers do, but only when .env says so (STEADY_UNSIGNED=yes, or STEADY_TRACK=v1 for
-# the v1 and web-dist-v1 branches), and never after a signed release was installed.
+# as test servers do, but only when .env says so (STEADY_UNSIGNED=yes, or STEADY_TRACK=test for
+# the test and web-dist-test branches, as vps1), and never after a signed release was installed.
 #
 # The web app's files are checked before use: no links, nothing outside its folder.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -95,9 +95,11 @@ main() {
   fi
 
   echo "Building and starting..."
-  # newer base images and Caddy too, not only Steady's own code (they carry security fixes)
-  docker compose pull --ignore-buildable -q 2>/dev/null || docker compose pull -q caddy 2>/dev/null || true
-  docker compose build --pull
+  # Only the versions this release names: Caddy, PocketBase and the base images are pinned in the
+  # repository, and a newer one arrives as a pull request that runs on the test branch (vps1)
+  # first and reaches main only when OpenWorks says so (docs/UPKEEP.md). Nothing is pulled fresh
+  # from Docker Hub here, so an outside update can't change a practice's server on its own.
+  docker compose build
   docker compose up -d
 
   # each build leaves the previous images behind; without this they slowly fill the disk

@@ -17,8 +17,8 @@ import (
 	"time"
 )
 
-// FCM sends through Firebase Cloud Messaging HTTP v1. Optional: only used if the practice
-// chooses Google delivery for Android. UnifiedPush is the default.
+// FCM sends to Android phones through Firebase Cloud Messaging HTTP v1, with the service-account
+// key of OpenWorks IT's Firebase project (FCM_CREDENTIALS_FILE, deploy/secrets/fcm.json).
 type FCM struct {
 	projectID, clientEmail, tokenURI string
 	key                              crypto.Signer
@@ -35,11 +35,13 @@ func newFCMFromEnv() (*FCM, error) {
 	if path == "" {
 		return nil, nil
 	}
+	// a missing file comes back as fs.ErrNotExist: FCM is off and the relay carries on
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("fcm credentials: %w", err)
 	}
 	var sa struct {
+		Type        string `json:"type"`
 		ProjectID   string `json:"project_id"`
 		ClientEmail string `json:"client_email"`
 		PrivateKey  string `json:"private_key"`
@@ -47,6 +49,9 @@ func newFCMFromEnv() (*FCM, error) {
 	}
 	if err := json.Unmarshal(raw, &sa); err != nil {
 		return nil, fmt.Errorf("fcm credentials: %w", err)
+	}
+	if sa.Type != "service_account" || sa.ProjectID == "" || sa.ClientEmail == "" {
+		return nil, fmt.Errorf("fcm credentials: %s isn't a service-account key (Firebase console > Project settings > Service accounts > Generate new private key; google-services.json doesn't go on servers)", path)
 	}
 	key, err := parsePrivateKey([]byte(sa.PrivateKey))
 	if err != nil {
@@ -95,18 +100,34 @@ func (f *FCM) accessToken(ctx context.Context) (string, error) {
 	return f.access, nil
 }
 
-func (f *FCM) Send(ctx context.Context, t Target, m Message) (Outcome, error) {
+// fcmPayload is the whole message Google gets: the device's token, the notification's words,
+// and when to give up (a day, as for Apple). No "data", no collapse key, no tag.
+func fcmPayload(token string) []byte {
+	type notification struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	type android struct {
+		Priority string `json:"priority"`
+		TTL      string `json:"ttl"`
+	}
+	type message struct {
+		Token        string       `json:"token"`
+		Notification notification `json:"notification"`
+		Android      android      `json:"android"`
+	}
+	body, _ := json.Marshal(struct {
+		Message message `json:"message"`
+	}{message{token, notification{noticeTitle, noticeBody}, android{"high", "86400s"}}})
+	return body
+}
+
+func (f *FCM) Send(ctx context.Context, t Target) (Outcome, error) {
 	access, err := f.accessToken(ctx)
 	if err != nil {
 		return Failed, err
 	}
-	msg := map[string]any{"message": map[string]any{
-		"token":        t.Token,
-		"notification": map[string]string{"title": m.Title, "body": m.Body},
-		"data":         m.Data,
-		"android":      map[string]any{"priority": "high"},
-	}}
-	body, _ := json.Marshal(msg)
+	body := fcmPayload(t.Token)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, f.SendURL, bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+access)
 	req.Header.Set("Content-Type", "application/json")

@@ -10,6 +10,7 @@ import '../wearable/wearable_sync.dart';
 import '../build_info.dart';
 import 'auth/change_password_screen.dart';
 import 'auth/devices_screen.dart';
+import 'auth/screen_lock.dart';
 import 'auth/server_screen.dart';
 import 'auth/two_step_screen.dart';
 import 'clinician/server_updates_screen.dart';
@@ -18,10 +19,10 @@ import 'source_link.dart';
 import 'patient/delete_account_screen.dart';
 import 'calm.dart';
 import 'theme.dart';
-import 'widgets.dart';
 import 'clinician/feedback_inbox_screen.dart';
 import 'clinician/patient_care.dart';
 import 'practice/audit_screen.dart';
+import 'practice/operator_agreement_screen.dart';
 
 Future<void> showSettingsSheet(BuildContext context) => showModalBottomSheet(
       context: context,
@@ -38,16 +39,6 @@ class _SettingsSheet extends StatefulWidget {
 }
 
 class _SettingsSheetState extends State<_SettingsSheet> {
-  List<String> _distributors = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    PushService.instance.distributors().then((d) {
-      if (mounted) setState(() => _distributors = d);
-    }).catchError((_) {});
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -61,32 +52,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           const SizedBox(height: 18),
           Text('Notifications', style: context.tt.titleMedium),
           const SizedBox(height: 4),
-          Text(
-            state.pushEnabled
-                ? 'On. Notifications never show names or answers, only that there is something new.'
-                : kIsWeb
-                    ? 'The web version can\'t send notifications. New items appear here while the page is open; install the app for alerts.'
-                    : android
-                    ? 'Off. On Android, Steady delivers notifications through a free app such as ntfy, so no data goes to Google. Install one, then choose it below.'
-                    : 'Off. Allow notifications for Steady in your phone\'s settings.',
-            style: TextStyle(color: context.sc.ink2),
-          ),
-          if (android && _distributors.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            for (final d in _distributors)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.notifications_active_outlined),
-                title: Text(d.split('.').last),
-                subtitle: Text(d),
-                onTap: () async {
-                  await PushService.instance.useDistributor(d);
-                  await state.enablePush();
-                  if (context.mounted) showSnack(context, 'Notifications set up');
-                },
-              ),
-          ],
-          if (!state.pushEnabled && !kIsWeb) ...[
+          Text(pushStatusText(on: state.pushEnabled), style: TextStyle(color: context.sc.ink2)),
+          // a copy built without Firebase can't get notifications on Android, however often it tries
+          if (!state.pushEnabled && !kIsWeb && (!android || kAndroidPushBuiltIn)) ...[
             const SizedBox(height: 8),
             OutlinedButton(onPressed: () => state.enablePush(), child: const Text('Try again')),
           ],
@@ -129,6 +97,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           ],
           const SizedBox(height: 12),
           Text('Your account', style: context.tt.titleMedium),
+          // patients on a phone: lock Steady with the phone's screen lock, off unless they turn it on
+          if (state.isPatient && !kIsWeb) const _LockSwitch(),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.password),
@@ -202,6 +172,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               ),
             if (state.api.isManager)
               _Link(icon: Icons.policy_outlined, title: 'Audit report', subtitle: 'Who opened or changed what', open: () => const AuditScreen()),
+            if (state.api.isManager || state.api.isSupport)
+              _Link(icon: Icons.description_outlined, title: 'Operator agreement', subtitle: 'What the practice signed with OpenWorks IT', open: () => const OperatorAgreementCopyScreen()),
             if (state.api.canSeeHealth && !state.api.canUpdate)
               _Link(icon: Icons.monitor_heart_outlined, title: 'Server health', subtitle: 'How the practice\'s server is coping', open: () => const ServerHealthScreen()),
             if (!state.api.isSupport)
@@ -288,6 +260,56 @@ class _CareTeam extends StatelessWidget {
           ]);
         },
       ),
+    );
+  }
+}
+
+/// Patients on a phone: "Lock Steady" (ui/auth/screen_lock.dart). Kept on this phone only.
+class _LockSwitch extends StatefulWidget {
+  const _LockSwitch();
+  @override
+  State<_LockSwitch> createState() => _LockSwitchState();
+}
+
+class _LockSwitchState extends State<_LockSwitch> {
+  bool _noLock = false;
+  bool _busy = false;
+
+  Future<void> _set(String id, bool on) async {
+    if (!on) return PatientLock.instance.set(id, false);
+    setState(() => _busy = true);
+    final has = await phoneHasScreenLock();
+    // asked once now, so the patient knows it works before Steady relies on it
+    final ok = has && await unlockWithScreenLock('Turn on Lock Steady');
+    if (!mounted) return;
+    setState(() {
+      _noLock = !has;
+      _busy = false;
+    });
+    if (ok) await PatientLock.instance.set(id, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final id = AppScope.api(context).myId;
+    PatientLock.instance.load(id);
+    return ListenableBuilder(
+      listenable: PatientLock.instance,
+      builder: (context, _) {
+        final on = PatientLock.instance.isOn(id) ?? false;
+        return SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.lock_outline),
+          title: const Text('Lock Steady'),
+          subtitle: Text(_noLock
+              ? 'This phone has no screen lock. Set a PIN, pattern, password or fingerprint in the phone\'s settings first.'
+              : on
+                  ? 'On: Steady asks for your phone\'s screen lock when you open it, and after two minutes away'
+                  : 'Ask for your phone\'s screen lock (fingerprint, face, PIN or pattern) when you open Steady'),
+          value: on,
+          onChanged: _busy ? null : (v) => _set(id, v),
+        );
+      },
     );
   }
 }

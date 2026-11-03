@@ -27,6 +27,7 @@ import urllib.parse
 import urllib.request
 
 import devicelink
+import radrdata
 
 
 def load_env():
@@ -99,6 +100,20 @@ def check(area, what, ok, detail=None):
 
 def items(resp):
     return resp.get("items", []) if isinstance(resp, dict) else []
+
+
+def claims(token):
+    """A token's claims, unchecked (the server checks them)."""
+    try:
+        part = token.split(".")[1]
+        return json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+    except (AttributeError, IndexError, ValueError):
+        return {}
+
+
+def lasts(token):
+    """Seconds until a token runs out."""
+    return claims(token).get("exp", 0) - time.time()
 
 
 # ---------------------------------------------------------------- setup
@@ -391,8 +406,7 @@ def run(su):
     s, r = call("GET", "/api/collections/auditlog/records", doc1)
     check(T, "psychologists can't read the audit log", s == 403 or (s == 200 and not items(r)), r)
     s, r = call("POST", "/api/collections/devices/records", patB,
-                {"user": a, "platform": "android", "provider": "unifiedpush",
-                 "token": json.dumps({"endpoint": "https://ntfy.sh/up" + tag, "p256dh": "B" + "A" * 86, "auth": "A" * 22})})
+                {"user": a, "platform": "android", "provider": "fcm", "token": "sec" + tag + ":APA91b" + "x" * 140})
     check(T, "a push registration can't be made for someone else", (s in (400, 403)) or (s == 200 and r.get("user") == b), r)
 
     s, r = call("POST", "/api/steady/self-start", patA, {"instrument": phq9, "result": {}})
@@ -628,6 +642,45 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
         check(L, "a linked device still needs the authenticator code", s == 400 and not r.get("token"), r)
         s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": laptop})
         check(L, "a linked device signs in with password and code", s == 200 and r.get("token") and not r.get("linkDevice"), r)
+
+        # staff in a browser: the session belongs to the tab. Short tokens, renewed while the tab
+        # is open; a copy taken from a closed tab soon stops working (lib/sessions.js)
+        B = "browser tab sessions"
+        tab = r.get("token", "")
+        mins = float(ENV.get("STEADY_TAB_SESSION_MINUTES", "60"))
+        short = lambda t: claims(t).get("steadyTab") is True and abs(lasts(t) - mins * 60) < 120
+        long_ = lambda t: not claims(t).get("steadyTab") and lasts(t) > 24 * 3600
+        check(B, f"staff signing in from a browser get a short token ({mins:g} minutes)", short(tab), claims(tab))
+        check(B, "...and so does linking a new browser", short(web), claims(web))
+        check(B, "staff on a phone keep the usual length", long_(S5.token), claims(S5.token))
+        check(B, "patients keep the usual length", long_(patA), claims(patA))
+        lap = {"X-Steady-Device": laptop["key"]}
+        s, r = call("POST", "/api/collections/users/auth-refresh", tab, headers=lap)
+        tab2 = r.get("token", "") if isinstance(r, dict) else ""
+        check(B, "renewing a tab's token gives another short one", s == 200 and short(tab2), [s, claims(tab2)])
+        for label, hdrs in (("a phone's device key", {"X-Steady-Device": S5.device["key"]}), ("no device key", {})):
+            s, r = call("POST", "/api/collections/users/auth-refresh", tab2, headers=hdrs)
+            t = r.get("token", "") if isinstance(r, dict) else ""
+            check(B, f"a tab's token can't be renewed into a long one (with {label})", s == 200 and short(t), [s, claims(t)])
+        s, r = call("GET", "/api/steady/overview", tab2, headers=lap)
+        check(B, "a renewed token works", s == 200, [s, r])
+        s, r = call("GET", "/api/steady/overview", tab, headers=lap)
+        check(B, "the older token works until its own time runs out", s == 200, [s, r])
+        s, r = call("POST", "/api/collections/users/auth-refresh", S5.token)
+        check(B, "renewing a phone's token keeps the usual length", s == 200 and long_(r.get("token", "")), [s, claims(r.get("token", ""))])
+        if mins <= 2.5:
+            # only against a server started with a short STEADY_TAB_SESSION_MINUTES (and the
+            # same value given to this script); CI's server keeps the real hour
+            time.sleep(max(0, lasts(tab)) + 3)
+            s, r = call("GET", "/api/steady/overview", tab, headers=lap)
+            check(B, "an expired tab token reads nothing", s == 401, [s, r])
+            s, r = call("POST", "/api/collections/users/auth-refresh", tab, headers=lap)
+            check(B, "...and can't be renewed", s == 401, [s, r])
+            s, r = call("GET", "/api/steady/overview", S5.token)
+            check(B, "...while the phone's session goes on", s == 200, [s, r])
+            # a new browser session for the checks below (the first one has run out too)
+            s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": laptop})
+            web = r.get("token") or web
         other = devicelink.new_device("web", "Elsewhere")
         s, r = call("POST", "/api/steady/auth/sign-in", body={"email": S5.email, "password": S5.password, "code": fresh_code(), "device": other})
         t2 = r.get("ticket", "")
@@ -849,11 +902,13 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     SU = staff(su, f"ow-{tag}@sec.test", "OpenWorks", role="support")
     sup = SU.token
     for path in ("/api/steady/overview", f"/api/steady/patients/{a}/summary", f"/api/steady/patients/{a}/biometrics", f"/api/steady/patients/{a}/radr",
-                 f"/api/steady/patients/{a}/notes", f"/api/steady/patients/{a}/export", "/api/steady/export", "/api/steady/audit",
-                 "/api/steady/admin/people", "/api/steady/patients-archived"):
+                 f"/api/steady/patients/{a}/radr/explain", f"/api/steady/patients/{a}/notes", f"/api/steady/patients/{a}/export", "/api/steady/export",
+                 "/api/steady/audit", "/api/steady/admin/people", "/api/steady/patients-archived"):
         s, r = call("GET", path, sup)
         check(O, f"OpenWorks is refused {path.replace(a, '<id>')}", s in (403, 404), r)
-    for coll in ("checkins", "assignments", "biometrics", "notes", "flagreviews", "auditlog"):
+    s, r = call("POST", f"/api/steady/patients/{a}/radr/review", sup, {"key": "radr:sleep:2026-01-01"})
+    check(O, "OpenWorks can't mark RADR as reviewed", s in (403, 404), r)
+    for coll in ("checkins", "assignments", "biometrics", "notes", "flagreviews", "radrreviews", "auditlog"):
         s, r = call("GET", f"/api/collections/{coll}/records", sup, query={"perPage": 200})
         check(O, f"OpenWorks reads no {coll} through the collections", s in (401, 403, 404) or (s == 200 and not items(r)), r)
     s, r = call("GET", "/api/collections/users/records", sup, query={"perPage": 200})
@@ -985,8 +1040,10 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"target='user:{x}'", "perPage": 50})
     check(X, "the access log keeps the request and the deletion", {"patient.delete_request", "patient.delete"} <= {i["action"] for i in items(logs)}, [i["action"] for i in items(logs)])
 
-    # ---- research: RADR and the psychologist's own daily words
-    Q = "research"
+    operator_agreement(su, tag, adm, sup, doc2, patA)
+
+    # ---- RADR, its explanations and reviews, and the psychologist's own daily words
+    Q = "RADR"
     s, r = call("GET", f"/api/steady/patients/{a}/radr", doc1)
     check(Q, "the psychologist opens RADR for their patient", s == 200 and "days" in r and "concordance" in r, list(r)[:6])
     s, r = call("GET", f"/api/steady/patients/{c}/radr", S2.token)
@@ -997,6 +1054,55 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(Q, "administrators can't open RADR", s in (403, 404), r)
     s, r = call("GET", f"/api/steady/patients/{a}/radr", patA)
     check(Q, "patients can't open RADR", s == 403, r)
+    # a patient whose watch data is away from usual on the latest day: flags to review
+    patR, rid = patient(doc1, "Rhoda (RADR)", "Rhoda")
+    call("POST", "/api/steady/consent", patR, {"kind": "wearable", "version": "wearable-2", "accepted": True})
+    s, r = call("POST", "/api/steady/biometrics", patR, {"platform": "android", "days": radrdata.days()})
+    check(Q, "a patient shares eight weeks of watch data", s == 200 and r.get("saved") == 56, r)
+    s, rr = call("GET", f"/api/steady/patients/{rid}/radr", doc1)
+    flags = rr.get("flags", []) if s == 200 else []
+    check(Q, "RADR lists the domains away from usual as flags, none reviewed yet", len(flags) >= 2 and all(f.get("reviewed") is None for f in flags),
+          [f.get("key") for f in flags])
+    key = flags[0]["key"] if flags else "radr:sleep:2026-01-01"
+    s, x = call("GET", f"/api/steady/patients/{rid}/radr/explain", doc1)
+    sl = (x.get("measures") or {}).get("sleep_min", {}) if s == 200 else {}
+    check(Q, "the psychologist reads why, in plain words, with the data behind it",
+          s == 200 and "away from this person's usual" in x.get("words", "") and "Usually" in sl.get("words", "")
+          and len((sl.get("baseline") or {}).get("values", [])) >= 14 and len(sl.get("window", [])) == 3, [s, x.get("words"), sl.get("words")])
+    s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"action='patient.radr.explain' && patient='{rid}' && actor='{d1}'"})
+    check(Q, "reading it is written to the access log", items(logs), logs)
+    # who may read and mark it: the patient's psychologist, or a colleague it's shared with
+    patO, _ = patient(doc2, "Olu (D2)", "Olu")
+    for who, tok in (("another psychologist", doc2), ("the practice admin", adm), ("the patient", patR), ("another psychologist's patient", patO)):
+        s, r = call("GET", f"/api/steady/patients/{rid}/radr/explain", tok)
+        check(Q, f"{who} can't read RADR's reasoning", s in (403, 404), [s, str(r)[:120]])
+        s, r = call("POST", f"/api/steady/patients/{rid}/radr/review", tok, {"key": key, "note": "x"})
+        check(Q, f"{who} can't mark RADR as reviewed", s in (403, 404), [s, str(r)[:120]])
+    s, r = call("POST", f"/api/steady/patients/{rid}/radr/review", doc1, {"key": "radr:sleep:2020-01-01"})
+    check(Q, "only a flag on the latest day can be marked", s == 400, r)
+    s, r = call("POST", f"/api/steady/patients/{rid}/share", doc1, {"clinician": d2, "shared": True})
+    s, r = call("GET", f"/api/steady/patients/{rid}/radr/explain", doc2)
+    check(Q, "a colleague the patient is shared with reads the reasoning", s == 200 and r.get("flags"), [s, str(r)[:120]])
+    s, r = call("POST", f"/api/steady/patients/{rid}/radr/review", doc2, {"key": key, "note": "Seen at supervision."})
+    check(Q, "and marks a flag as reviewed: who and when", s == 200 and r.get("reviewed", {}).get("by") == "Dr Two" and r["reviewed"].get("at"), r)
+    s, r = call("POST", f"/api/steady/patients/{rid}/share", doc1, {"clinician": d2, "shared": False})
+    s, r = call("POST", f"/api/steady/patients/{rid}/radr/review", doc2, {"key": key})
+    check(Q, "after unsharing, the colleague can't mark it", s == 404, r)
+    s, r = call("GET", f"/api/steady/patients/{rid}/radr/explain", doc2)
+    check(Q, "or read it", s == 404, r)
+    s, rr = call("GET", f"/api/steady/patients/{rid}/radr", doc1)
+    mine = [f for f in rr.get("flags", []) if f.get("key") == key]
+    check(Q, "the psychologist sees who reviewed it", mine and (mine[0].get("reviewed") or {}).get("by") == "Dr Two", mine)
+    for who, tok in (("the patient", patR), ("the psychologist", doc1), ("the practice admin", adm)):
+        s, r = call("GET", "/api/collections/radrreviews/records", tok, query={"perPage": 200})
+        check(Q, f"{who} reads no RADR reviews through the collections", s in (401, 403, 404) or (s == 200 and not items(r)), [s, str(r)[:120]])
+    s, r = call("GET", f"/api/collections/users/records/{rid}", patR)
+    check(Q, "the patient's own record shows nothing of RADR or its reviews", s == 200 and "radrLatest" not in r and "Dr Two" not in json.dumps(r), sorted(r))
+    s, ov = call("GET", "/api/steady/overview", doc1)
+    row = [p for p in ov.get("patients", []) if p["id"] == rid]
+    check(Q, "in the list RADR is an ordering, never an alert", row and row[0].get("radr", {}).get("level") in ("away", "reviewed")
+          and row[0].get("attention", {}).get("why", {}).get("kind") in ("radr", "none", "other"), row[0].get("radr") if row else row)
+    Q = "daily words"
     s, qd1 = call("POST", "/api/collections/quotes/records", doc1, {"text": "One step at a time.", "createdBy": d1, "active": True})
     check(Q, "a psychologist adds words for their patients' daily start", s == 200, qd1)
     s, r = call("POST", "/api/collections/quotes/records", doc2, {"text": "Not mine to add.", "createdBy": d1, "active": True})
@@ -1037,6 +1143,70 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(I, "Sorted can't read another psychologist's patient", s == 404, r)
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"action='integration.feed' && patient='{a}'"})
     check(I, "feed reads are audit-logged", items(logs), logs)
+
+def operator_agreement(su, tag, adm, sup, doc2, patA):
+    """The operator agreement with OpenWorks: any staff member reads it, only the master clinician
+    signs it (after confirming it's them), and nobody changes or deletes a signed copy."""
+    G = "operator agreement"
+    OA = "/api/steady/operator-agreement"
+    MO = staff(su, f"op-{tag}@sec.test", "Dr Operator", master=True)
+    s, st = call("GET", OA, MO.token)
+    brief = lambda r: {k: v for k, v in r.items() if k != "text"} if isinstance(r, dict) else r
+    check(G, "the master clinician reads the agreement and may sign it",
+          s == 200 and st.get("canSign") is True and "Operator agreement" in st.get("text", "") and st.get("version"), [s, brief(st)])
+    for label, tok in (("another psychologist", doc2), ("the practice admin", adm), ("OpenWorks support", sup)):
+        s, r = call("GET", OA, tok)
+        check(G, f"{label} reads it, without the practice's details or the right to sign", s == 200 and r.get("canSign") is False and "prefill" not in r, [s, brief(r)])
+    s, r = call("GET", OA, patA)
+    check(G, "a patient can't read it", s == 403, r)
+    fields = {"practiceName": f"Security Test Practice {tag}", "registration": "PR 0000000", "address": "1 Test Street, Gqeberha",
+              "email": "practice@sec.test", "phone": "041 000 0000", "informationOfficer": {"master": True}}
+    body = {"version": st.get("version"), "sha256": st.get("sha256"), "authorised": True, "signature": "Dr Operator Example", "fields": fields}
+    for label, tok in (("another psychologist", doc2), ("the practice admin", adm), ("OpenWorks support", sup), ("a patient", patA)):
+        s, r = call("POST", OA + "/sign", tok, body)
+        check(G, f"{label} can't sign it", s == 403, r)
+    s, r = call("POST", OA + "/sign", MO.token, body, confirm=False)
+    check(G, "signing asks the master clinician to confirm it's them", s == 403 and r.get("data", {}).get("confirm", {}).get("code") == "confirm_needed", r)
+    s, r = call("POST", OA + "/sign", MO.token, dict(body, version="0.0"))
+    check(G, "only the version that was shown can be signed", s == 400, r)
+    s, r = call("POST", OA + "/sign", MO.token, dict(body, authorised=False))
+    check(G, "the signer must confirm they're authorised to sign for the practice", s == 400, r)
+    s, r = call("POST", OA + "/sign", MO.token, dict(body, fields=dict(fields, address="x" * 5000)))
+    check(G, "an over-long field is refused, not cut short", s == 400, r)
+    s, r = call("POST", OA + "/sign", MO.token, dict(body, fields=dict(fields, informationOfficer={"master": False, "name": "Ms Officer"})))
+    check(G, "naming another Information Officer needs their email and phone", s == 400, r)
+    s, signed = call("POST", OA + "/sign", MO.token, body)
+    check(G, "the master clinician signs", s == 200 and signed.get("version") == st.get("version") and signed.get("sha256") == st.get("sha256"), [s, brief(signed)])
+    check(G, "the signed copy records who signed, when, from where and with what",
+          signed.get("signerEmail") == MO.email and signed.get("signedAt") and signed.get("ip") and signed.get("userAgent"),
+          {k: signed.get(k) for k in ("signerEmail", "signedAt", "ip", "userAgent")})
+    check(G, "the master clinician is the Information Officer unless the practice names someone else",
+          signed.get("fields", {}).get("informationOfficer", {}).get("email") == MO.email, signed.get("fields"))
+    s, r = call("GET", OA, doc2)
+    check(G, "every staff member sees that it's signed", s == 200 and r.get("signed") is True, brief(r))
+    for label, tok in (("the master clinician", MO.token), ("the practice admin", adm), ("OpenWorks support", sup)):
+        s, r = call("GET", OA + "/signed", tok)
+        latest = (r.get("latest") or {}) if isinstance(r, dict) else {}
+        check(G, f"{label} opens the signed copy", s == 200 and latest.get("id") == signed.get("id") and latest.get("text") == st.get("text"), [s, latest.get("id")])
+    for label, tok in (("another psychologist", doc2), ("a patient", patA)):
+        s, r = call("GET", OA + "/signed", tok)
+        check(G, f"{label} can't open the signed copy", s == 403, r)
+    rid = signed.get("id", "x")
+    forged = {"version": "9.9", "sha256": "0" * 64, "text": "forged", "signature": "x", "signedAt": "2026-01-01 00:00:00.000Z"}
+    for label, tok in (("the master clinician", MO.token), ("OpenWorks support", sup), ("a superuser", su)):
+        s, r = call("PATCH", f"/api/collections/operator_agreements/records/{rid}", tok, {"signature": "Someone else"})
+        check(G, f"{label} can't change a signed copy", s in (400, 403, 404), [s, str(r)[:150]])
+        s, r = call("DELETE", f"/api/collections/operator_agreements/records/{rid}", tok)
+        check(G, f"{label} can't delete one", s in (400, 403, 404), [s, str(r)[:150]])
+        s, r = call("POST", "/api/collections/operator_agreements/records", tok, forged)
+        check(G, f"{label} can't add one around the app", s in (400, 403, 404), [s, str(r)[:150]])
+    s, r = call("GET", "/api/collections/operator_agreements/records", MO.token)
+    check(G, "app accounts can't list signed copies through the collections", s in (401, 403, 404) or not items(r), [s, str(r)[:150]])
+    s, r = call("GET", f"/api/collections/operator_agreements/records/{rid}", su)
+    check(G, "the signed copy is unchanged", s == 200 and r.get("signature") == "Dr Operator Example", r.get("signature") if isinstance(r, dict) else r)
+    s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"actor='{MO.id}' && action='operator-agreement.sign'"})
+    check(G, "signing is written to the audit log", s == 200 and items(logs), logs)
+
 
 if __name__ == "__main__":
     for k in ("SUPERUSER_EMAIL", "SUPERUSER_PASSWORD"):

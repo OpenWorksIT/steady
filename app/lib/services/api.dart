@@ -827,9 +827,17 @@ class Api {
   Future<void> reviewFlag(String patientId, Flag flag, String note) => pb.send('/api/steady/patients/$patientId/flags/review',
       method: 'POST', body: {'key': flag.key, 'label': flag.label, 'note': note});
 
-  /// RADR, the research view: daily domain scores against the patient's own normal (radr_tab.dart).
+  /// RADR: daily domain scores against the patient's own normal, to improve care (radr_tab.dart).
   Future<Map<String, dynamic>> radr(String patientId, {int days = 56}) =>
       pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/radr', query: {'days': '$days'});
+
+  /// One RADR day explained, with the data behind it (default: the latest rated day).
+  Future<Map<String, dynamic>> radrExplain(String patientId, {String? day}) =>
+      pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/radr/explain', query: {'day': ?day});
+
+  /// Marks a RADR flag on the latest day as reviewed: who and when, with an optional note.
+  Future<void> reviewRadr(String patientId, String key, String note) =>
+      pb.send('/api/steady/patients/$patientId/radr/review', method: 'POST', body: {'key': key, 'note': note});
 
   /* ---------------- daily start ---------------- */
 

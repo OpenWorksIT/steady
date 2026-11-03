@@ -1,9 +1,11 @@
 // Steady push relay.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// A small internal service that the Steady server calls to deliver notifications to
-// Apple (APNs), UnifiedPush/Web Push and, optionally, Firebase (FCM). It only ever
-// receives a generic title and body: never patient names, scores or text.
+// A small internal service that the Steady server calls to deliver notifications to iPhones
+// (Apple, APNs) and Android phones (Google, Firebase Cloud Messaging). Every notification is
+// the same: titled "Steady", saying "New notification". The server tells the relay only which
+// devices to notify, never who or why, and the relay adds nothing else: no kind, no ids, no
+// data keys. The app loads what's new over its own connection when it's opened.
 // Standard library only.
 package main
 
@@ -12,6 +14,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -23,6 +26,13 @@ import (
 	"time"
 )
 
+// The words on every notification. They are the whole message: nothing from the server's
+// request reaches Apple or Google except the device's own token.
+const (
+	noticeTitle = "Steady"
+	noticeBody  = "New notification"
+)
+
 type Target struct {
 	ID       string `json:"id"`
 	Provider string `json:"provider"`
@@ -30,15 +40,10 @@ type Target struct {
 	Sandbox  bool   `json:"sandbox"`
 }
 
-type Message struct {
-	Title string            `json:"title"`
-	Body  string            `json:"body"`
-	Data  map[string]string `json:"data"`
-}
-
+// sendRequest is all the relay reads from the server: which devices. Anything else in the
+// request (older servers also sent a title, a body and the notification's kind) is ignored.
 type sendRequest struct {
 	Targets []Target `json:"targets"`
-	Message
 }
 
 type sendResponse struct {
@@ -55,23 +60,23 @@ const (
 	Invalid
 )
 
+// A Sender delivers the one notification there is to one device. It is given the device and
+// nothing else, so there is no way for anything about the person to reach the payload.
 type Sender interface {
-	Send(ctx context.Context, t Target, m Message) (Outcome, error)
+	Send(ctx context.Context, t Target) (Outcome, error)
 }
 
 type Server struct {
 	Secret    string
 	Providers map[string]Sender
 	Logger    *log.Logger
-	WebPush   *WebPush
 }
 
 const maxTargets = 50
 
 // Sends go out at once (a few at a time), each given perTarget and all of them perRequest:
-// the server waits 10 seconds for the answer, and one slow or stalling device server (Web
-// Push endpoints are chosen by whoever registered the device) must not hold up the others or
-// the server's request.
+// the server waits 10 seconds for the answer, and one slow or stalling answer from Apple or
+// Google must not hold up the others or the server's request.
 const (
 	perTarget  = 4 * time.Second
 	perRequest = 8 * time.Second
@@ -82,13 +87,6 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("GET /vapid-public-key", func(w http.ResponseWriter, r *http.Request) {
-		key := ""
-		if s.WebPush != nil {
-			key = s.WebPush.VapidPublicKey()
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"publicKey": key})
 	})
 	mux.HandleFunc("POST /send", s.handleSend)
 	return mux
@@ -112,7 +110,6 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	if len(req.Targets) > maxTargets {
 		req.Targets = req.Targets[:maxTargets]
 	}
-	req.Message = clampMessage(req.Message)
 	out := sendResponse{Invalid: []string{}}
 	ctx, cancel := context.WithTimeout(r.Context(), perRequest)
 	defer cancel()
@@ -141,7 +138,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 			}
 			tctx, tcancel := context.WithTimeout(ctx, perTarget)
 			defer tcancel()
-			res, err := p.Send(tctx, t, req.Message)
+			res, err := p.Send(tctx, t)
 			results[i] = result{res, err}
 		}(i, t, p)
 	}
@@ -156,33 +153,12 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 			out.Failed++
 			if err := results[i].err; err != nil && s.Logger != nil {
 				// never log tokens: a network error's text holds the whole address (an APNs
-				// device token, a UnifiedPush topic), so log only what went wrong
+				// device token is part of it), so log only what went wrong
 				s.Logger.Printf("send via %s failed: %s", t.Provider, safeErr(err))
 			}
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
-}
-
-func clampMessage(m Message) Message {
-	clip := func(s string, n int) string {
-		r := []rune(s)
-		if len(r) > n {
-			return string(r[:n])
-		}
-		return s
-	}
-	m.Title = clip(m.Title, 60)
-	m.Body = clip(m.Body, 160)
-	clean := map[string]string{}
-	for k, v := range m.Data {
-		if len(clean) >= 8 {
-			break
-		}
-		clean[clip(k, 32)] = clip(v, 64)
-	}
-	m.Data = clean
-	return m
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -207,19 +183,19 @@ func main() {
 		logger.Print("APNs enabled")
 	}
 	fcm, err := newFCMFromEnv()
-	if err != nil {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// expected until the server has its Firebase key: iPhones still get their notifications
+		logger.Printf("FCM off: no %s (Android phones get no notifications; docs/DEPLOY.md, step 3a)", os.Getenv("FCM_CREDENTIALS_FILE"))
+	case err != nil:
 		logger.Fatal(err)
-	}
-	if fcm != nil {
+	case fcm != nil:
 		providers["fcm"] = fcm
 		logger.Print("FCM enabled")
 	}
-	wp, err := newWebPushFromEnv()
-	if err != nil {
-		logger.Fatal(err)
+	if len(providers) == 0 {
+		logger.Print("no push providers set up: phones get no notifications")
 	}
-	providers["unifiedpush"] = wp
-	logger.Printf("UnifiedPush enabled (VAPID %v)", wp.vapidKey != nil)
 
 	addr := os.Getenv("PUSHER_ADDR")
 	if addr == "" {
@@ -227,7 +203,7 @@ func main() {
 	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           (&Server{Secret: secret, Providers: providers, Logger: logger, WebPush: wp}).routes(),
+		Handler:           (&Server{Secret: secret, Providers: providers, Logger: logger}).routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      45 * time.Second,

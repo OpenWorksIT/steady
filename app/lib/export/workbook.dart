@@ -31,7 +31,7 @@ Uint8List buildWorkbook(ExportBundle bundle) {
     ['Prepared on', timeText(bundle.generatedAt)],
     ['Patients', '${bundle.patients.length}'],
     ['Note', 'Confidential health information from Steady. Keep it in the patient file. Flags are review aids, not a diagnosis.'],
-    ['RADR', 'Research only: how far watch data and check-ins are from the person\'s own normal, 0 to 4. Not a risk score or diagnosis. See docs/RADR.md.'],
+    ['RADR', 'How far watch data and check-ins are from the person\'s own normal, 0 to 4, to improve care. Not a risk score or diagnosis. See docs/RADR.md.'],
     // which version of each method produced the numbers
     for (final e in _methods(bundle).entries) [e.key, e.value],
   ]) {
@@ -49,7 +49,7 @@ Uint8List buildWorkbook(ExportBundle bundle) {
   final order = [...kWearableLabels.keys.where(keys.contains), ...keys.where((k) => !kWearableLabels.containsKey(k)).toList()..sort()];
   final watch = sheet('Watch', ['Patient', 'Day', for (final k in order) kWearableLabels[k] == null ? k : '${kWearableLabels[k]!.$1}${kWearableLabels[k]!.$2.isEmpty ? '' : ' (${kWearableLabels[k]!.$2})'}']);
 
-  final radr = sheet('RADR (research)', [
+  final radr = sheet('RADR', [
     'Patient', 'Day', 'Watch index (0-4)', 'Check-in score (0-4)', 'Combined', 'Domains away from usual',
     'Sleep', 'Body clock', 'Activity', 'Heart',
   ]);

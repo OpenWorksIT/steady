@@ -8,9 +8,9 @@ import (
 )
 
 func TestSafeErrHidesAddresses(t *testing.T) {
-	err := &url.Error{Op: "Post", URL: "https://api.push.apple.com/3/device/abc123token", Err: errors.New("dial tcp: lookup https://ntfy.sh/secret-topic failed")}
+	err := &url.Error{Op: "Post", URL: "https://api.push.apple.com/3/device/abc123token", Err: errors.New("dial tcp: lookup https://fcm.googleapis.com/v1/projects/secret-project/messages:send failed")}
 	got := safeErr(err)
-	if strings.Contains(got, "abc123token") || strings.Contains(got, "secret-topic") {
+	if strings.Contains(got, "abc123token") || strings.Contains(got, "secret-project") {
 		t.Fatalf("address leaked: %q", got)
 	}
 	if !strings.HasPrefix(got, "Post: ") {

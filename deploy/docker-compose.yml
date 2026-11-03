@@ -20,7 +20,7 @@ x-logging: &logging
 services:
   caddy:
     logging: *logging
-    image: caddy:2
+    image: caddy:2.11.7 # pinned: Dependabot proposes updates as pull requests into working
     restart: unless-stopped
     ports:
       - "80:80"
@@ -51,6 +51,9 @@ services:
               "--migrationsDir=/pb/pb_migrations", "--automigrate=false", "--origins=https://${STEADY_DOMAIN}"]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+    # at most 512 processes and threads (PocketBase uses a few dozen): code that keeps starting
+    # them can't choke the rest of the server
+    pids_limit: 512
     environment:
       # only for servers set up before branding moved to deploy/brand (./brand.sh)
       STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-}
@@ -61,10 +64,8 @@ services:
       STEADY_MONITOR_KEY: ${STEADY_MONITOR_KEY:-}
       STEADY_FLEET_KEY: ${STEADY_FLEET_KEY:-}
       STEADY_COMMUNITY_URL: ${STEADY_COMMUNITY_URL:-}
-      STEADY_CONSENT_VERSION: ${STEADY_CONSENT_VERSION}
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
-      STEADY_VAPID_PUBLIC_KEY: ${STEADY_VAPID_PUBLIC_KEY}
       # the iPhone app: TestFlight public link while in testing, later the App Store link
       STEADY_IOS_URL: ${STEADY_IOS_URL:-}
       STEADY_CRISIS_LINES_JSON: ${STEADY_CRISIS_LINES_JSON:-}
@@ -73,6 +74,9 @@ services:
       STEADY_TRUSTED_PROXY_HEADER: X-Forwarded-For
       # psychologists and administrators sign in with a code from an authenticator app
       STEADY_REQUIRE_2FA: ${STEADY_REQUIRE_2FA:-staff}
+      # staff in a web browser: the session belongs to the tab, and its token lasts this many
+      # minutes, renewed while the tab is open (server/pb_hooks/lib/sessions.js)
+      STEADY_TAB_SESSION_MINUTES: ${STEADY_TAB_SESSION_MINUTES:-60}
       # email to staff: codes to link a new device, and notices about their own account (never
       # about patients). With these set, staff sign in only from devices they've linked.
       STEADY_SMTP_HOST: ${STEADY_SMTP_HOST:-}
@@ -115,11 +119,10 @@ services:
       APNS_KEY_ID: ${APNS_KEY_ID:-}
       APNS_TEAM_ID: ${APNS_TEAM_ID:-}
       APNS_TOPIC: ${APNS_TOPIC:-}
-      # UnifiedPush (Android). VAPID is optional but recommended.
-      VAPID_PRIVATE_KEY_FILE: /secrets/vapid.pem
-      VAPID_SUBJECT: ${VAPID_SUBJECT}
-      # Firebase is off unless you point this at a service-account file.
-      FCM_CREDENTIALS_FILE: ${FCM_CREDENTIALS_FILE:-}
+      # Android: Firebase Cloud Messaging, with the service-account key of OpenWorks IT's
+      # Firebase project in secrets/fcm.json (docs/DEPLOY.md, step 3a). Without the file the
+      # relay still starts; Android phones just get no notifications.
+      FCM_CREDENTIALS_FILE: /secrets/fcm.json
     volumes:
       - ./secrets:/secrets:ro
     networks: [internal]
@@ -132,4 +135,4 @@ volumes:
 networks:
   edge:
   internal:
-    internal: false # the relay must reach Apple and UnifiedPush servers
+    internal: false # the relay must reach Apple's and Google's push servers

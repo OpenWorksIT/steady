@@ -111,6 +111,35 @@ void main() {
     expect(p.lastMood, 2);
   });
 
+  test('patient summary: RADR flags with their reviews, and why they are where they are in the list', () {
+    final p = PatientSummary.fromJson({
+      'id': 'p',
+      'name': 'Demo C',
+      'radr': {
+        'day': '2026-11-02',
+        'convergent': 2,
+        'level': 'away',
+        'flags': [
+          {'key': 'radr:sleep:2026-10-28', 'domain': 'sleep', 'since': '2026-10-28', 'day': '2026-11-02', 'score': 4,
+            'reviewed': {'by': 'Dr Demo', 'at': 1793600000000}},
+          {'key': 'radr:cardiac:2026-10-30', 'domain': 'cardiac', 'since': '2026-10-30', 'day': '2026-11-02', 'score': 1.8, 'reviewed': null},
+        ],
+      },
+      'attention': {
+        'rank': 2,
+        'why': {'kind': 'radr', 'text': 'RADR: 2 of 4 areas of their watch data were away from their usual on Mon 2 Nov.'},
+      },
+    });
+    expect(p.radr!.level, 'away');
+    expect(p.radr!.flags.map((f) => f.domain), ['sleep', 'cardiac']);
+    expect(p.radr!.flags.first.reviewed!.by, 'Dr Demo');
+    expect(p.radr!.flags.first.score, 4.0);
+    expect(p.radr!.flags.last.reviewed, isNull);
+    expect(p.whyHere, startsWith('RADR: 2 of 4 areas'));
+    // a summary from before flags existed still reads
+    expect(PatientSummary.fromJson({'id': 'q', 'name': 'Q', 'radr': {'day': '2026-11-02', 'convergent': 1, 'level': 'away'}}).radr!.flags, isEmpty);
+  });
+
   test('server addresses are normalised', () {
     expect(normaliseServerUrl('steady.example.co.za'), 'https://steady.example.co.za');
     expect(normaliseServerUrl(' https://steady.example.co.za/ '), 'https://steady.example.co.za');

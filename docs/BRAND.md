@@ -25,10 +25,10 @@ never touches it), holding:
 - `brand.json`: `{"name": "...", "tagline": "...", "accent": "#B0690C"}`. Name required;
   tagline (up to 80 characters) and accent colour optional.
 - `logo.png`: the practice's logo, PNG, at most 1 MB.
-- `consent.md` (optional until go-live, then required): the consent statement patients agree to
-  when they join, in plain text, written with the practice (its Information Officer, how to
-  complain, its AI note-taking service if any). Steady's draft in
-  `server/pb_hooks/content/consent.md` is a starting point. A new version of the text asks
+- `consent.md` (optional, and usually left out): only for a practice that needs its own consent
+  statement instead of Steady's (`server/pb_hooks/content/consent.md`, the same for every
+  practice, with the contact line taken from the signed operator agreement). Plain text. A new
+  version of the text asks
   patients who agreed to an earlier one to read and agree to it the next time they open the app
   (Steady 1.0.4 and later); set `"consentVersion"` in `brand.json` to name versions yourself.
 

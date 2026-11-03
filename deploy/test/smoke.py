@@ -22,6 +22,7 @@ import urllib.parse
 import urllib.request
 
 import devicelink
+import radrdata
 
 def load_env():
     env = dict(os.environ)
@@ -39,13 +40,15 @@ BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:" + ENV.get("LOC
 passed = 0
 
 
-def call(method, path, token=None, body=None, query=None):
+def call(method, path, token=None, body=None, query=None, headers=None):
     url = BASE + path + ("?" + urllib.parse.urlencode(query) if query else "")
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", token)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status, json.loads(r.read() or b"{}")
@@ -101,6 +104,42 @@ def staff_sign_in(email, password, secret_key):
     return a
 
 
+def sign_operator_agreement(doc, cfg):
+    """The test clinician is the master clinician: the app asks them to sign the operator
+    agreement before anything else. Signs it once, after confirming it's them. On a server that
+    isn't the local test stack, only when it isn't signed yet (signatures can't be removed)."""
+    OA = "/api/steady/operator-agreement"
+    s, oa = call("GET", OA, doc)
+    check(s == 200 and oa.get("canSign") is True and oa.get("version") and "Operator agreement" in oa.get("text", ""),
+          "the master clinician is shown the operator agreement", {k: v for k, v in oa.items() if k != "text"})
+    local = BASE.startswith(("http://localhost", "http://127.0.0.1"))
+    if oa.get("signed") and not local:
+        print("ok    (the operator agreement is already signed on this server; not signed again)")
+        return
+    pre = (oa.get("prefill") or {}).get("practice") or {}
+    body = {"version": oa["version"], "sha256": oa["sha256"], "authorised": True, "signature": "Smoke Test Signer",
+            "fields": {"practiceName": pre.get("name") or "Smoke Test Practice", "registration": pre.get("registration") or "PR 0000000",
+                       "address": pre.get("address") or "1 Test Street, Gqeberha", "email": pre.get("email") or "practice@steady.test",
+                       "phone": pre.get("phone") or "041 000 0000", "informationOfficer": {"master": True}}}
+    dev = devicelink.saved_device(ENV, "CLINICIAN_DEVICE_KEY")
+    here = {"X-Steady-Device": dev["key"]}
+    s, r = call("POST", OA + "/sign", doc, body, headers=here)
+    if s == 403 and "confirm_needed" in json.dumps(r):
+        # a linked phone confirms with its screen lock; without linked devices, a fresh code
+        s2, r2 = call("POST", "/api/steady/me/confirm", doc, {"device": dev}, headers=here)
+        if s2 != 200 and cfg.get("twoStep") == "off":
+            s2, r2 = call("POST", "/api/steady/me/confirm", doc, {"password": ENV["CLINICIAN_PASSWORD"]}, headers=here)
+        elif s2 != 200 and ENV.get("CLINICIAN_TOTP_SECRET"):
+            time.sleep(31 - time.time() % 30)
+            s2, r2 = call("POST", "/api/steady/me/confirm", doc, {"code": totp(ENV["CLINICIAN_TOTP_SECRET"])}, headers=here)
+        check(s2 == 200, "signing asks the master clinician to confirm it's them first", r2)
+        s, r = call("POST", OA + "/sign", doc, body, headers=here)
+    check(s == 200 and r.get("version") == oa["version"] and r.get("sha256") == oa["sha256"], "the master clinician signs the operator agreement",
+          {k: v for k, v in r.items() if k != "text"} if isinstance(r, dict) else r)
+    s, oa2 = call("GET", OA, doc)
+    check(s == 200 and oa2.get("signed") is True, "the operator agreement shows as signed", {k: v for k, v in oa2.items() if k != "text"})
+
+
 def check(cond, what, detail=None):
     global passed
     if not cond:
@@ -127,6 +166,7 @@ def main():
     a = staff_sign_in(ENV["CLINICIAN_EMAIL"], ENV["CLINICIAN_PASSWORD"], "CLINICIAN_TOTP_SECRET")
     check(bool(a.get("token")), "clinician signs in", a)
     doc, doc_id = a["token"], a["record"]["id"]
+    sign_operator_agreement(doc, cfg)
 
     s, inv = call("POST", "/api/steady/invites", doc, {"label": "Smoke Patient (clinic)"})
     check(s == 200 and len(inv["code"]) == 9, "clinician creates an invite code", inv)
@@ -228,19 +268,44 @@ def main():
           "a personal baseline range is calculated", bio["baseline"]["rhr"][-1])
     s, r = call("GET", "/api/collections/biometrics/records", pat)
     check(s == 200 and r.get("totalItems") == 12, "patient can read only their own watch data", r.get("totalItems"))
+
+    # RADR: eight weeks of watch data, the last one away from usual
+    s, r = call("POST", "/api/steady/biometrics", pat, {"platform": "android", "source": "smoke", "days": radrdata.days(today)})
+    check(s == 200 and r.get("saved") == 56, "patient uploads eight weeks of watch summaries", r)
+    s, rr = call("GET", f"/api/steady/patients/{pat_id}/radr", doc)
+    flags = rr.get("flags", [])
+    check(s == 200 and len(flags) >= 2, "RADR shows the domains away from usual as flags", [f.get("key") for f in flags])
+    s, x = call("GET", f"/api/steady/patients/{pat_id}/radr/explain", doc)
+    check(s == 200 and x.get("words") and all(x["domains"][k]["words"] for k in ("sleep", "circadian", "activity", "cardiac"))
+          and x["measures"]["steps"]["baseline"]["values"], "each number comes with its reasoning and the data behind it", x.get("words") if s == 200 else x)
+    s, ov = call("GET", "/api/steady/overview", doc)
+    me = [p for p in ov.get("patients", []) if p["id"] == pat_id]
+    check(me and (me[0].get("radr") or {}).get("level") == "away" and me[0]["attention"]["why"]["kind"] == "answer",
+          "the item 9 answer still comes first: RADR orders below answers, and is no alert", me[0].get("attention") if me else ov)
+    for f in flags:
+        s, r = call("POST", f"/api/steady/patients/{pat_id}/radr/review", doc, {"key": f["key"], "note": "smoke"})
+        check(s == 200 and (r.get("reviewed") or {}).get("by"), f"the psychologist marks {f['domain']} as reviewed", r)
+    s, ov = call("GET", "/api/steady/overview", doc)
+    me = [p for p in ov.get("patients", []) if p["id"] == pat_id]
+    check(me and (me[0].get("radr") or {}).get("level") == "reviewed" and all(f.get("reviewed") for f in me[0]["radr"]["flags"]),
+          "once all are reviewed, RADR no longer moves them up the list", me[0].get("radr") if me else ov)
+    s, r = call("GET", f"/api/steady/patients/{pat_id}/radr/explain", pat)
+    check(s == 403, "the patient can't read RADR", r)
     s, r = call("POST", "/api/steady/consent", doc, {"kind": "privacy", "version": "privacy-1"})
     check(s == 200, "privacy notice acknowledgement is recorded", r)
 
-    # push registrations: the relay posts to UnifiedPush endpoints, so they must be public https
-    key, secret = "B" + "A" * 86, "A" * 22
-    bad = json.dumps({"endpoint": "http://pocketbase:8090/api/", "p256dh": key, "auth": secret})
+    # push registrations: an iPhone's APNs token or an Android phone's Firebase token. An older
+    # app's UnifiedPush (ntfy) registration is refused: the relay no longer sends to those.
+    old = json.dumps({"endpoint": "https://ntfy.sh/upSmokeTest123", "p256dh": "B" + "A" * 86, "auth": "A" * 22})
     s, r = call("POST", "/api/collections/devices/records", pat,
-                {"user": pat_id, "platform": "android", "provider": "unifiedpush", "token": bad})
-    check(s == 400, "a push endpoint pointing inside the server is refused", r)
-    good = json.dumps({"endpoint": "https://ntfy.sh/upSmokeTest123", "p256dh": key, "auth": secret})
+                {"user": pat_id, "platform": "android", "provider": "unifiedpush", "token": old})
+    check(s == 400, "an old UnifiedPush registration is refused", r)
     s, r = call("POST", "/api/collections/devices/records", pat,
-                {"user": pat_id, "platform": "android", "provider": "unifiedpush", "token": good})
-    check(s == 200, "a normal UnifiedPush registration is accepted", r)
+                {"user": pat_id, "platform": "android", "provider": "fcm", "token": "not a token"})
+    check(s == 400, "a malformed Firebase token is refused", r)
+    s, r = call("POST", "/api/collections/devices/records", pat,
+                {"user": pat_id, "platform": "android", "provider": "fcm", "token": "smokeTest:APA91b" + "x" * 140})
+    check(s == 200, "an Android phone's Firebase token is accepted", r)
     s, r = call("POST", "/api/collections/notifications/records", pat, {"recipient": pat_id, "kind": "system", "title": "x"})
     check(s in (400, 403), "nobody can create notifications directly", r)
     s, r = call("PATCH", f"/api/collections/users/records/{pat_id}", pat, {"consentVersion": "forged"})

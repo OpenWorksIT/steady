@@ -13,6 +13,7 @@ import '../widgets.dart';
 import 'assign_screen.dart';
 import 'clinician_shell.dart';
 import 'patient_care.dart';
+import 'radr_explain.dart';
 import 'radr_tab.dart';
 import 'result_screen.dart';
 
@@ -235,7 +236,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
                 PopupMenuItem(value: 'settings', child: ListTile(leading: Icon(Icons.tune), title: Text('Patient settings'), subtitle: Text('Stable, archive, RADR measures'))),
                 PopupMenuItem(value: 'pdf', child: ListTile(leading: Icon(Icons.picture_as_pdf_outlined), title: Text('PDF report'))),
                 PopupMenuItem(value: 'excel', child: ListTile(leading: Icon(Icons.table_chart_outlined), title: Text('Export to Excel'))),
-                PopupMenuItem(value: 'heidi', child: ListTile(leading: Icon(Icons.description_outlined), title: Text('Export for Heidi'), subtitle: Text('Text PDF for the AI scribe; only what\'s new'))),
+                PopupMenuItem(value: 'heidi', child: ListTile(leading: Icon(Icons.description_outlined), title: Text('Export for AI note-taking'), subtitle: Text('Text PDF for your AI scribe; only what\'s new'))),
                 PopupMenuItem(value: 'share', child: ListTile(leading: Icon(Icons.group_add_outlined), title: Text('Share with a colleague'))),
                 PopupMenuItem(value: 'reset', child: ListTile(leading: Icon(Icons.key_outlined), title: Text('Reset password'))),
                 PopupMenuItem(value: 'rename', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Rename'))),
@@ -343,15 +344,18 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
               ),
               const SizedBox(height: 10),
             ],
-            if (d.summary.flags.isNotEmpty) ...[
+            if (d.summary.flags.isNotEmpty || _radrFlags(d.summary).isNotEmpty) ...[
               Wrap(spacing: 6, runSpacing: 6, children: [
                 for (final f in d.summary.flags)
                   ReviewableFlag(flag: f, patientId: widget.patientId, canReview: !widget.shared, onReviewed: reload),
+                // after the answers: RADR only orders, and a colleague it's shared with may review it too
+                for (final f in _radrFlags(d.summary)) RadrFlagChip(patientId: widget.patientId, flag: f, onChanged: reload),
               ]),
-              if (!widget.shared && d.summary.flags.any((f) => f.reviewable && f.reviewed == null))
+              if ((!widget.shared && d.summary.flags.any((f) => f.reviewable && f.reviewed == null)) ||
+                  _radrFlags(d.summary).any((f) => f.reviewed == null))
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text('Tap a flag to mark it as reviewed.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+                  child: Text('Tap a flag to see why, or to mark it as reviewed.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
                 ),
               const SizedBox(height: 12),
             ],
@@ -387,6 +391,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
           ],
         ),
       );
+}
+
+/// RADR's flags on its latest day, while that day still counts (not for a stable patient).
+List<RadrFlag> _radrFlags(PatientSummary s) {
+  final r = s.radr;
+  return r == null || r.level == 'none' || s.stable ? const [] : r.flags;
 }
 
 class _AssignmentRow extends StatelessWidget {

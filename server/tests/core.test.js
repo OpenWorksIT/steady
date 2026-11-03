@@ -223,6 +223,46 @@ test("review flags", () => {
   assert.equal(old.length, 0, "results older than 14 days don't flag");
 });
 
+test("the list order: answers waiting for review first, then RADR, then the rest; stable last", () => {
+  const radr = (n, extra) => Object.assign({ level: "away", convergent: n, at: 3000, dayText: "Mon 2 Nov", away: ["Sleep", "Heart"].slice(0, n) }, extra || {});
+  const item9 = { key: "a:x:f0", label: "PHQ-9: Item 9 endorsed: review", severity: "alert", at: 1000 };
+  const band = { key: "a:y:band", label: "GAD-7 12: Moderate", severity: "warn", at: 1000 };
+  const info = { key: "a:z:f0", label: "Custom: question 2 answered", severity: "info", at: 1000 };
+  const quiet = { label: "No check-in for 4 days", severity: "info" };
+  const rows = [
+    ["item 9", core.attention([item9], radr(4), "")],
+    ["moderate band", core.attention([band], null, "")],
+    ["info answer", core.attention([info], null, "")],
+    ["RADR 4", core.attention([quiet], radr(4), "")],
+    ["RADR 2", core.attention([], radr(2), "")],
+    ["RADR 1", core.attention([], radr(1), "")],
+    ["no check-in", core.attention([quiet], null, "")],
+    ["nothing", core.attention([], null, "")],
+    ["reviewed RADR", core.attention([], radr(3, { level: "reviewed" }), "")],
+    ["stable", core.attention([item9], radr(4), "stable")]
+  ];
+  const ranks = rows.map(([, a]) => a.rank);
+  assert.deepEqual(ranks, ranks.slice().sort((a, b) => b - a), "in this order: " + JSON.stringify(rows.map(([n, a]) => [n, a.rank])));
+  assert.ok(rows[2][1].rank > rows[3][1].rank, "even an info-level answer comes before RADR");
+  assert.equal(rows[5][1].rank, rows[6][1].rank, "RADR on one domain sits with other info, newest first");
+  assert.ok(rows[5][1].at > rows[6][1].at);
+  // a more recent RADR day never overtakes an answer waiting for review
+  assert.ok(core.attention([item9], null, "").rank > core.attention([], radr(4, { at: 9e12 }), "").rank);
+  // reviewed answers no longer count
+  assert.equal(core.attention([Object.assign({ reviewed: { by: "Dr" } }, item9)], null, "").rank, 0);
+  // why, in plain words
+  assert.deepEqual(rows.map(([, a]) => a.why.kind), ["answer", "answer", "answer", "radr", "radr", "radr", "other", "none", "none", "stable"]);
+  assert.match(rows[0][1].why.text, /^An answer not yet marked as reviewed: PHQ-9: Item 9 endorsed: review\./);
+  assert.equal(rows[4][1].why.text, "RADR: 2 of 4 areas of their watch data were away from their usual on Mon 2 Nov (sleep, heart), not yet marked as reviewed. " +
+    "RADR comes after answers waiting for review. It orders your list; it is not an alert.");
+  assert.match(rows[6][1].why.text, /^No check-in for 4 days\. This comes after/);
+  assert.match(rows[8][1].why.text, /RADR showed on Mon 2 Nov is marked as reviewed/);
+  // sorting uses it
+  const list = core.sortByAttention(rows.map(([name, attention]) => ({ name, attention })).reverse());
+  assert.deepEqual(list.map((r) => r.name).slice(0, 3), ["item 9", "moderate band", "info answer"]);
+  assert.equal(list[list.length - 1].name, "stable");
+});
+
 test("repeat scheduling", () => {
   const t = Date.UTC(2026, 9, 14, 15);
   assert.equal(core.nextAvailable("daily", t, 120), Date.UTC(2026, 9, 14, 22));

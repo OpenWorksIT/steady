@@ -1,7 +1,7 @@
 # Steady push relay. Standard library only, so the build needs no module downloads.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Go 1.27: each Go release gets security fixes until the second one after it comes out
-FROM golang:1.27-alpine AS build
+FROM golang:1.27.3-alpine3.24 AS build
 WORKDIR /src
 COPY go.mod ./
 COPY *.go ./

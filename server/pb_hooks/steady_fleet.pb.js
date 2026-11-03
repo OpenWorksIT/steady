@@ -1,7 +1,9 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Steady - for OpenWorks IT's fleet view (fleet/): one practice server's state at a glance,
 // and the two things the fleet view may ask a server to do. Never anything about patients:
-// only versions, health, counts and backup age.
+// only versions, health, counts, backup age, whether the operator agreement is signed, and the
+// latest security and privacy check (deploy/audit-server.sh, every 6 hours: what it found, never
+// keys or patients' details).
 //
 //   GET  /api/steady/fleet           X-Steady-Fleet: STEADY_FLEET_KEY
 //   POST /api/steady/fleet/request   X-Steady-Fleet: STEADY_FLEET_KEY   {action: check|update|restart}
@@ -45,7 +47,14 @@ routerAdd("GET", "/api/steady/fleet", (e) => {
       patients: sum.counts ? sum.counts.patients : null,
       staff: sum.counts ? sum.counts.staff : null,
       checkins7d: count("checkins", "created >= {:since}", { since: since }),
-      deletionRequests: count("users", "role = 'patient' && deletionRequestedAt != ''")
+      deletionRequests: count("users", "role = 'patient' && deletionRequestedAt != ''"),
+      // privacy at a glance, as numbers only: deletions past the reminders (the practice has 30
+      // days), patients still on an older consent statement, staff without two-step sign-in
+      deletionOverdue: count("users", "role = 'patient' && deletionRequestedAt != '' && deletionRequestedAt <= {:t}",
+        { t: s.dateValue(Date.now() - 25 * 86400000).string() }),
+      olderConsent: count("users", "role = 'patient' && active = true && consentVersion != {:v}",
+        { v: require(`${__hooks}/lib/brand.js`).consent().version }),
+      staffWithoutTwoStep: count("users", "role != 'patient' && active = true && totpEnabledAt = ''")
     },
     version: {
       code: sum.code,
@@ -60,6 +69,12 @@ routerAdd("GET", "/api/steady/fleet", (e) => {
     },
     // patients are agreeing to Steady's draft consent statement, not the practice's own
     consentDraft: require(`${__hooks}/lib/brand.js`).consent().draft,
+    // whether the practice has signed the current operator agreement (lib/operator.js)
+    operatorAgreement: (() => {
+      const st = require(`${__hooks}/lib/operator.js`).status($app);
+      return { version: st.version, signed: st.signed, signedAt: st.signedAt ? new Date(st.signedAt).toISOString() : "", lastSignedVersion: st.lastSignedVersion };
+    })(),
+    audit: d.ctlAudit(ctl),
     pending: d.ctlPending(ctl),
     updating: status ? status.updating || null : null,
     lastUpdate: status ? status.lastUpdate || null : null,

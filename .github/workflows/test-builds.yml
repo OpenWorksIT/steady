@@ -1,13 +1,15 @@
 # Builds an installable Android APK and the web app, publishes both to the web-dist branch
 # (servers serve them; see deploy/update.sh) and to the "test-build" pre-release.
-# From the v1 branch: to web-dist-v1 only (servers with STEADY_TRACK=v1), so the beta's web-dist,
-# the pre-release and the previews stay as main built them.
+# From the test branch: to web-dist-test only (vps1, STEADY_TRACK=test), so web-dist, the
+# pre-release and the previews stay as main built them.
+# Branches: working (development, CI only) -> test (vps1) -> main (signed releases); see
+# docs/DEPLOY.md, "Branches". It runs on every push to main and test, whatever changed:
+# deploy/release.sh signs a commit only together with the web app CI built from that very commit.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: Test builds
 on:
   push:
-    branches: [main, v1]
-    paths: ["app/**", ".github/workflows/test-builds.yml"]
+    branches: [main, test]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # the signing keys live in the "signing" environment, which only main and v1 may use
+    # the signing keys live in the "signing" environment, which only main and test may use
     # (Settings > Environments); a workflow on any other branch can't reach them
     environment: signing
     steps:
@@ -64,10 +66,21 @@ jobs:
       - name: build apk
         working-directory: app
         timeout-minutes: 30
+        # Android notifications through OpenWorks IT's Firebase project (repository variables, not
+        # secrets: they're in every copy of the app). Without them the app has no Android
+        # notifications and says so in Settings. docs/APP.md, "Notifications".
+        env:
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          FIREBASE_SENDER_ID: ${{ vars.FIREBASE_SENDER_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
           set -o pipefail
+          [ -n "$FIREBASE_APP_ID" ] || echo "::warning title=notifications::No FIREBASE_* repository variables: this APK has no Android notifications. See docs/APP.md, 'Notifications'."
           # 64-bit ARM only: every current phone, and a third of the native (QR scanner) build time
           flutter build apk --release --target-platform android-arm64 \
+            --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
+            --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
             --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: build web

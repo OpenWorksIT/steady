@@ -77,10 +77,12 @@ function makeRuntime(opts = {}) {
     setVerified(v) { this.data.verified = v; }
     original() { return this._original || null; }
     refreshTokenKey() { this.data.tokenKey = "key-" + (++idSeq); }
+    tokenKey() { return this.getString("tokenKey"); }
+    collection() { return collections[this.collectionName]; }
   }
 
   function matchClause(rec, clause, params) {
-    const m = /^\s*([a-zA-Z_.]+)\s*(\?=|>=|<=|!=|=|<|>)\s*(.+?)\s*$/.exec(clause);
+    const m = /^\s*([a-zA-Z_.][a-zA-Z0-9_.]*)\s*(\?=|>=|<=|!=|=|<|>)\s*(.+?)\s*$/.exec(clause);
     if (!m) throw new Error("fake filter can't parse: " + clause);
     const [, field, op, rawV] = m;
     let v;
@@ -120,7 +122,7 @@ function makeRuntime(opts = {}) {
     });
   }
 
-  const hooks = { createRequest: {}, updateRequest: {}, update: {}, afterCreate: {}, list: {}, view: {} };
+  const hooks = { createRequest: {}, updateRequest: {}, update: {}, afterCreate: {}, list: {}, view: {}, deleteRequest: {}, del: {} };
   const settings = { trustedProxy: { headers: [], useLeftmostIP: false }, rateLimits: { enabled: false, rules: [] }, smtp: {}, meta: {}, __settings: true };
   const mails = [];
   const routes = {};
@@ -171,6 +173,7 @@ function makeRuntime(opts = {}) {
     },
     delete: (model) => {
       if (model instanceof Collection) { delete collections[model.name]; return; }
+      if (hooks.del[model.collectionName]) hooks.del[model.collectionName]({ record: model, app, next() {} });
       store[model.collectionName] = store[model.collectionName].filter((r) => r !== model);
     },
     runInTransaction: (fn) => fn(app),
@@ -214,7 +217,13 @@ function makeRuntime(opts = {}) {
       randomStringWithAlphabet: (n, alpha) => Array.from({ length: n }, (_, i) => alpha[(idSeq * 7 + i * 13 + (++randSeq)) % alpha.length]).join(""),
       sha256: (t) => require("crypto").createHash("sha256").update(String(t)).digest("hex"),
       randomString: (n) => require("crypto").randomBytes(n).toString("hex").slice(0, n),
-      equal: (a, b) => String(a) === String(b)
+      equal: (a, b) => String(a) === String(b),
+      createJWT: (payload, key, seconds) => {
+        const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+        const body = b64({ alg: "HS256", typ: "JWT" }) + "." + b64(Object.assign({}, payload, { exp: Math.floor(clock / 1000) + seconds }));
+        return body + "." + require("crypto").createHmac("sha256", key).update(body).digest("base64url");
+      },
+      parseUnverifiedJWT: (t) => JSON.parse(Buffer.from(String(t).split(".")[1], "base64url").toString())
     },
     $http: {
       send: (cfg) => {
@@ -233,6 +242,8 @@ function makeRuntime(opts = {}) {
     onRecordCreateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.createRequest[t] = fn)),
     onRecordUpdateRequest: (fn, ...tags) => tags.forEach((t) => (hooks.updateRequest[t] = fn)),
     onRecordUpdate: (fn, ...tags) => tags.forEach((t) => (hooks.update[t] = fn)),
+    onRecordDeleteRequest: (fn, ...tags) => tags.forEach((t) => (hooks.deleteRequest[t] = fn)),
+    onRecordDelete: (fn, ...tags) => tags.forEach((t) => (hooks.del[t] = fn)),
     onBootstrap: (fn) => { (hooks.bootstraps = hooks.bootstraps || []).push(fn); hooks.bootstrap = (e) => hooks.bootstraps.forEach((f) => f(e)); },
     routerUse: (fn) => { if (typeof fn === "function") (hooks.middleware = hooks.middleware || []).push(fn); else (hooks.globalLimits = hooks.globalLimits || []).push(fn); },
     onRealtimeSubscribeRequest: (fn) => { hooks.realtimeSubscribe = fn; },
@@ -264,7 +275,7 @@ function makeRuntime(opts = {}) {
   const ctx = vm.createContext(sandbox);
 
   // the default PocketBase users collection
-  defineCollection(new Collection({ name: "users", type: "auth", id: "_pb_users_auth_", fields: [] }));
+  defineCollection(new Collection({ name: "users", type: "auth", id: "_pb_users_auth_", fields: [], authToken: { secret: "users-secret", duration: 432000 } }));
 
   const run = (file) => vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file });
   for (const f of fs.readdirSync(path.join(ROOT, "pb_migrations")).sort()) run(path.join(ROOT, "pb_migrations", f));
@@ -279,6 +290,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_privacy.pb.js"));
   run(path.join(HOOKS, "steady_deletion.pb.js"));
   run(path.join(HOOKS, "steady_fleet.pb.js"));
+  run(path.join(HOOKS, "steady_operator.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -359,7 +371,8 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   // config is public
   const cfg = rt.call("GET", "/api/steady/config");
   assert.equal(cfg.data.practiceName, "VR Demo Practice");
-  assert.match(cfg.data.consentText, /DRAFT/);
+  assert.match(cfg.data.consentText, /Your clinical record/);
+  assert.equal(cfg.data.consentDraft, false);
   assert.equal(cfg.data.crisisLines[0].number, "0800 567 567");
 
   // a patient can't create invites
@@ -397,7 +410,11 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   assert.equal(rt.pushes.length, 1);
   const pushText = JSON.stringify(rt.pushes[0]);
   assert.ok(!/Lerato|Rough|Mood/.test(pushText), "push payload carries no patient data: " + pushText);
+  // the relay is told which devices and nothing else: no words, no kind, no ids of what happened
+  assert.deepEqual(Object.keys(rt.pushes[0]), ["targets"], pushText);
+  assert.deepEqual(Object.keys(rt.pushes[0].targets[0]).sort(), ["id", "provider", "sandbox", "token"]);
   assert.equal(rt.pushes[0].targets[0].token, "abc123");
+  assert.ok(!/checkin|title|body|kind|data/.test(pushText), pushText);
 
   // a clinician can't check in, and a bad check-in is refused
   assert.equal(rt.create("checkins", doc, { patient: doc.id, mood: 3, anxiety: 3, sleep: 3, energy: 3 }).status, 403);
@@ -638,19 +655,40 @@ test("security: push registrations are validated and follow the phone", () => {
   const rt = makeRuntime({ env: ENV });
   const a = rt.makeUser({ name: "A", role: "patient", active: true, email: "a@example.org" });
   const b = rt.makeUser({ name: "B", role: "patient", active: true, email: "b@example.org" });
-  const sub = (endpoint) => JSON.stringify({ endpoint, p256dh: "B" + "A".repeat(86), auth: "A".repeat(22) });
-  for (const bad of ["http://ntfy.sh/x", "https://pocketbase:8090/api/", "https://10.0.0.5/x", "https://localhost/x"]) {
-    const r = rt.create("devices", a, { user: a.id, platform: "android", provider: "unifiedpush", token: sub(bad) });
-    assert.equal(r.status, 400, bad);
-  }
+  const fcm = "dGVzdC10b2tlbg:APA91b" + "x".repeat(140);
+  // UnifiedPush (ntfy) is gone: an older app's registration is refused, whatever its address
+  const sub = JSON.stringify({ endpoint: "https://ntfy.sh/upAbc", p256dh: "B" + "A".repeat(86), auth: "A".repeat(22) });
+  assert.equal(rt.create("devices", a, { user: a.id, platform: "android", provider: "unifiedpush", token: sub }).status, 400);
   assert.equal(rt.create("devices", a, { user: a.id, platform: "ios", provider: "apns", token: "not-hex" }).status, 400);
-  const ok = rt.create("devices", a, { user: a.id, platform: "android", provider: "unifiedpush", token: sub("https://ntfy.sh/upAbc") });
+  for (const bad of ["short", "has spaces in it, has spaces", "{\"endpoint\":\"https://ntfy.sh/x\"}", "x".repeat(2001)]) {
+    assert.equal(rt.create("devices", a, { user: a.id, platform: "android", provider: "fcm", token: bad }).status, 400, bad);
+  }
+  const ok = rt.create("devices", a, { user: a.id, platform: "android", provider: "fcm", token: fcm });
   assert.equal(ok.status, 200);
   // B signs in on the same phone: the registration moves to B
-  const moved = rt.create("devices", b, { user: a.id, platform: "android", provider: "unifiedpush", token: sub("https://ntfy.sh/upAbc") });
+  const moved = rt.create("devices", b, { user: a.id, platform: "android", provider: "fcm", token: fcm });
   assert.equal(moved.status, 200);
   assert.equal(rt.store.devices.length, 1);
   assert.equal(rt.store.devices[0].getString("user"), b.id);
+});
+
+test("UnifiedPush is gone: old registrations are deleted, never sent to, and config has no VAPID key", () => {
+  const rt = makeRuntime({ env: ENV });
+  // the migration deletes them on the real database and allows only Apple and Firebase from then on
+  assert.ok((rt.app.sql || []).some((q) => /DELETE FROM devices WHERE provider = 'unifiedpush'/.test(q)));
+  assert.equal(JSON.stringify(rt.app.findCollectionByNameOrId("devices").fields.getByName("provider").values), '["apns","fcm"]');
+  assert.equal("vapidPublicKey" in rt.call("GET", "/api/steady/config").data, false);
+  // one that's still there (here: put in by hand) is skipped by push()
+  const pat = rt.makeUser({ name: "P", role: "patient", active: true, email: "p@example.org" });
+  rt.makeRecord("devices", { user: pat.id, platform: "android", provider: "unifiedpush", token: "{}" });
+  const s = rt.sandbox.require(path.join(HOOKS, "lib", "server.js"));
+  rt.pushes.length = 0;
+  s.push(rt.app, pat.id);
+  assert.equal(rt.pushes.length, 0, "nothing to send to");
+  rt.makeRecord("devices", { user: pat.id, platform: "android", provider: "fcm", token: "f".repeat(40) });
+  s.push(rt.app, pat.id);
+  assert.equal(rt.pushes.length, 1);
+  assert.equal(JSON.stringify(rt.pushes[0].targets.map((t) => t.provider)), '["fcm"]');
 });
 
 test("security: clinician reads of watch data are audited", () => {
@@ -801,12 +839,15 @@ test("dist: with an iOS link set, iPhones get TestFlight steps; bad links are ig
   assert.equal(rt.call("GET", "/join", { headers: iphone }).status, 302);
 });
 
-test("consent: the practice's own statement from its brand folder; Steady's draft is flagged", () => {
-  // without one, patients would agree to Steady's draft: the config says so
+test("consent: Steady's own statement, versioned by its text; a practice's own from its brand folder", () => {
+  // without one, patients agree to Steady's own statement: final, its version a fingerprint of
+  // the text, and its contact line pointing to the practice until the operator agreement is signed
   const plain = makeRuntime({ env: Object.assign({}, ENV, { STEADY_BRAND_DIR: path.join(os.tmpdir(), "no-brand-here") }) });
   const c0 = plain.call("GET", "/api/steady/config").data;
-  assert.equal(c0.consentDraft, true);
-  assert.match(c0.consentText, /DRAFT/);
+  assert.equal(c0.consentDraft, false);
+  assert.match(c0.consentVersion, /^steady-[0-9a-f]{12}$/);
+  assert.doesNotMatch(c0.consentText, /DRAFT|\{contact\}|\[Practice|Heidi/);
+  assert.match(c0.consentText, /Its Information Officer is its master psychologist/);
   // the practice's statement, installed with brand.sh: its own version, no draft
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "steady-consent-"));
   fs.writeFileSync(path.join(dir, "brand.json"), JSON.stringify({ name: "VR Clinical Psychology", consentVersion: "vr-2026-11" }));
@@ -838,6 +879,226 @@ test("consent: the practice's own statement from its brand folder; Steady's draf
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "consent.statement" && a.getString("patient") === pat.id));
 });
 
+test("staff in a browser get short tokens, renewed as short ones; phones and patients keep the usual length", () => {
+  const rt = makeRuntime({ env: ENV });
+  const crypto = require("crypto");
+  const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org", tokenKey: "doc-key" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: doc.id, email: "p@example.org", tokenKey: "pat-key" });
+  const keyHash = (k) => crypto.createHash("sha256").update(k).digest("hex");
+  rt.makeRecord("staffdevices", { user: doc.id, keyHash: keyHash("w".repeat(40)), platform: "web", name: "Laptop" });
+  rt.makeRecord("staffdevices", { user: doc.id, keyHash: keyHash("p".repeat(40)), platform: "android", name: "Phone" });
+  const claims = (t) => JSON.parse(Buffer.from(t.split(".")[1], "base64url").toString());
+  const verifies = (t, rec) => {
+    const [h, b, sig] = t.split(".");
+    return crypto.createHmac("sha256", rec.tokenKey() + "users-secret").update(h + "." + b).digest("base64url") === sig;
+  };
+  // PocketBase's onRecordAuthRequest for the users collection, as it runs for every token
+  const issue = (record, { body = {}, headers = {}, auth = null, said = "" } = {}) => {
+    const e = {
+      record, auth, token: "pocketbase-default",
+      requestInfo: () => ({ body, headers }),
+      get: (k) => (k === "steadyPlatform" && said ? said : null),
+      next() { this.passed = true; }
+    };
+    rt.hooks.authRequest.users(e);
+    assert.ok(e.passed, "the hook passes the request on");
+    return e.token;
+  };
+  const hour = Math.floor(rt.now() / 1000) + 3600;
+
+  // signing in from a browser: short, marked, signed like PocketBase's own tokens
+  const web = issue(doc, { body: { device: { key: "w".repeat(40), platform: "web" } } });
+  assert.equal(claims(web).steadyTab, true);
+  assert.equal(claims(web).exp, hour);
+  assert.equal(claims(web).id, doc.id);
+  assert.equal(claims(web).type, "auth");
+  assert.equal(claims(web).collectionId, "_pb_users_auth_");
+  assert.equal(claims(web).refreshable, true);
+  assert.ok(verifies(web, doc), "signed with the account's token key and the collection's secret");
+  // a phone, a patient: PocketBase's own token, untouched
+  assert.equal(issue(doc, { body: { device: { key: "p".repeat(40), platform: "android" } } }), "pocketbase-default");
+  assert.equal(issue(pat, { body: { device: { key: "w".repeat(40), platform: "web" } } }), "pocketbase-default");
+  assert.equal(issue(pat, { headers: { authorization: web } }), "pocketbase-default");
+  // linking a browser (the route says which device)
+  assert.equal(claims(issue(doc, { said: "web" })).steadyTab, true);
+  assert.equal(issue(doc, { said: "ios" }), "pocketbase-default");
+
+  // renewing: a tab's token stays a tab's, whatever device key or body comes with it
+  rt.tick(20 * 60000);
+  const renewed = issue(doc, { auth: doc, headers: { authorization: "Bearer " + web, x_steady_device: "p".repeat(40) }, body: { device: { key: "p".repeat(40), platform: "android" } } });
+  assert.equal(claims(renewed).steadyTab, true);
+  assert.equal(claims(renewed).exp, hour + 20 * 60, "a new hour from now");
+  assert.equal(claims(issue(doc, { auth: doc, headers: { authorization: web } })).steadyTab, true);
+  // ...but only a token PocketBase accepted for this account counts
+  assert.equal(issue(doc, { auth: pat, headers: { authorization: web } }), "pocketbase-default");
+  // an older browser session (a token from before this) becomes a tab's when it's renewed from its linked browser
+  assert.equal(claims(issue(doc, { auth: doc, headers: { authorization: "old", x_steady_device: "w".repeat(40) } })).steadyTab, true);
+  // a phone's renewal stays long, and so does a phone that isn't linked (a server without email)
+  assert.equal(issue(doc, { auth: doc, headers: { authorization: "old", x_steady_device: "p".repeat(40) } }), "pocketbase-default");
+  assert.equal(issue(doc, { auth: doc, headers: { authorization: "old", x_steady_device: "u".repeat(40) } }), "pocketbase-default");
+
+  // a new token key (signing out everywhere) makes new tab tokens with the new key
+  doc.refreshTokenKey();
+  assert.ok(verifies(issue(doc, { said: "web" }), doc));
+  assert.ok(!verifies(web, doc), "the old one no longer matches");
+
+  // the length can be set, within limits
+  const S = (env) => makeRuntime({ env: Object.assign({}, ENV, env) }).sandbox.require(path.join(HOOKS, "lib", "sessions.js")).tabSeconds();
+  assert.equal(S({}), 3600);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "90" }), 5400);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "0.5" }), 30);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "0" }), 3600);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "rubbish" }), 3600);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "0.01" }), 15);
+  assert.equal(S({ STEADY_TAB_SESSION_MINUTES: "99999" }), 86400);
+});
+
+/* ------------------------------------------------ the operator agreement */
+
+const OA = "/api/steady/operator-agreement";
+
+test("operator agreement: the master clinician signs it; others read it; it can't be changed", () => {
+  const { ctl } = distDirs();
+  const FLEET = "fleet-key-0123456789abcdefgh";
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: FLEET, STEADY_CTL_DIR: ctl, STEADY_SUPERUSER_API: "open" }) });
+  const master = rt.makeUser({ name: "Dr Master", role: "clinician", master: true, active: true, email: "m@example.org" });
+  const doc = rt.makeUser({ name: "Dr Other", role: "clinician", active: true, email: "o@example.org" });
+  const adm = rt.makeUser({ name: "Front desk", role: "admin", active: true, email: "a@example.org" });
+  const sup = rt.makeUser({ name: "OpenWorks", role: "support", active: true, email: "s@example.org" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: doc.id, email: "p@example.org" });
+  const su = { isSuperuser: () => true, getString: () => "", id: "" };
+
+  // any staff member reads the text and whether it's signed; patients don't
+  const st = rt.call("GET", OA, { auth: doc });
+  assert.equal(st.status, 200);
+  assert.equal(st.data.signed, false);
+  assert.equal(st.data.canSign, false);
+  assert.match(st.data.text, /^# Operator agreement for Steady/);
+  assert.equal(st.data.prefill, undefined, "the practice's details only for the master clinician");
+  for (const u of [adm, sup]) assert.equal(rt.call("GET", OA, { auth: u }).status, 200);
+  assert.equal(rt.call("GET", OA, { auth: pat }).status, 403);
+  assert.equal(rt.call("GET", OA, {}).status, 403);
+  const m = rt.call("GET", OA, { auth: master }).data;
+  assert.equal(m.canSign, true);
+  assert.equal(m.prefill.practice.name, "VR Demo Practice", "the practice's name from its branding");
+  assert.equal(rt.call("GET", "/api/steady/fleet", { headers: { "X-Steady-Fleet": FLEET } }).data.operatorAgreement.signed, false);
+  assert.equal(rt.call("GET", "/api/steady/ops/operator-agreement", { auth: su }).data.signed, false);
+
+  const fields = { practiceName: "VR Clinical Psychology Inc.", registration: "PR 0123456", address: "26 9th Avenue,\n Walmer, Gqeberha",
+    email: "Info@Example.org", phone: "041 000 0000", informationOfficer: { master: true } };
+  const body = { version: m.version, sha256: m.sha256, fields, signature: "Kempie van Rooyen", authorised: true };
+  const sign = (auth, patch, headers) => rt.call("POST", OA + "/sign", { auth, body: Object.assign({}, body, patch || {}), headers: headers || {} });
+
+  // only the master clinician signs, and only the version they were shown
+  for (const u of [doc, adm, sup, pat]) assert.equal(sign(u).status, 403);
+  assert.equal(sign(master, { version: "0.9" }).status, 400);
+  assert.equal(sign(master, { sha256: "0".repeat(64) }).status, 400);
+  // every field, the tick, and no more than each field takes
+  const withField = (k, v) => ({ fields: Object.assign({}, fields, { [k]: v }) });
+  for (const patch of [{ authorised: false }, { signature: "" }, { signature: "x" }, withField("registration", ""), withField("address", "x".repeat(301)),
+    withField("practiceName", "x".repeat(161)), withField("email", "not-an-email"), withField("phone", "call me"), { fields: "x" }]) {
+    assert.equal(sign(master, patch).status, 400, JSON.stringify(patch));
+  }
+  // someone else as Information Officer: their name, email and phone
+  const io = sign(master, withField("informationOfficer", { master: false, name: "Ms Officer" }));
+  assert.equal(io.status, 400);
+  assert.ok(io.data.errors.some((x) => /Information Officer's email/.test(x)) && io.data.errors.some((x) => /Information Officer's phone/.test(x)), JSON.stringify(io.data));
+  // confirm it's you first
+  master.set("confirmedAt", "");
+  const nc = sign(master);
+  assert.equal(nc.status, 403);
+  assert.equal(nc.data.confirm.code, "confirm_needed");
+  master.set("confirmedAt", "2099-01-01 00:00:00.000Z");
+  assert.equal(rt.store.operator_agreements.length, 0, "nothing signed so far");
+
+  const before = rt.call("GET", "/api/steady/config").data;
+  const ok = sign(master, {}, { "User-Agent": "Steady/1.0.5 (android)" });
+  assert.equal(ok.status, 200, JSON.stringify(ok));
+  // Steady's consent statement now names the practice and its Information Officer, without a new
+  // version (patients aren't asked to agree again for new contact details)
+  const after = rt.call("GET", "/api/steady/config").data;
+  assert.match(after.consentText, /VR Clinical Psychology Inc\., 26 9th Avenue, Walmer, Gqeberha\. Email info@example\.org, phone 041 000 0000\. Information Officer: /);
+  assert.equal(after.consentVersion, before.consentVersion);
+  assert.equal(rt.store.operator_agreements.length, 1);
+  const rec = rt.store.operator_agreements[0];
+  assert.equal(rec.getString("version"), m.version);
+  assert.equal(rec.getString("sha256"), m.sha256);
+  assert.equal(rec.getString("text"), m.text, "the very text that was signed");
+  const f = JSON.parse(rec.getString("fields"));
+  assert.deepEqual(f.practice, { name: "VR Clinical Psychology Inc.", registration: "PR 0123456", address: "26 9th Avenue, Walmer, Gqeberha", email: "info@example.org", phone: "041 000 0000" });
+  assert.deepEqual(f.informationOfficer, { master: true, name: "Dr Master", email: "m@example.org", phone: "" }, "the master clinician by default");
+  assert.equal(rec.getString("signerId"), master.id);
+  assert.equal(rec.getString("signerName"), "Dr Master");
+  assert.equal(rec.getString("signerEmail"), "m@example.org");
+  assert.equal(rec.getString("signature"), "Kempie van Rooyen");
+  assert.equal(rec.getString("ip"), "127.0.0.1");
+  assert.equal(rec.getString("userAgent"), "Steady/1.0.5 (android)");
+  assert.ok(rec.getString("signedAt"));
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "operator-agreement.sign" && a.getString("actor") === master.id && !a.getString("patient")));
+
+  // signed, for everyone; the signed copy for the master clinician, the practice admin and OpenWorks
+  assert.equal(rt.call("GET", OA, { auth: doc }).data.signed, true);
+  for (const u of [master, adm, sup]) {
+    const c = rt.call("GET", OA + "/signed", { auth: u });
+    assert.equal(c.status, 200);
+    assert.equal(c.data.signed, true);
+    assert.equal(c.data.latest.text, m.text);
+    assert.equal(c.data.latest.fields.practice.registration, "PR 0123456");
+    assert.equal(c.data.history.length, 1);
+  }
+  for (const u of [doc, pat]) assert.equal(rt.call("GET", OA + "/signed", { auth: u }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/fleet", { headers: { "X-Steady-Fleet": FLEET } }).data.operatorAgreement.signed, true);
+  const ops = rt.call("GET", "/api/steady/ops/operator-agreement", { auth: su }).data;
+  assert.equal(ops.signed, true);
+  assert.equal(ops.version, m.version);
+  assert.equal(rt.call("GET", "/api/steady/ops/operator-agreement", { auth: master }).status, 404, "the server's own tools only");
+
+  // new details (a different Information Officer): signed again, a new row; the newest counts
+  rt.tick(60000);
+  const again = sign(master, withField("informationOfficer", { master: false, name: "Ms Officer", email: "IO@example.org", phone: "+27 41 000 0001" }));
+  assert.equal(again.status, 200, JSON.stringify(again));
+  assert.equal(rt.store.operator_agreements.length, 2);
+  const c2 = rt.call("GET", OA + "/signed", { auth: adm }).data;
+  assert.deepEqual(c2.latest.fields.informationOfficer, { master: false, name: "Ms Officer", email: "io@example.org", phone: "+27 41 000 0001" });
+  assert.equal(c2.history.length, 2);
+  assert.equal(rt.call("GET", OA, { auth: master }).data.prefill.informationOfficer.name, "Ms Officer", "the next signing starts from the last details");
+
+  // append-only: nothing changes or deletes a signed copy, through the API (superusers too) or inside the server
+  const first = rt.store.operator_agreements[0];
+  for (const h of ["createRequest", "updateRequest", "deleteRequest"]) {
+    assert.throws(() => rt.hooks[h].operator_agreements({ auth: su, app: rt.app, record: first, next() {} }), /signed in the app|can't be changed|can't be deleted/, h);
+  }
+  first.set("signature", "Someone else");
+  assert.throws(() => rt.app.save(first), /can't be changed/);
+  assert.throws(() => rt.app.delete(first), /can't be deleted/);
+  assert.equal(rt.store.operator_agreements.length, 2);
+});
+
+test("operator agreement: a new version waits for the master clinician; the text, its version and the docs copy agree", () => {
+  const O = require("../pb_hooks/lib/operator.js");
+  const text = fs.readFileSync(path.join(HOOKS, "content", "operator-agreement.md"), "utf8");
+  // a version signed before: the current one still waits
+  const rt = makeRuntime({ env: ENV });
+  const master = rt.makeUser({ name: "Dr Master", role: "clinician", master: true, active: true, email: "m@example.org" });
+  rt.makeRecord("operator_agreements", { version: "0.9", sha256: "0".repeat(64), text: "old", fields: {}, signedAt: "2026-10-01 10:00:00.000Z" });
+  const st = rt.call("GET", OA, { auth: master }).data;
+  assert.equal(st.signed, false);
+  assert.equal(st.lastSignedVersion, "0.9");
+  // the same version with other words (a forgotten version bump) isn't signed either
+  rt.makeRecord("operator_agreements", { version: O.VERSION, sha256: "1".repeat(64), text: "edited", fields: {}, signedAt: "2026-10-02 10:00:00.000Z" });
+  assert.equal(rt.call("GET", OA, { auth: master }).data.signed, false);
+
+  // the text says which version it is, and a changed text needs a new version
+  assert.equal(O.versionInText(text), O.VERSION, "the text's Version line matches lib/operator.js");
+  const sha = require("crypto").createHash("sha256").update(text).digest("hex");
+  assert.equal(sha, O.TEXT_SHA256, "The operator agreement's text changed: give it a new VERSION in lib/operator.js and in its Version line, then set TEXT_SHA256 to " + sha);
+  // the readable template in docs/ carries the same text, with the draft note the app's copy leaves out
+  const docs = fs.readFileSync(path.join(ROOT, "..", "docs", "OPERATOR-AGREEMENT.md"), "utf8");
+  assert.ok(docs.includes(text.trim()), "docs/OPERATOR-AGREEMENT.md has the in-app text, word for word");
+  assert.match(docs, /Draft for review by an attorney; not legal advice/);
+  assert.ok(!/attorney|not legal advice/i.test(text), "no draft note in the app's copy");
+});
+
 test("signing out ends the session on the server; the relay can only remove the devices it was sent", () => {
   const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUSHER_URL: "http://pusher:8080" }), invalidDevices: [] });
   const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
@@ -853,7 +1114,7 @@ test("signing out ends the session on the server; the relay can only remove the 
   const mine = rt.makeRecord("devices", { user: pat.id, platform: "ios", provider: "apns", token: "b".repeat(64) });
   const s = rt.sandbox.require(path.join(HOOKS, "lib", "server.js"));
   rt.opts.invalidDevices = [theirs.id, mine.id];
-  s.push(rt.app, pat.id, "assignment");
+  s.push(rt.app, pat.id);
   const ids = (rt.store.devices || []).map((d) => d.id);
   assert.ok(ids.includes(theirs.id), "another account's device isn't touched");
   assert.ok(!ids.includes(mine.id), "this account's dead device is removed");
@@ -1214,7 +1475,7 @@ test("roles: an administrator sees names only and can't open patient data", () =
   assert.equal(rt.call("GET", "/api/steady/me/care-team", { auth: rt.app.findRecordById("users", pat.id) }).status, 403, "nothing but a new password");
 });
 
-test("care: most concerning first (RADR counted), stable at the bottom, archived off the list", () => {
+test("care: answers waiting for review first, then RADR; stable at the bottom, archived off the list", () => {
   const G = require(path.join(HOOKS, "lib", "research_demo.js"));
   const rt = makeRuntime({ env: ENV });
   const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
@@ -1229,10 +1490,14 @@ test("care: most concerning first (RADR counted), stable at the bottom, archived
   // working out the latest RADR day happens on upload; here, via a settings change
   assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr-exclusions", { auth: doc, body: { domain: "sleep", excluded: false } }).status, 200);
 
+  // B's low check-ins (an answer waiting for review) come before C's RADR, and C before A, who
+  // hasn't checked in yet (alphabetical order would put C last)
   let list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
-  assert.deepEqual(list.map((p) => p.name), ["Demo C", "Demo B", "Demo A"], "alphabetical order would put Demo C last");
-  assert.equal(list[0].radr.level, "alert");
-  assert.equal(list[0].radr.convergent, 4);
+  assert.deepEqual(list.map((p) => p.name), ["Demo B", "Demo C", "Demo A"]);
+  assert.deepEqual(list.map((p) => p.attention.why.kind), ["answer", "radr", "other"]);
+  assert.equal(list[1].radr.level, "away", "RADR orders the list; it is never an alert");
+  assert.equal(list[1].radr.convergent, 4);
+  assert.match(list[1].attention.why.text, /4 of 4 areas .* not an alert/);
 
   // switching RADR measures off for one patient (a shift worker's sleep): needs a reason
   assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr-exclusions", { auth: doc, body: { domain: "sleep", excluded: true } }).status, 400);
@@ -1292,6 +1557,132 @@ test("care: most concerning first (RADR counted), stable at the bottom, archived
   assert.equal(rt.pushes.length, 0);
   assert.equal(rt.call("POST", "/api/steady/patients/" + a.id + "/care", { auth: doc, body: { status: "" } }).status, 200);
   assert.equal(rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients.length, 3);
+});
+
+test("RADR: every number explained with its data, flags reviewed by staff who may see the patient, below screening answers", () => {
+  const G = require(path.join(HOOKS, "lib", "research_demo.js"));
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
+  const col = rt.makeUser({ name: "Dr Colleague", role: "clinician", active: true, email: "col@example.org" });
+  const other = rt.makeUser({ name: "Dr Other", role: "clinician", active: true, email: "other@example.org" });
+  const adm = rt.makeUser({ name: "Front Desk", role: "admin", active: true, email: "adm@example.org" });
+  const sup = rt.makeUser({ name: "OpenWorks", role: "support", active: true, email: "ow@example.org" });
+  const mk = (name, extra) => rt.makeUser(Object.assign({ name, role: "patient", clinician: doc.id, active: true, tzOffset: 120,
+    email: name.replace(/ /g, "").toLowerCase() + "@example.org" }, extra || {}));
+  // C: the acute sleep disruption watch data (all four domains away from usual)
+  const c = mk("Demo C", { wearableConsentAt: "2026-09-01 00:00:00.000Z" });
+  G.generate(rt.now(), 120).find((p) => p.key === "disruption").days.forEach((d) => rt.makeRecord("biometrics", { patient: c.id, day: d.day, values: d.values }));
+  rt.create("checkins", c, { patient: c.id, mood: 3, anxiety: 3, sleep: 3, energy: 3 });
+  // D: a PHQ-9 two days ago with item 9 answered, older than C's latest RADR day
+  const d = mk("Demo D");
+  const phq = rt.store.instruments.find((r) => r.getString("key") === "phq9");
+  rt.makeRecord("assignments", { patient: d.id, clinician: doc.id, instrument: phq.id, status: "done",
+    completedAt: new Date(rt.now() - 2 * 86400e3).toISOString().replace("T", " "),
+    score: { total: 6, max: 27, band: "Mild", bandSeverity: "info", severity: "alert", flags: [{ label: "Item 9 endorsed: review", severity: "alert" }] } });
+  rt.create("checkins", d, { patient: d.id, mood: 3, anxiety: 3, sleep: 3, energy: 3 });
+  // E: hasn't checked in yet
+  mk("Demo E");
+  // C's latest RADR day is worked out when watch data arrives; here, via a settings change
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr-exclusions", { auth: doc, body: { domain: "sleep", excluded: false } }).status, 200);
+
+  // RADR comes below a screening answer even when it is more recent, and is never an alert
+  let list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
+  assert.deepEqual(list.map((p) => p.name), ["Demo D", "Demo C", "Demo E"]);
+  const cRow = list[1];
+  assert.equal(cRow.radr.level, "away");
+  assert.ok(cRow.attention.rank < list[0].attention.rank);
+  assert.equal(cRow.radr.flags.length, 4);
+  assert.ok(cRow.radr.flags.every((f) => /^radr:(sleep|circadian|activity|cardiac):\d{4}-\d{2}-\d{2}$/.test(f.key) && f.reviewed === null));
+  assert.ok(!JSON.stringify(list).match(/"alert"/) || list[0].flags.some((f) => f.severity === "alert"), "only the answer is an alert");
+
+  // the latest day explained: plain words, the usual range, now, how far, why, and the data behind it
+  const before = rt.store.auditlog.length;
+  const ex = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc });
+  assert.equal(ex.status, 200, JSON.stringify(ex));
+  const x = ex.data;
+  assert.equal(x.day, x.latestDay);
+  assert.equal(x.flags.length, 4);
+  assert.match(x.words, /4 of 4 areas were away from this person's usual/);
+  assert.match(x.domains.sleep.words, /^Sleep: \d\.\d of 4, away from usual/);
+  const sl = x.measures.sleep_min;
+  assert.match(sl.words, /Usually .* give or take .*, so .* from \d+ nights between .* Now .* than usual/);
+  assert.match(sl.why, /Littlewood/);
+  assert.equal(sl.window.length, 3);
+  assert.equal(sl.baseline.values.length, sl.baseline.days);
+  assert.ok(sl.baseline.days >= 14 && sl.baseline.values.every((v) => v.day >= sl.baseline.from && v.day <= sl.baseline.to));
+  // the same numbers as the RADR tab
+  const tab = rt.call("GET", "/api/steady/patients/" + c.id + "/radr", { auth: doc }).data;
+  assert.deepEqual(tab.latest.domains, Object.fromEntries(Object.entries(x.domains).map(([k, v]) => [k, v.score])));
+  assert.equal(tab.latest.features.sleep_min.z, sl.z);
+  assert.deepEqual(tab.flags.map((f) => f.key), x.flags.map((f) => f.key));
+  // reading it is logged, as other patient reads are
+  const logged = rt.store.auditlog.slice(before).filter((r) => r.getString("action") === "patient.radr.explain");
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0].getString("patient"), c.id);
+  // an earlier day explains too, without flags to review; nonsense days are refused
+  const earlier = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc, query: { day: tab.days[10].day } });
+  assert.equal(earlier.status, 200);
+  assert.deepEqual(earlier.data.flags, []);
+  for (const bad of ["2099-01-01", "yesterday", "2026-02-30"]) {
+    assert.equal(rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc, query: { day: bad } }).status, 400, bad);
+  }
+
+  // who may read and mark it: the patient's psychologist and a colleague it's shared with
+  const key = x.flags[0].key;
+  for (const [who, status] of [[other, 404], [col, 404], [c, 403], [adm, 403], [sup, 403]]) {
+    assert.equal(rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: who }).status, status, who.getString("name"));
+    assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: who, body: { key } }).status, status, who.getString("name"));
+  }
+  assert.equal(rt.store.radrreviews.length, 0);
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/share", { auth: doc, body: { clinician: col.id, shared: true } }).status, 200);
+  const shared = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: col });
+  assert.equal(shared.status, 200);
+  assert.ok(rt.store.auditlog.some((r) => r.getString("action") === "patient.radr.explain" && /shared/.test(r.getString("target"))));
+  const one = rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: col, body: { key, note: "Spoke to them; new night shifts." } });
+  assert.equal(one.status, 200, JSON.stringify(one));
+  assert.equal(one.data.reviewed.by, "Dr Colleague");
+  assert.ok(one.data.reviewed.at > 0);
+  const rec = rt.store.radrreviews[0];
+  assert.equal(rec.getString("reviewer"), col.id);
+  assert.equal(rec.getString("key"), key);
+  // only today's flags, and only well-formed keys
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: doc, body: { key: "a:x:f0" } }).status, 400);
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: doc, body: { key: "radr:sleep:2020-01-01" } }).status, 400);
+
+  // one of four reviewed: still placed by RADR, and the review shows who and when
+  list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
+  let cNow = list.find((p) => p.name === "Demo C");
+  assert.equal(cNow.radr.level, "away");
+  assert.equal(cNow.radr.flags.find((f) => f.key === key).reviewed.by, "Dr Colleague");
+  assert.equal(rt.call("GET", "/api/steady/patients/" + c.id + "/radr", { auth: doc }).data.flags.find((f) => f.key === key).reviewed.note,
+    "Spoke to them; new night shifts.");
+
+  // all reviewed: C drops below E (no check-ins yet) until something new appears
+  for (const f of x.flags.slice(1)) {
+    assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: doc, body: { key: f.key } }).status, 200);
+  }
+  list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
+  assert.deepEqual(list.map((p) => p.name), ["Demo D", "Demo E", "Demo C"]);
+  cNow = list[2];
+  assert.equal(cNow.radr.level, "reviewed");
+  assert.equal(cNow.attention.rank, 0);
+  assert.match(cNow.attention.why.text, /marked as reviewed/);
+  // the colleague's list follows the same reviews
+  assert.equal(rt.call("GET", "/api/steady/overview", { auth: col }).data.patients.find((p) => p.id === c.id).radr.level, "reviewed");
+
+  // if the access log can't be written, nothing is shown and nothing is marked
+  const save = rt.app.save;
+  rt.app.save = (r) => { if (r.collectionName === "auditlog") throw new Error("disk full"); return save(r); };
+  const refused = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc });
+  const refusedReview = rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: doc, body: { key } });
+  rt.app.save = save;
+  assert.equal(refused.status, 500);
+  assert.equal(refused.data, undefined);
+  assert.equal(refusedReview.status, 500);
+  assert.equal(rt.store.radrreviews.length, 4);
+
+  // reviews go with the patient's account when it is deleted
+  assert.ok(require(path.join(HOOKS, "lib", "deletion.js")).OWNED.some((o) => o[0] === "radrreviews"));
 });
 
 test("care: notes are the psychologist's own, shared colleagues read them, patients never", () => {
@@ -1726,6 +2117,26 @@ test("fleet view: a server's state and check/update/restart, only with the fleet
   assert.equal(r.data.version.managed, false);
   const blob = JSON.stringify(r.data);
   assert.ok(!/Pat Secret|private note|pat@example/.test(blob), "nothing about patients");
+  // privacy at a glance, as numbers only
+  assert.equal(r.data.counts.olderConsent, 1, "the patient hasn't agreed to the current statement");
+  assert.equal(r.data.counts.staffWithoutTwoStep, 1);
+  assert.equal(r.data.counts.deletionOverdue, 0);
+  pat.set("deletionRequestedAt", new Date(rt.now() - 26 * 86400000).toISOString().replace("T", " "));
+  rt.app.save(pat);
+  assert.equal(get(F).data.counts.deletionOverdue, 1, "past the 25-day reminder");
+  // the latest security and privacy check (audit-server.sh --json), cut to its shape
+  assert.equal(r.data.audit, null, "none yet");
+  fs.writeFileSync(path.join(ctl, "audit.json"), JSON.stringify({ format: 1, at: "2026-11-03T10:00:00Z", code: "9d66cbe", fails: 99, items: [
+    { level: "fail", section: "Firewall and listening ports", text: "no firewall drops incoming connections" },
+    { level: "warn", section: "SSH", text: "x".repeat(500) }, { level: "ok", section: "Disk", text: "disk 10% used" },
+    { level: "secret", section: "x", text: "dropped" }, null] }));
+  const au = get(F).data.audit;
+  assert.equal(au.at, "2026-11-03T10:00:00Z");
+  assert.deepEqual([au.fails, au.warns, au.oks, au.items.length], [1, 1, 1, 3], "counted from the items, not the file's own numbers");
+  assert.equal(au.items[1].text.length, 300);
+  fs.writeFileSync(path.join(ctl, "audit.json"), "not json");
+  assert.equal(get(F).data.audit, null);
+  fs.unlinkSync(path.join(ctl, "audit.json"));
   // and the fleet key reads nothing else
   assert.equal(rt.call("GET", "/api/steady/feedback", { headers: F }).status >= 400, true, "the fleet key can't read feedback");
 

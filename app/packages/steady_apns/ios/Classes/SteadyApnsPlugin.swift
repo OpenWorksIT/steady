@@ -56,8 +56,8 @@ public class SteadyApnsPlugin: NSObject, FlutterPlugin, UNUserNotificationCenter
   public func userNotificationCenter(_ center: UNUserNotificationCenter,
                                      didReceive response: UNNotificationResponse,
                                      withCompletionHandler completionHandler: @escaping () -> Void) {
-    let kind = response.notification.request.content.userInfo["kind"] as? String ?? ""
-    channel?.invokeMethod("onTap", arguments: kind)
+    // the notification carries nothing to pass on: the app just refreshes
+    channel?.invokeMethod("onTap", arguments: nil)
     completionHandler()
   }
 }

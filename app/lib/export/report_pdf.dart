@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// A patient's Steady record as a PDF report: check-in trends, questionnaire scores, the RADR
-// research view, exercises, watch data and the patient's notes. Built on the device; nothing is
+// A patient's Steady record as a PDF report: check-in trends, questionnaire scores, RADR (how far
+// watch data and check-ins are from the person's own normal), exercises, watch data and the
+// patient's notes. Built on the device; nothing is
 // sent anywhere else.
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -434,9 +435,10 @@ List<pw.Widget> _assessments(ExportPatient p) {
 
 PdfColor _heat(double? v) {
   if (v == null) return const PdfColor.fromInt(0xFFEEF1F3);
+  // one calm colour, darker further from usual: RADR is an ordering of data, not an alert
   if (v >= 1.5) {
     final t = ((v - 1.5) / 2.5).clamp(0.0, 1.0);
-    return PdfColor(0.85 - 0.22 * t, 0.55 - 0.35 * t, 0.50 - 0.33 * t);
+    return PdfColor(0.45 - 0.28 * t, 0.60 - 0.23 * t, 0.70 - 0.21 * t);
   }
   final t = (v / 1.5).clamp(0.0, 1.0);
   return PdfColor(0.89 - 0.33 * t, 0.93 - 0.30 * t, 0.95 - 0.24 * t);
@@ -454,8 +456,9 @@ List<pw.Widget> _radr(ExportPatient p) {
       colour: _accent,
       background: _accentSoft,
       child: pw.Text(
-        'For research only: not a risk score, prediction or diagnosis, and not monitored around the clock. Each measure is '
+        'To improve care: not a risk score, prediction or diagnosis, and not watched around the clock. Each measure is '
         'compared with the person\'s previous four weeks; four domains are scored and shown with the check-ins beside them. '
+        'In the psychologist\'s list RADR only orders patients, after answers waiting for review. '
         'Method and sources: docs/RADR.md in the Steady repository.',
         style: const pw.TextStyle(fontSize: 8, color: _ink, lineSpacing: 1.4),
       ),
@@ -470,7 +473,7 @@ List<pw.Widget> _radr(ExportPatient p) {
   String f(double? v) => v == null ? '-' : v.toStringAsFixed(1);
   out.add(pw.Wrap(spacing: 8, runSpacing: 8, children: [
     _card(f(last.watch), 'watch index (${_short(last.day)})', colour: _brand),
-    _card('${last.convergent} of 4', 'domains away from usual', colour: last.convergent >= 2 ? _alert : _calm),
+    _card('${last.convergent} of 4', 'domains away from usual', colour: _brand),
     _card(f(last.self), 'check-in score', colour: _scaleColours['anxiety']!),
     _card(f(last.combined), 'combined', colour: _ink2),
   ]));
@@ -479,6 +482,15 @@ List<pw.Widget> _radr(ExportPatient p) {
     ..clear()
     ..add(head);
   out.add(pw.SizedBox(height: 10));
+
+  // the flags on the latest day, and whether each was marked as reviewed in Steady
+  if (r.flags.isNotEmpty) {
+    out.add(pw.Text('Away from usual on ${_short(DateTime.tryParse('${r.flags.first['day']}') ?? last.day)}', style: _small));
+    for (final fl in r.flags) {
+      out.add(pw.Text('${ExportRadr.flagText(fl, _short)}.', style: const pw.TextStyle(fontSize: 8, color: _ink)));
+    }
+    out.add(pw.SizedBox(height: 8));
+  }
 
   // latest domain bars
   out.add(pw.Column(children: [
@@ -511,7 +523,7 @@ List<pw.Widget> _radr(ExportPatient p) {
 
   // domains by day
   out.add(pw.SizedBox(height: 10));
-  out.add(pw.Text('By domain, each mark a day (darker red: further from usual)', style: _small));
+  out.add(pw.Text('By domain, each mark a day (darker: further from usual)', style: _small));
   out.add(pw.SizedBox(height: 4));
   out.add(pw.Column(children: [
     for (final k in ExportRadr.domainKeys)
@@ -557,7 +569,7 @@ List<pw.Widget> _radr(ExportPatient p) {
   return out;
 }
 
-/// A 0..4 bar: filled part in brand blue, red from 1.5 ("away from usual").
+/// A 0..4 bar: filled part in light blue, full brand blue from 1.5 ("away from usual"), never red.
 pw.Widget _bar(double? value) {
   final filled = (((value ?? 0).clamp(0, 4)) / 4 * 1000).round();
   return pw.Container(
@@ -568,7 +580,8 @@ pw.Widget _bar(double? value) {
         pw.Expanded(
           flex: filled,
           child: pw.Container(
-            decoration: pw.BoxDecoration(color: (value ?? 0) >= 1.5 ? _alert : _brand, borderRadius: pw.BorderRadius.circular(3.5)),
+            decoration: pw.BoxDecoration(
+                color: (value ?? 0) >= 1.5 ? _brand : const PdfColor.fromInt(0xFF8BAEC2), borderRadius: pw.BorderRadius.circular(3.5)),
           ),
         ),
       if (filled < 1000) pw.Expanded(flex: 1000 - filled, child: pw.SizedBox()),
