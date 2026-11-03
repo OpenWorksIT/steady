@@ -1,4 +1,5 @@
 # About the Science section
+<!-- steady: pinned -->
 
 This section sets out how Steady's clinical methods work, one topic per system. Each topic is a short manual: what the system is, how it came about and the evidence behind it, how it works exactly as built (items, scales, scores, thresholds and timings), where it is weak, and its references. The topics describe Steady 1.1.0.
 

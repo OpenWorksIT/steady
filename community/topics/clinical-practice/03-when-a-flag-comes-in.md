@@ -21,7 +21,7 @@ A questionnaire's flags stay on the patient's page for two weeks after it was co
 
 - **Not an emergency service.** Nobody watches it around the clock, and it doesn't call or alert anyone on a patient's behalf. Every patient screen says so and shows the crisis numbers (SADAG 0800 567 567, and 112 from a mobile), and patients are told their psychologist will usually see what they send during working hours.
 - **Not a message channel.** Patients can't message you through Steady. Whatever they write in a check-in reaches you when you open it.
-- **Not always immediate.** If the practice's server is offline for a while, the apps keep working and catch up when it's back, so something can reach you later than it was sent.
+- **Not always immediate.** If the practice's server can't be reached for a while, watch data waits on the phone and catches up when it's back, but a check-in or questionnaire answer can't be sent until then: the patient is told to try again. So something can reach you later than the patient meant it to.
 - **Not a risk score or a diagnosis.** Flags are review aids.
 
 ## Questions for each other

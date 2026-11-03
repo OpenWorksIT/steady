@@ -51,6 +51,7 @@ welcome post and the "If someone posts patient information" steps below back the
 | Area | Clinicians | OpenWorks IT |
 |---|---|---|
 | Announcements | Read and reply | Read, post and reply |
+| The science (how each part of Steady works and why, with references) | Read and reply | Numbers only |
 | Clinical practice | Read, post and reply | Numbers only |
 | Research and studies | Read, post and reply | Numbers only |
 | Questionnaires and tools | Read, post and reply | Numbers only |
@@ -302,8 +303,8 @@ does the guarding.)
 It:
 
 - creates the groups `clinicians` and `openworks`
-- creates the six categories with the permissions in "Who sees what" (the Tea room is
-  Discourse's own General, renamed)
+- creates the seven categories with the permissions in "Who sees what" (the Tea room is
+  Discourse's own General, renamed), and lists them in everyone's side menu
 - closes every other category (Discourse's own General and so on) to OpenWorks and to
   "everyone", and opens it to clinicians instead. Discourse's own Site Feedback can't be closed
   (Discourse won't change who sees it), so it is deleted: feedback goes to Steady development
@@ -312,6 +313,7 @@ It:
   personal messages for both groups
 - checks the pinned settings it can read back, and that no outside sign-in is enabled
 - posts the welcome and guidelines topic in Announcements and pins it
+- posts the first topics, from `community/topics/` ("The first topics")
 - gives the forum the Steady Community look ("How it looks")
 - with `--stats-account`: creates the `openworks-stats` account and prints its key once (see
   "Activity counts for OpenWorks")
@@ -349,6 +351,26 @@ admin).
 
 Later admin work is Kempie's, in the community, or by making a temporary Global key for himself
 (Admin > Advanced > API keys) and running `setup.py`, then revoking it.
+
+## The first topics
+
+So that the first psychologists find a community rather than an empty forum, `setup.py` posts
+the topics in `community/topics/<category>/`: the Science section (one topic per part of
+Steady: the check-in, flags, each questionnaire, watch data, RADR, the patient list, the
+exercises), and starters in every other category (a de-identifying checklist, introductions in
+the Tea room, the reading list, how studies will work, how to report a problem, and more).
+
+Each file is `# Title`, then optionally `<!-- steady: pinned -->`, `<!-- steady: wiki -->` or
+both, then the post. Each is posted once, as the system user, and found again by an id made
+from its file name. One already in the forum is left as it is there (someone may have edited
+it); `--update-topics` replaces it with its file. `--skip-topics` leaves them all alone.
+
+`community/drafts/` holds what isn't posted automatically: a welcome in Kempie's voice for him
+to post himself, and the private message every new member gets (`welcome-message.md`, applied as
+Discourse's welcome text).
+
+The topics describe Steady 1.1 (the Community tab first ships in it). VR Clinical Psychology
+signs off the science: Kempie reads the Science section before the community opens.
 
 ## How it looks
 
