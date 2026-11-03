@@ -28,6 +28,10 @@ services:
       STEADY_SMTP_PORT: ${STEADY_SMTP_PORT:-1025}
       STEADY_MAIL_FROM: noreply@steady.test
       STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
+      # the community and its sign-in bridge (docs/COMMUNITY.md): security.py checks the note
+      STEADY_COMMUNITY_URL: ${STEADY_COMMUNITY_URL:-https://community.steady.test}
+      STEADY_COMMUNITY_SIGNIN: ${STEADY_COMMUNITY_SIGNIN:-https://signin.steady.test}
+      STEADY_COMMUNITY_KEY: ${STEADY_COMMUNITY_KEY:-}
       # this PC's own scripts (start.sh, smoke.py) use the superuser API through the local port;
       # the tunnel and Caddy still block it, and the dashboard stays closed
       STEADY_SUPERUSER_API: open

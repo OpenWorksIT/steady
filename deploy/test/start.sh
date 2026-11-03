@@ -56,9 +56,14 @@ CLINICIAN_NAME="Test Clinician"
 
 # The Sorted feed (docs/SORTED.md): give Sorted's test stack this key to see live data
 STEADY_INTEGRATION_KEY=$(rand 32)
+
+# The community forum's sign-in bridge (docs/COMMUNITY.md): the key this test server shares with it
+STEADY_COMMUNITY_KEY=$(rand 36)
 EOF
   echo "Created deploy/test/.env"
 fi
+# added to test stacks set up before the Community tab
+grep -q '^STEADY_COMMUNITY_KEY=' .env || printf '\n# The community's sign-in bridge (docs/COMMUNITY.md)\nSTEADY_COMMUNITY_KEY=%s\n' "$(rand 36)" >> .env
 umask 022
 set -a; . ./.env; set +a
 

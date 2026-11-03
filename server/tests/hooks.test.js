@@ -225,7 +225,9 @@ function makeRuntime(opts = {}) {
         const body = b64({ alg: "HS256", typ: "JWT" }) + "." + b64(Object.assign({}, payload, { exp: Math.floor(clock / 1000) + seconds }));
         return body + "." + require("crypto").createHmac("sha256", key).update(body).digest("base64url");
       },
-      parseUnverifiedJWT: (t) => JSON.parse(Buffer.from(String(t).split(".")[1], "base64url").toString())
+      parseUnverifiedJWT: (t) => JSON.parse(Buffer.from(String(t).split(".")[1], "base64url").toString()),
+      // as PocketBase: HMAC-SHA256, hex
+      hs256: (text, secret) => require("crypto").createHmac("sha256", String(secret)).update(String(text)).digest("hex")
     },
     $http: {
       send: (cfg) => {
@@ -293,6 +295,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_deletion.pb.js"));
   run(path.join(HOOKS, "steady_fleet.pb.js"));
   run(path.join(HOOKS, "steady_operator.pb.js"));
+  run(path.join(HOOKS, "steady_community.pb.js"));
 
   function call(method, p, { auth = null, body = {}, params = {}, query = {}, headers = {} } = {}) {
     const key = Object.keys(routes).find((k) => {
@@ -2180,13 +2183,16 @@ test("fleet view: a server's state and check/update/restart, only with the fleet
   assert.equal(weak.call("POST", "/api/steady/fleet/request", { headers: { "X-Steady-Fleet": "short" }, body: { action: "check" } }).status, 404);
 });
 
-test("config: the community link is passed on only as an https address", () => {
-  const ok = makeRuntime({ env: Object.assign({}, ENV, { STEADY_COMMUNITY_URL: "https://community.steadyapp.co.za" }) });
+test("config: the Community tab only when the server is set up for it, and only as an https address", () => {
+  const SET = { STEADY_COMMUNITY_SIGNIN: "https://signin.steadyapp.co.za", STEADY_COMMUNITY_KEY: "k".repeat(40) };
+  const ok = makeRuntime({ env: Object.assign({}, ENV, SET, { STEADY_COMMUNITY_URL: "https://Community.steadyapp.co.za/" }) });
   assert.equal(ok.call("GET", "/api/steady/config").data.communityUrl, "https://community.steadyapp.co.za");
-  for (const bad of ["javascript:alert(1)", "http://community.steadyapp.co.za", "https://x.example/\"><script>"]) {
-    const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_COMMUNITY_URL: bad }) });
+  for (const bad of ["javascript:alert(1)", "http://community.steadyapp.co.za", "https://x.example/\"><script>", "https://x.example/path"]) {
+    const rt = makeRuntime({ env: Object.assign({}, ENV, SET, { STEADY_COMMUNITY_URL: bad }) });
     assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "", bad);
   }
+  // the forum's address alone isn't enough: no sign-in, no tab
+  assert.equal(makeRuntime({ env: Object.assign({}, ENV, { STEADY_COMMUNITY_URL: "https://community.steadyapp.co.za" }) }).call("GET", "/api/steady/config").data.communityUrl, "");
   assert.equal(makeRuntime({ env: ENV }).call("GET", "/api/steady/config").data.communityUrl, "");
 });
 
@@ -2228,4 +2234,67 @@ test("demo patients on a test server: a new day every night, only with STEADY_DE
   // a patient who isn't marked demo is never touched, whatever their name
   assert.equal(count(t.rt, "biometrics", t.real.id), watch0);
   assert.equal(count(t.rt, "checkins", t.real.id), 0);
+});
+
+test("community: a signed note for the sign-in bridge, for psychologists and support with two-step on", () => {
+  const crypto = require("crypto");
+  const KEY = "k".repeat(20) + "-community-key-0123";
+  const R = "/api/steady/community/sign-in";
+  const SET = { STEADY_COMMUNITY_URL: "https://community.example.org", STEADY_COMMUNITY_SIGNIN: "https://Signin.Example.org/", STEADY_COMMUNITY_KEY: KEY };
+  const two = { totpEnabledAt: "2026-01-01 00:00:00.000Z", totpSecret: "JBSWY3DPEHPK3PXP" };
+  const people = (rt) => ({
+    doc: rt.makeUser(Object.assign({ name: "Dr Kempie", role: "clinician", active: true, email: "Kempie@Example.org" }, two)),
+    sup: rt.makeUser(Object.assign({ name: "OpenWorks", role: "support", active: true, email: "it@example.org" }, two)),
+    adm: rt.makeUser(Object.assign({ name: "Front Desk", role: "admin", active: true, email: "desk@example.org" }, two)),
+    pat: rt.makeUser({ name: "Pat", role: "patient", active: true, email: "pat@example.org" }),
+    bare: rt.makeUser({ name: "Dr NoCode", role: "clinician", active: true, email: "nocode@example.org" })
+  });
+
+  // not set up (no key, a short key, no forum, an address that isn't https): as if the route weren't there
+  for (const env of [{}, Object.assign({}, SET, { STEADY_COMMUNITY_KEY: "short" }), Object.assign({}, SET, { STEADY_COMMUNITY_URL: "" }),
+    Object.assign({}, SET, { STEADY_COMMUNITY_SIGNIN: "http://signin.example.org" }), Object.assign({}, SET, { STEADY_COMMUNITY_SIGNIN: "https://signin.example.org/path" })]) {
+    const rt = makeRuntime({ env: Object.assign({}, ENV, env) });
+    const { doc } = people(rt);
+    assert.equal(rt.call("POST", R, { auth: doc }).status, 404, JSON.stringify(env));
+  }
+
+  const rt = makeRuntime({ env: Object.assign({}, ENV, SET) });
+  const p = people(rt);
+  const ok = rt.call("POST", R, { auth: p.doc });
+  assert.equal(ok.status, 200, JSON.stringify(ok));
+  const u = new URL(ok.data.url);
+  assert.equal(u.origin + u.pathname, "https://signin.example.org/enter");
+  const body = u.searchParams.get("p");
+  assert.equal(u.searchParams.get("s"), crypto.createHmac("sha256", KEY).update(body).digest("hex"), "signed with the practice's key");
+  const note = JSON.parse(body);
+  assert.deepEqual(Object.keys(note), ["v", "aud", "jti", "sub", "email", "name", "role", "iat", "exp"], "nothing else in it");
+  assert.equal(note.aud, "https://signin.example.org");
+  assert.match(note.jti, /^[A-Za-z0-9]{24}$/);
+  assert.equal(note.sub, p.doc.id);
+  assert.equal(note.email, "kempie@example.org");
+  assert.equal(note.name, "Dr Kempie");
+  assert.equal(note.role, "clinician");
+  assert.equal(note.iat, Math.floor(rt.now() / 1000));
+  assert.equal(note.exp - note.iat, 120);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "account.community-sign-in" && a.getString("actor") === p.doc.id && !a.getString("patient")), "in the access log, about no patient");
+  const again = JSON.parse(new URL(rt.call("POST", R, { auth: p.doc }).data.url).searchParams.get("p"));
+  assert.notEqual(again.jti, note.jti, "each note is a new one");
+
+  const s = rt.call("POST", R, { auth: p.sup });
+  assert.equal(s.status, 200);
+  assert.equal(JSON.parse(new URL(s.data.url).searchParams.get("p")).role, "support");
+
+  assert.equal(rt.call("POST", R, { auth: p.adm }).status, 403, "not the practice admin");
+  assert.equal(rt.call("POST", R, { auth: p.pat }).status, 403, "never patients");
+  const bare = rt.call("POST", R, { auth: p.bare });
+  assert.equal(bare.status, 403, "two-step sign-in on, even where the server doesn't require it");
+  assert.match(bare.error, /two-step/);
+  p.doc.set("active", false);
+  assert.equal(rt.call("POST", R, { auth: p.doc }).status, 403, "a stopped account");
+
+  // a long name is cut, never in the middle of an emoji
+  const long = rt.makeUser(Object.assign({ name: "D".repeat(99) + "\u{1F642}", role: "clinician", active: true, email: "long@example.org" }, two));
+  const ln = rt.call("POST", R, { auth: long });
+  assert.equal(ln.status, 200);
+  assert.equal(JSON.parse(new URL(ln.data.url).searchParams.get("p")).name, "D".repeat(99));
 });

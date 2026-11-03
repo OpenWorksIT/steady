@@ -129,6 +129,12 @@ if [ -f .env ]; then
   if [ -n "$v" ]; then [ "${#v}" -ge 32 ] && ok "the fleet key is long enough" || fail "STEADY_FLEET_KEY is shorter than 32 characters"; fi
   v="$(envv STEADY_INTEGRATION_KEY)"
   if [ -n "$v" ]; then [ "${#v}" -ge 32 ] && ok "the Sorted key is long enough" || fail "STEADY_INTEGRATION_KEY is shorter than 32 characters"; fi
+  # the community's Community tab (docs/COMMUNITY.md): off unless all three are set, and set right
+  v="$(envv STEADY_COMMUNITY_KEY)"; u="$(envv STEADY_COMMUNITY_SIGNIN)"; f="$(envv STEADY_COMMUNITY_URL)"
+  if [ -n "$v$u$f" ]; then
+    { [ "${#v}" -ge 32 ] && [[ "$u" =~ ^https://[a-z0-9.-]+$ ]] && [[ "$f" =~ ^https://[a-z0-9.-]+$ ]]; } && ok "the Community tab is set up ($f)" \
+      || warn "the Community tab is half set up: STEADY_COMMUNITY_URL and STEADY_COMMUNITY_SIGNIN must be https addresses, STEADY_COMMUNITY_KEY 32 characters or more"
+  fi
   [ "$(envv STEADY_DASHBOARD)" = on ] && fail "STEADY_DASHBOARD=on: the PocketBase dashboard is open; switch it off" || ok "the PocketBase dashboard is switched off"
   [ "$(envv STEADY_SUPERUSER_API)" = open ] && fail "STEADY_SUPERUSER_API=open is for test PCs only" || ok "superuser sign-in only from inside the container"
   [ "$(envv STEADY_REQUIRE_2FA)" = off ] && fail "STEADY_REQUIRE_2FA=off: staff sign in without two-step" || ok "two-step sign-in is required for staff"

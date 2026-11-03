@@ -21,6 +21,8 @@ app/packages/*/.dart_tool/
 
 # Go
 pusher/pusher
+fleet/fleet
+community/signin/signin
 
 # Node test runs
 node_modules/

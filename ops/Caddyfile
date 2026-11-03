@@ -9,3 +9,4 @@
 
 import /etc/caddy/fleet/fleet.caddy
 import /etc/caddy/community/community.caddy
+import /etc/caddy/community/signin/signin.caddy

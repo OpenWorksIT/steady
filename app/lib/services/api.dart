@@ -61,6 +61,12 @@ String? normaliseServerUrl(String input) {
 String inviteLink(String serverUrl, String code) =>
     '${serverUrl.replaceAll(RegExp(r'/+$'), '')}/join?invite=${code.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '')}';
 
+/// Where the community's sign-in may go: an https address, nothing else.
+bool isForumAddress(String url) {
+  final u = Uri.tryParse(url);
+  return u != null && u.scheme == 'https' && u.host.isNotEmpty && u.userInfo.isEmpty;
+}
+
 /// Turns any error into a sentence a person can act on.
 String errorText(Object error) {
   if (error is FormatException) return error.message;
@@ -716,6 +722,15 @@ class Api {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/me/app',
         method: 'POST', body: {'build': build, 'platform': platform, if (health.isNotEmpty) 'health': health});
     return '${res['serverBuild'] ?? ''}';
+  }
+
+  /// Opening the community: the address of its sign-in bridge, with a short note from this server
+  /// saying who is signed in (psychologists and OpenWorks support; server/pb_hooks/steady_community.pb.js).
+  Future<String> communitySignIn() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/community/sign-in', method: 'POST');
+    final url = '${res['url'] ?? ''}';
+    if (!isForumAddress(url)) throw const FormatException("The community's sign-in isn't set up right. Please tell OpenWorks IT.");
+    return url;
   }
 
   /// Asks a patient to reconnect their watch (their psychologist, the master clinician, reception).

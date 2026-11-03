@@ -24,8 +24,9 @@
 	respond @dashboard 404
 
 	handle {
-		# the web app: only this site's own code, fonts and API (tested with the Flutter build)
-		header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		# the web app: only this site's own code, fonts and API (tested with the Flutter build), and
+		# the Steady community in its Community tab (docs/COMMUNITY.md)
+		header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src https://community.steadyapp.co.za https://signin.steadyapp.co.za; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		reverse_proxy pocketbase:8090 {
 			# keep realtime (server-sent events) connections open
 			flush_interval -1
