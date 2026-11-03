@@ -275,7 +275,7 @@ def _describe_http_error(method, path, code, text, headers):
     try:
         payload = json.loads(text)
         errors = payload.get("errors") or [payload.get("error") or payload.get("message")]
-        detail = "; ".join(str(e) for e in errors if e)
+        detail = "; ".join(str(e) for e in errors if e).rstrip(".")
     except (ValueError, AttributeError):
         detail = text.strip()[:200]
     hint = ""
@@ -545,10 +545,12 @@ def ensure_categories(api, specs, existing_groups):
 
 
 def lock_other_categories(api, managed_slugs):
-    """No other category may be open to OpenWorks or to everyone (OpenWorks are members too)."""
+    """No other category may be open to OpenWorks or to everyone (OpenWorks are members too).
+    Returns what couldn't be done."""
     print("Other categories (OpenWorks must not see them)")
     cats, uncategorized = load_categories(api)
     any_found = False
+    problems = []
     for cat in cats:
         if cat["slug"] in managed_slugs or cat["id"] == uncategorized:
             continue
@@ -569,11 +571,25 @@ def lock_other_categories(api, managed_slugs):
             keep["clinicians"] = min(dropped.values())
         if api.dry_run:
             say("would fix", f"{cat['name']}: {describe(perms)} -> {describe(keep)}")
-        else:
+            continue
+        try:
             api.put(f"/categories/{cat['id']}.json", {"name": cat["name"], "permissions": keep})
             say("fixed", f"{cat['name']}: {describe(keep)}")
+        except SetupError as err:
+            if "pre-seeded" not in str(err):
+                raise
+            # Discourse won't change who sees its own Site Feedback (or Staff) category, and says
+            # to delete it instead. Nothing here uses it: feedback goes to Steady development.
+            try:
+                api.delete(f"/categories/{cat['id']}.json")
+                say("removed", f"{cat['name']}: Discourse's own category, open to everyone; not used here")
+            except SetupError as err2:
+                say("WRONG", f"{cat['name']} stays open to everyone ({describe(perms)}): it can't be closed, and "
+                             f"deleting it failed: {err2}")
+                problems.append(f"{cat['name']}: open to everyone; delete it (it must hold no topics first)")
     if not any_found:
         say("ok", "none")
+    return problems
 
 
 # --- welcome topic --------------------------------------------------------------------
@@ -1065,7 +1081,9 @@ def run(api, args, groups, categories):
         group_ids = ensure_groups(api, groups)
         cat_ids = ensure_categories(api, categories, set(group_ids))
         if not args.leave_other_categories:
-            lock_other_categories(api, {c["slug"] for c in categories})
+            mismatched_categories = lock_other_categories(api, {c["slug"] for c in categories})
+        else:
+            mismatched_categories = []
         unknown, mismatched = apply_settings(api, args, group_ids)
         if not args.skip_welcome:
             ensure_welcome(api, cat_ids.get("announcements"))
@@ -1081,6 +1099,10 @@ def run(api, args, groups, categories):
         print("Not offered by this Discourse (check by hand in Admin > Settings, or in community.yml):")
         for name in unknown:
             print(f"  - {name}")
+    if mismatched_categories:
+        print("Categories that are still open to everyone (OpenWorks included):")
+        for p in mismatched_categories:
+            print(f"  - {p}")
     if brand_problems:
         print("The look wasn't finished (the rest was done; run it again after fixing):")
         for p in brand_problems:
@@ -1090,7 +1112,7 @@ def run(api, args, groups, categories):
         for name in mismatched:
             print(f"  - {name}")
         return 1
-    if brand_problems:
+    if brand_problems or mismatched_categories:
         return 1
     print("Dry run finished; nothing was changed." if args.dry_run else "Done.")
     return 0

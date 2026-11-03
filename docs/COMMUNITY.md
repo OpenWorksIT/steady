@@ -302,8 +302,9 @@ It:
 
 - creates the groups `clinicians` and `openworks`
 - creates the five categories with the permissions in "Who sees what"
-- closes every other category (Discourse's own General, Site Feedback and so on) to OpenWorks
-  and to "everyone", and opens it to clinicians instead
+- closes every other category (Discourse's own General and so on) to OpenWorks and to
+  "everyone", and opens it to clinicians instead. Discourse's own Site Feedback can't be closed
+  (Discourse won't change who sees it), so it is deleted: feedback goes to Steady development
 - sets the site settings: sign-in required, sign-in through Steady only, earlier versions of
   edited posts visible to staff only, permanent delete allowed, daily backups (seven kept),
   personal messages for both groups
