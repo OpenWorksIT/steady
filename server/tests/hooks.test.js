@@ -2117,6 +2117,26 @@ test("fleet view: a server's state and check/update/restart, only with the fleet
   assert.equal(r.data.version.managed, false);
   const blob = JSON.stringify(r.data);
   assert.ok(!/Pat Secret|private note|pat@example/.test(blob), "nothing about patients");
+  // privacy at a glance, as numbers only
+  assert.equal(r.data.counts.olderConsent, 1, "the patient hasn't agreed to the current statement");
+  assert.equal(r.data.counts.staffWithoutTwoStep, 1);
+  assert.equal(r.data.counts.deletionOverdue, 0);
+  pat.set("deletionRequestedAt", new Date(rt.now() - 26 * 86400000).toISOString().replace("T", " "));
+  rt.app.save(pat);
+  assert.equal(get(F).data.counts.deletionOverdue, 1, "past the 25-day reminder");
+  // the latest security and privacy check (audit-server.sh --json), cut to its shape
+  assert.equal(r.data.audit, null, "none yet");
+  fs.writeFileSync(path.join(ctl, "audit.json"), JSON.stringify({ format: 1, at: "2026-11-03T10:00:00Z", code: "9d66cbe", fails: 99, items: [
+    { level: "fail", section: "Firewall and listening ports", text: "no firewall drops incoming connections" },
+    { level: "warn", section: "SSH", text: "x".repeat(500) }, { level: "ok", section: "Disk", text: "disk 10% used" },
+    { level: "secret", section: "x", text: "dropped" }, null] }));
+  const au = get(F).data.audit;
+  assert.equal(au.at, "2026-11-03T10:00:00Z");
+  assert.deepEqual([au.fails, au.warns, au.oks, au.items.length], [1, 1, 1, 3], "counted from the items, not the file's own numbers");
+  assert.equal(au.items[1].text.length, 300);
+  fs.writeFileSync(path.join(ctl, "audit.json"), "not json");
+  assert.equal(get(F).data.audit, null);
+  fs.unlinkSync(path.join(ctl, "audit.json"));
   // and the fleet key reads nothing else
   assert.equal(rt.call("GET", "/api/steady/feedback", { headers: F }).status >= 400, true, "the fleet key can't read feedback");
 
