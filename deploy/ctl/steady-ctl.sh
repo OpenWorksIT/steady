@@ -135,8 +135,13 @@ signed_tag() { # signed_tag TAG SIGNERS
 
 check() {
   put checking "$(jq -n --arg at "$(now)" '{at: $at}')"
-  local err="" cur latest signers="$DEPLOY/secrets/allowed_signers" tag="" webref=origin/web-dist
+  local err="" cur ran latest signers="$DEPLOY/secrets/allowed_signers" tag="" webref=origin/web-dist
   cur="$(git -C "$REPO" rev-parse HEAD)"
+  # What the server runs, which update.sh records once a build is up. After a build that
+  # failed, the code on disk is already the new version while the server still runs the old
+  # one: compared with the code, the update would no longer be offered.
+  ran="$(head -c 41 "${STEADY_RUNNING_FILE:-/var/lib/steady/running}" 2>/dev/null | tr -d '\n')"
+  if [[ "$ran" =~ ^[0-9a-f]{40}$ ]] && git -C "$REPO" cat-file -e "$ran^{commit}" 2>/dev/null; then cur="$ran"; fi
   if [ -s "$signers" ]; then
     # signed releases only (see update.sh): the newest tag signed by a trusted key
     # no --force: a tag this server has is never replaced (see update.sh)
@@ -153,15 +158,18 @@ check() {
     track="${track:-main}"
     [[ "$track" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || track=main
     if [ "$track" = main ]; then webref=origin/web-dist; else webref="origin/web-dist-$track"; fi
-    git -C "$REPO" fetch -q origin "+refs/heads/$track:refs/remotes/origin/$track" "+refs/heads/${webref#origin/}:refs/remotes/$webref" 2>"$WORK/.fetch.err" || err="$(tail -c 400 "$WORK/.fetch.err")"
+    git -C "$REPO" fetch -q origin "+refs/heads/$track:refs/remotes/origin/$track" 2>"$WORK/.fetch.err" || err="$(tail -c 400 "$WORK/.fetch.err")"
+    # apart: a branch without a web build yet (update.sh keeps the current web app then)
+    # mustn't hide its code updates
+    git -C "$REPO" fetch -q origin "+refs/heads/${webref#origin/}:refs/remotes/$webref" 2>/dev/null || true
     latest="$(git -C "$REPO" rev-parse "origin/$track" 2>/dev/null || echo "$cur")"
   fi
   jq -n \
     --arg at "$(now)" --arg err "$err" \
-    --arg cur "$cur" --arg curDate "$(git -C "$REPO" log -1 --format=%cI HEAD)" \
+    --arg cur "$cur" --arg curDate "$(git -C "$REPO" log -1 --format=%cI "$cur")" \
     --arg latest "$latest" --arg latestDate "$(git -C "$REPO" log -1 --format=%cI "$latest" 2>/dev/null)" \
-    --argjson behind "$(git -C "$REPO" rev-list --count HEAD.."$latest" 2>/dev/null || echo 0)" \
-    --argjson changes "$(git -C "$REPO" log --no-merges --format='%h%x09%s' HEAD.."$latest" 2>/dev/null | head -40 | jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {sha: .[0], subject: .[1]})')" \
+    --argjson behind "$(git -C "$REPO" rev-list --count "$cur".."$latest" 2>/dev/null || echo 0)" \
+    --argjson changes "$(git -C "$REPO" log --no-merges --format='%h%x09%s' "$cur".."$latest" 2>/dev/null | head -40 | jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {sha: .[0], subject: .[1]})')" \
     --arg appCurrent "$(app_build < "$DEPLOY/web/download/version.json" 2>/dev/null)" \
     --arg appLatest "$(git -C "$REPO" show "$webref:download/version.json" 2>/dev/null | app_build)" \
     --arg release "$tag" --argjson signed "$([ -s "$signers" ] && echo true || echo false)" \
@@ -206,7 +214,11 @@ update() {
     return 1
   fi
   put updating "$(jq -n --arg at "$(now)" '{at: $at, step: "Fetching, building and restarting (a few minutes)"}')"
-  "$DEPLOY/update.sh" >> "$log" 2>&1 || ok=false
+  # Docker's build tool keeps its state in ~/.docker/buildx, but this service sees /root
+  # read-only (ProtectHome in steady-ctl.service), and a build fails without it: it gets a
+  # folder of its own here, root only
+  install -d -m 0700 -o root -g root "$WORK/buildx"
+  BUILDX_CONFIG="$WORK/buildx" "$DEPLOY/update.sh" >> "$log" 2>&1 || ok=false
   to="$(git -C "$REPO" rev-parse --short HEAD)"
   put lastUpdate "$(jq -n --arg at "$(now)" --argjson ok "$ok" --arg from "$from" --arg to "$to" \
     --arg log "$(tail -c 3000 "$log")" '{at: $at, ok: $ok, from: $from, to: $to, log: $log}')"

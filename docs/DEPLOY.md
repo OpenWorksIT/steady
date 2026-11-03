@@ -209,6 +209,21 @@ Migrations run automatically on start; the app's "Update now" (below) takes a co
 first. After the first update to 1.0.4 or later, run `sudo ./ctl/install.sh` once: it installs
 the locked-down update services from `deploy/ctl/` (running it again is harmless).
 
+Up to 1.0.4, "Update now" couldn't build: its locked-down service sees `/root` read-only, where
+Docker's build tool keeps its state ("read-only file system" in the log), and the app then
+showed the server as up to date because the code on disk had already moved on. A server on
+1.0.4 or older therefore takes its next update once from the shell, the same way the app does
+it (data copy first; it prints nothing for a few minutes):
+
+```bash
+cd /opt/steady/deploy
+sudo ./ctl/steady-ctl.sh update; sudo tail -n 25 /var/lib/steady/ctl/work/update.log
+```
+
+From 1.0.5 the app's button builds, and Settings > Server and updates compares the newest version
+with what the server runs (`/var/lib/steady/running`, written by `update.sh` once the new build is
+up), so an update whose build failed is offered again.
+
 ### Signed releases (live servers)
 
 A practice's server installs only releases OpenWorks has signed, so a push to GitHub, a stolen
@@ -316,6 +331,8 @@ these folders up (a server from before 1.0 is moved over by its next update).
 
 | Symptom | Check |
 |---|---|
+| "Update now" failed, the log ends in "read-only file system" | A server on 1.0.4 or older: update once from the shell (section 8). |
+| The push relay keeps restarting (`audit-server.sh`: "can't enter secrets/") | `sudo chown root:65532 secrets && sudo chmod 750 secrets && sudo chown 65532:65532 secrets/vapid.pem` in `deploy/`, then `sudo docker compose up -d`. |
 | No notifications on iPhone | `docker compose logs pusher` for `apns 403` (wrong key/team) or `400 DeviceTokenNotForTopic` (`APNS_TOPIC` must equal the bundle id). Debug builds from Xcode use the APNs sandbox automatically. |
 | No notifications on Android | The phone needs a UnifiedPush distributor app (e.g. ntfy) installed and chosen in Steady's settings. |
 | "Can't reach the server" in the app | The app was built with the wrong `STEADY_SERVER`, or DNS/TLS isn't ready. |
