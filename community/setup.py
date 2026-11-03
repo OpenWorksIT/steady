@@ -116,6 +116,15 @@ CATEGORIES = [
         "description": "Ideas, bugs and releases, with OpenWorks IT. OpenWorks reads and posts here.",
         "permissions": {"clinicians": FULL, "openworks": FULL},
     },
+    {
+        "name": "Tea room",
+        "slug": "tea-room",
+        "was": ["general"],  # Discourse's own General, given a use
+        "color": "A88C6B",
+        "text_color": "FFFFFF",
+        "description": "The staff room: introductions, the work and the life around it, what's helping you. Clinicians only, and still no patient-identifying information.",
+        "permissions": {"clinicians": FULL},
+    },
 ]
 
 WELCOME_TITLE = "Welcome to Steady Community: please read first"
@@ -144,7 +153,7 @@ Data from studies run across practices will only ever be shared here as totals a
 
 | Area | Who can read it |
 |---|---|
-| Clinical practice, Research and studies, Questionnaires and tools | Clinicians only |
+| Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
 | Announcements, Steady development | Clinicians and OpenWorks IT |
 | A practice's private category (if it has one) | That practice's psychologists only |
 
@@ -512,6 +521,18 @@ def describe(perms):
     return "; ".join(f"{g}: {LEVEL_NAMES.get(p, p)}" for g, p in sorted(perms.items())) or "nobody but staff"
 
 
+def _describe_category(api, cat_id, text):
+    """A category's description is the first post of its "About the ..." topic."""
+    shown = api.get(f"/c/{cat_id}/show.json").get("category", {})
+    topic_url = shown.get("topic_url")
+    if not topic_url:
+        return
+    topic = api.get(f"{topic_url}.json")
+    posts = topic.get("post_stream", {}).get("posts") or []
+    if posts:
+        api.put(f"/posts/{posts[0]['id']}.json", {"post": {"raw": text, "edit_reason": "Steady Community"}})
+
+
 def ensure_categories(api, specs, existing_groups):
     print("Categories")
     cats, _ = load_categories(api)
@@ -523,6 +544,19 @@ def ensure_categories(api, specs, existing_groups):
         if missing and not api.dry_run:
             raise SetupError(f"Category {spec['name']}: group(s) {', '.join(missing)} not found.")
         cat = by_slug.get(spec["slug"]) or by_name.get(spec["name"].lower())
+        old = next((by_slug[w] for w in spec.get("was", []) if w in by_slug), None)
+        if cat is None and old is not None:
+            # an existing category put to this use: renamed, recoloured and described
+            if api.dry_run:
+                say("would rename", f"{old['name']} to {spec['name']}")
+            else:
+                api.put(f"/categories/{old['id']}.json", {
+                    "name": spec["name"], "slug": spec["slug"], "color": spec["color"],
+                    "text_color": spec["text_color"], "permissions": spec["permissions"]})
+                _describe_category(api, old["id"], spec["description"])
+                say("renamed", f"{old['name']} to {spec['name']} ({describe(spec['permissions'])})")
+            result[spec["slug"]] = old["id"]
+            continue
         if cat is None:
             if api.dry_run:
                 say("would add", f"{spec['name']} ({describe(spec['permissions'])})")

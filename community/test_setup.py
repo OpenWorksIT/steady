@@ -291,6 +291,42 @@ class LookTest(unittest.TestCase):
         self.assertNotIn(10, f.topics)
 
 
+class TeaRoomTest(unittest.TestCase):
+    def test_discourses_general_becomes_the_tea_room(self):
+        forum = Categories()
+        calls = []
+        orig = forum.handle
+
+        def more(method, path, body, ctype):
+            route = urlparse(path).path
+            calls.append((method, route, json.loads(body) if body and body[:1] == b"{" else None))
+            if route == "/c/4/show.json":
+                return {"category": {"topic_url": "/t/about-the-general-category/2", "group_permissions": []}}
+            if route == "/t/about-the-general-category/2.json":
+                return {"post_stream": {"posts": [{"id": 20}]}}
+            if route == "/posts/20.json":
+                return {}
+            if route == "/groups.json":
+                return {"groups": []}
+            return orig(method, path, body, ctype)
+
+        forum.handle = more
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            spec = next(c for c in setup.CATEGORIES if c["slug"] == "tea-room")
+            with redirect_stdout(io.StringIO()):
+                ids = setup.ensure_categories(api, [spec], {"clinicians"})
+            self.assertEqual(ids, {"tea-room": 4})
+            put = next(b for m, r, b in calls if m == "PUT" and r == "/categories/4.json")
+            self.assertEqual((put["name"], put["slug"], put["permissions"]), ("Tea room", "tea-room", {"clinicians": setup.FULL}))
+            post = next(b for m, r, b in calls if m == "PUT" and r == "/posts/20.json")
+            self.assertEqual(post["post"]["raw"], spec["description"])
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
 class SidebarTest(unittest.TestCase):
     def test_everyones_side_menu_gets_the_categories_in_order(self):
         forum = Forum()

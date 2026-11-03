@@ -55,6 +55,7 @@ welcome post and the "If someone posts patient information" steps below back the
 | Research and studies | Read, post and reply | Numbers only |
 | Questionnaires and tools | Read, post and reply | Numbers only |
 | Steady development | Read, post and reply | Read, post and reply |
+| Tea room (introductions, the work and life around it; Discourse's General, renamed) | Read, post and reply | Numbers only |
 | A practice's private category (optional) | That practice only | Numbers only |
 | Personal messages | Their own | Their own, including ones clinicians send to OpenWorks |
 
@@ -301,7 +302,8 @@ does the guarding.)
 It:
 
 - creates the groups `clinicians` and `openworks`
-- creates the five categories with the permissions in "Who sees what"
+- creates the six categories with the permissions in "Who sees what" (the Tea room is
+  Discourse's own General, renamed)
 - closes every other category (Discourse's own General and so on) to OpenWorks and to
   "everyone", and opens it to clinicians instead. Discourse's own Site Feedback can't be closed
   (Discourse won't change who sees it), so it is deleted: feedback goes to Steady development
