@@ -68,8 +68,8 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
                 '(HPCSA Booklet 9). So your practice first copies what belongs in your clinical file, then deletes your '
                 'Steady account. A log of who opened your record, and when, is also kept.', style: ink2),
             const SizedBox(height: 16),
-            Text('If you\'re finding things hard right now, please talk to your psychologist first, or use the crisis '
-                'numbers in the app.', style: ink2),
+            Text('If you\'re finding things hard right now, please talk to your psychologist first, or call one of the '
+                'numbers at the bottom of this page.', style: ink2),
             const SizedBox(height: 20),
             TextField(
               controller: _password,
@@ -85,6 +85,8 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
             const SizedBox(height: 16),
             BusyButton(label: 'Ask to delete my account', onPressed: _ask),
           ],
+          const SizedBox(height: 24),
+          const CrisisFooter(),
         ]),
       ),
     );

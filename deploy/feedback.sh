@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Feedback sent from the psychologists' and administrators' screens (the Feedback button).
-#   ./feedback.sh                 open reports, newest first
+#   sudo ./feedback.sh            open reports, newest first (as root: .env is root-only)
 #   ./feedback.sh all|done        all of them, or the finished ones
 #   ./feedback.sh show <id>       one report, with the steps that led up to it
-#   ./feedback.sh shot <id> [file.png]   save its screenshot (blurred unless the sender chose otherwise)
+#   ./feedback.sh shot <id> [file.png]   save its screenshot (always blurred from 1.0.4; before, the sender could choose)
 # Uses STEADY_MONITOR_KEY from .env, like health.sh. The master psychologist and administrators
 # also see them in the app (Settings > Feedback), where they can be marked done.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -11,7 +11,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 KEY="$(grep -E '^STEADY_MONITOR_KEY=' .env 2>/dev/null | cut -d= -f2- || true)"
 [ -n "$KEY" ] || { echo "Set STEADY_MONITOR_KEY in deploy/.env first (./gen-keys.sh prints one), then: docker compose up -d" >&2; exit 1; }
-get() { docker compose exec -T pocketbase wget -qO- --header "X-Steady-Monitor: $KEY" "http://127.0.0.1:8090$1"; }
+# the key is the container's own (STEADY_MONITOR_KEY), handed to curl on stdin: it never
+# appears on a command line, where anyone on the server could read it in the process list
+get() { docker compose exec -T pocketbase sh -c 'printf "X-Steady-Monitor: %s\n" "$STEADY_MONITOR_KEY" | curl -fsS -H @- "http://127.0.0.1:8090$0"' "$1"; }
 need_jq() { command -v jq >/dev/null || { echo "Install jq (sudo apt install jq) for readable output." >&2; exit 1; }; }
 
 case "${1:-open}" in

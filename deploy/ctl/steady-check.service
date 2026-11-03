@@ -6,3 +6,17 @@ After=docker.service
 Type=oneshot
 Environment=HOME=/root
 ExecStart=/opt/steady/deploy/ctl/steady-ctl.sh check
+TimeoutStartSec=10min
+# it fetches tags and writes out/check.json: keep it away from the rest of the system
+ProtectSystem=full
+PrivateTmp=true
+ProtectHome=read-only
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true

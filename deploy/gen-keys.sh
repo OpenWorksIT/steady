@@ -5,6 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 umask 077
 mkdir -p secrets
+# the keys printed below go into .env: root only
+[ -f .env ] && chmod 600 .env
 
 if [ ! -f secrets/vapid.pem ]; then
   openssl ecparam -name prime256v1 -genkey -noout -out secrets/vapid.pem

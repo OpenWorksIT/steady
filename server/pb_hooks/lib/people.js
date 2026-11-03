@@ -55,7 +55,7 @@ function statusRows(app, patients) {
     got = s.groupBy(s.query(app, "biometrics", "[[patient]] IN (" + list + ") AND [[day]] >= {:d}", pc, "[[day]] DESC"), "patient");
     Object.keys(got).forEach(function (k) { lastDay[k] = got[k][0].getString("day"); });
   }
-  var current = s.env("STEADY_CONSENT_VERSION", "draft-1");
+  var current = require(__hooks + "/lib/brand.js").consent().version;
   return patients.map(function (p) {
     var devs = devices[p.id] || [];
     var h = healthPerm(p);

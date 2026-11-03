@@ -58,6 +58,8 @@ routerAdd("GET", "/api/steady/fleet", (e) => {
       app: check ? check.app : null,
       error: check ? check.error || "" : ""
     },
+    // patients are agreeing to Steady's draft consent statement, not the practice's own
+    consentDraft: require(`${__hooks}/lib/brand.js`).consent().draft,
     pending: d.ctlPending(ctl),
     updating: status ? status.updating || null : null,
     lastUpdate: status ? status.lastUpdate || null : null,

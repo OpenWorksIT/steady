@@ -65,14 +65,8 @@ class _PluginStore implements HealthStore {
   @override
   Future<bool> requestAccess() async {
     await _configure();
-    final ok = await _h.requestAuthorization(_types);
-    if (_android && ok) {
-      // lets us read back further than 30 days; fine if the person says no
-      try {
-        await _h.requestHealthDataHistoryAuthorization();
-      } catch (_) {}
-    }
-    return ok;
+    // no history permission: Steady reads at most the last 30 days, which needs none
+    return _h.requestAuthorization(_types);
   }
 
   @override

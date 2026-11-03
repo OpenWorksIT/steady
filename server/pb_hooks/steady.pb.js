@@ -12,15 +12,26 @@
 // App configuration: practice name, crisis lines, consent text.
 routerAdd("GET", "/api/steady/config", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
-  let consent = "";
-  try { consent = toString($os.readFile(`${__hooks}/content/consent.md`)); } catch (_) { consent = ""; }
-  let crisis = [
+  const brand = require(`${__hooks}/lib/brand.js`);
+  const consent = brand.consent();
+  // The national lines are always there, first. A practice can add its own after them (checked:
+  // a label and a phone number), never replace or remove them.
+  const crisis = [
     { label: "SADAG Suicide Crisis Line", number: "0800 567 567", hours: "24 hours, free" },
     { label: "Emergency services from a mobile", number: "112", hours: "24 hours" }
   ];
   const custom = s.env("STEADY_CRISIS_LINES_JSON", "");
-  if (custom) { try { crisis = JSON.parse(custom); } catch (_) { /* keep defaults */ } }
-  const brand = require(`${__hooks}/lib/brand.js`);
+  if (custom) {
+    let extra = [];
+    try { extra = JSON.parse(custom); } catch (_) { extra = []; }
+    (Array.isArray(extra) ? extra : []).slice(0, 5).forEach((l) => {
+      const label = s.core.str(l && l.label, 60);
+      const number = s.core.str(l && l.number, 20);
+      if (!label || !/^\+?[0-9][0-9 ()-]{2,19}$/.test(number)) return;
+      if (crisis.some((c) => c.number.replace(/\D/g, "") === number.replace(/\D/g, ""))) return;
+      crisis.push({ label: label, number: number, hours: s.core.str(l.hours, 40) });
+    });
+  }
   const b = brand.current();
   return e.json(200, {
     practiceName: b.name,
@@ -28,8 +39,10 @@ routerAdd("GET", "/api/steady/config", (e) => {
     brand: brand.forConfig(b),
     crisisLines: crisis,
     crisisNotice: s.env("STEADY_CRISIS_NOTICE", "This app isn't monitored around the clock. If you need help now, call one of these numbers."),
-    consentVersion: s.env("STEADY_CONSENT_VERSION", "draft-1"),
-    consentText: consent,
+    consentVersion: consent.version,
+    consentText: consent.text,
+    // Steady's own draft (or placeholders left): the practice still has to write its statement
+    consentDraft: consent.draft,
     // UnifiedPush (Android) apps register with this so the relay can sign with VAPID
     vapidPublicKey: s.env("STEADY_VAPID_PUBLIC_KEY", ""),
     // "staff": psychologists and administrators sign in with a code from an authenticator app
@@ -124,7 +137,7 @@ routerAdd("POST", "/api/steady/join", (e) => {
     user.set("clinicianLabel", invite.getString("label"));
     user.set("active", true);
     user.set("consentAt", new DateTime());
-    user.set("consentVersion", s.env("STEADY_CONSENT_VERSION", "draft-1"));
+    user.set("consentVersion", require(`${__hooks}/lib/brand.js`).consent().version);
     const tz = Number(b.tzOffset);
     user.set("tzOffset", isFinite(tz) ? Math.max(-720, Math.min(840, Math.round(tz))) : 120);
     tx.save(user);
@@ -134,6 +147,13 @@ routerAdd("POST", "/api/steady/join", (e) => {
   });
 
   s.audit($app, e, "patient.join", "invite:" + invite.id, user.id);
+  // the "New invite: <name>" notice a colleague's invite left: now it's about this patient, so
+  // it goes with the account if that is ever deleted
+  try {
+    $app.findRecordsByFilter("notifications", "recipient = {:c} && patient = '' && title = {:t}", "", 20, 0,
+      { c: invite.getString("clinician"), t: "New invite: " + (invite.getString("label") || "a new patient") })
+      .forEach((n) => { n.set("patient", user.id); $app.save(n); });
+  } catch (_) { /* nothing to link */ }
   s.notify($app, {
     recipient: invite.getString("clinician"),
     kind: "system",
@@ -175,7 +195,8 @@ routerAdd("GET", "/api/steady/overview", (e) => {
   // most in need of attention first: the most serious unreviewed flag or the RADR level, then
   // the most recent, then the name; patients marked stable at the bottom (core.attention)
   s.core.sortByAttention(out);
-  s.audit($app, e, "patients.overview", "count:" + out.length, "");
+  // a look at every patient on it (once a day each), written before the answer goes out
+  s.auditOverview($app, e, out.map((row) => row.id));
   return e.json(200, { patients: out, generatedAt: s.nowMs() });
 }, $apis.requireAuth());
 
@@ -184,7 +205,7 @@ routerAdd("GET", "/api/steady/patients/{id}/summary", (e) => {
   s.requireRole(e, "clinician");
   const v = s.viewablePatient($app, e.auth.id, e.request.pathValue("id"));
   const p = v.patient;
-  s.audit($app, e, "patient.summary", "user:" + p.id + (v.own ? "" : " shared"), p.id);
+  s.audit($app, e, "patient.summary", "user:" + p.id + (v.own ? "" : " shared"), p.id, true);
   const out = s.patientSummary($app, p, e.auth.getInt("tzOffset"));
   if (!v.own) { out.shared = true; out.owner = s.clinicianName($app, p.getString("clinician"), {}); }
   return e.json(200, out);
@@ -395,7 +416,7 @@ routerAdd("POST", "/api/steady/instruments/import", (e) => {
   $app.save(rec);
   s.audit($app, e, "instrument.import", b.format + ":" + v.def.key, "");
   return e.json(200, { id: rec.id, key: v.def.key, name: v.def.name, items: v.def.items.length, licenceStatus: status });
-}, $apis.requireAuth());
+}, $apis.requireAuth(), $apis.bodyLimit(1024 * 1024)); // a FHIR or Steady file
 
 /* =====================================================================
  * Patient
@@ -472,6 +493,13 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
   const b = s.body(e);
   const inst = s.instrumentDef($app, s.core.str(b.instrument, 30));
   if (inst.def.kind !== "exercise" || !s.sendable(inst.rec)) throw s.badRequest("Only exercises can be started from the app.");
+  // a psychologist's own exercise only once it has been sent to this patient (it may be
+  // written for one person); the built-in ones for everyone
+  if (!inst.rec.getBool("builtin")) {
+    let sent = [];
+    try { sent = $app.findRecordsByFilter("assignments", "patient = {:p} && instrument = {:i}", "", 1, 0, { p: e.auth.id, i: inst.rec.id }); } catch (_) { sent = []; }
+    if (!sent.length) throw new NotFoundError("Not found.");
+  }
   const clinician = e.auth.getString("clinician");
   const rec = new Record($app.findCollectionByNameOrId("assignments"));
   rec.set("patient", e.auth.id);
@@ -504,6 +532,8 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
 
 // kind "privacy": anyone acknowledges the privacy notice shown on first launch.
 // kind "wearable": a patient agrees (or stops agreeing) to share watch data.
+// kind "consent": a patient agrees to the practice's consent statement as it stands now (the
+// practice changed it after they joined); only the current version can be agreed to.
 routerAdd("POST", "/api/steady/consent", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   if (!e.auth) throw new UnauthorizedError("Please sign in.");
@@ -525,13 +555,20 @@ routerAdd("POST", "/api/steady/consent", (e) => {
       user.set("wearableConsentAt", "");
       user.set("wearableConsentVersion", "");
     }
+  } else if (b.kind === "consent") {
+    if (user.getString("role") !== "patient") throw s.badRequest("Only patients agree to the practice's consent statement.");
+    if (version !== require(`${__hooks}/lib/brand.js`).consent().version) {
+      throw s.badRequest("The consent statement has changed again. Close Steady, open it again and read the new one.");
+    }
+    user.set("consentAt", new DateTime());
+    user.set("consentVersion", version);
   } else {
-    throw s.badRequest("kind must be 'privacy' or 'wearable'.");
+    throw s.badRequest("kind must be 'privacy', 'wearable' or 'consent'.");
   }
   $app.save(user);
-  s.audit($app, e, "consent." + b.kind + (b.kind === "wearable" && b.accepted !== true ? ".withdrawn" : ""), "version:" + version,
-    user.getString("role") === "patient" ? user.id : "");
-  return e.json(200, { kind: b.kind, version: version, accepted: b.kind === "privacy" || b.accepted === true });
+  const what = b.kind === "consent" ? "statement" : b.kind + (b.kind === "wearable" && b.accepted !== true ? ".withdrawn" : "");
+  s.audit($app, e, "consent." + what, "version:" + version, user.getString("role") === "patient" ? user.id : "");
+  return e.json(200, { kind: b.kind, version: version, accepted: b.kind !== "wearable" || b.accepted === true });
 }, $apis.requireAuth());
 
 /* =====================================================================
@@ -603,7 +640,7 @@ routerAdd("GET", "/api/steady/patients/{id}/biometrics", (e) => {
   const byDay = {};
   recs.forEach((r) => { byDay[r.getString("day")] = s.readJson(r, "values") || {}; });
   const days = Object.keys(byDay).filter((d) => d >= from && d <= to).sort().map((d) => ({ day: d, values: byDay[d] }));
-  s.audit($app, e, "patient.biometrics", "user:" + p.id + " " + from + ".." + to, p.id);
+  s.audit($app, e, "patient.biometrics", "user:" + p.id + " " + from + ".." + to, p.id, true);
   return e.json(200, {
     from: from,
     to: to,
@@ -698,28 +735,46 @@ onRecordAfterCreateSuccess((e) => {
   e.next();
 }, "checkins");
 
-// Access logging: record each time a clinician reads patient data.
+// Access logging: record each time a clinician reads patient data. Written from the records
+// actually returned (one row per patient), before the answer goes out, and if a row can't be
+// written the read is refused: the filter's text is never trusted to say whose data it was.
+// Notifications count: a psychologist's carry the patient's name and mood and anxiety ratings.
 onRecordsListRequest((e) => {
-  e.next();
   if (e.auth && e.auth.getString("role") === "clinician") {
     const s = require(`${__hooks}/lib/server.js`);
     const info = e.requestInfo();
     const filter = (info.query && info.query.filter) || "";
-    const m = /patient\s*=\s*["']([a-z0-9]{15})["']/.exec(String(filter));
     // which fields were filtered on, not the values (the audit report is read by the practice admin)
     const fields = {};
     String(filter).replace(/([A-Za-z_][A-Za-z0-9_.]*)\s*(\?)?(=|!=|>=|<=|>|<|~|!~)/g, (x, f) => { fields[f] = true; return x; });
-    s.audit(e.app, e, "list." + e.collection.name, Object.keys(fields).length ? "filter: " + Object.keys(fields).sort().join(",") : "", m ? m[1] : "");
+    const target = Object.keys(fields).length ? "filter: " + Object.keys(fields).sort().join(",") : "";
+    const seen = {};
+    (e.records || []).forEach((r) => { const p = r ? r.getString("patient") : ""; if (p) seen[p] = (seen[p] || 0) + 1; });
+    const ids = Object.keys(seen);
+    if (!ids.length) s.audit(e.app, e, "list." + e.collection.name, target, "", true);
+    ids.forEach((p) => s.audit(e.app, e, "list." + e.collection.name, (target ? target + " " : "") + "rows:" + seen[p], p, true));
   }
-}, "checkins", "assignments", "biometrics");
+  e.next();
+}, "checkins", "assignments", "biometrics", "notifications");
 
 onRecordViewRequest((e) => {
-  e.next();
   if (e.auth && e.auth.getString("role") === "clinician") {
     const s = require(`${__hooks}/lib/server.js`);
-    s.audit(e.app, e, "view." + e.collection.name, e.collection.name + ":" + e.record.id, e.record.getString("patient"));
+    s.audit(e.app, e, "view." + e.collection.name, e.collection.name + ":" + e.record.id, e.record.getString("patient"), true);
   }
-}, "checkins", "assignments", "biometrics");
+  e.next();
+}, "checkins", "assignments", "biometrics", "notifications");
+
+// Live updates carry the same records: each one a clinician receives is logged too.
+onRecordEnrich((e) => {
+  const info = e.requestInfo;
+  const auth = info ? info.auth : null;
+  if (info && info.context === "realtime" && auth && !auth.isSuperuser() && auth.getString("role") === "clinician") {
+    const s = require(`${__hooks}/lib/server.js`);
+    s.audit(e.app, { auth: auth }, "live." + e.record.collection().name, e.record.collection().name + ":" + e.record.id, e.record.getString("patient"), true);
+  }
+  e.next();
+}, "checkins", "assignments", "biometrics", "notifications");
 
 /* ---------- accounts and devices ---------- */
 
@@ -753,6 +808,17 @@ onRecordUpdateRequest((e) => {
   if (err) throw s.badRequest(err);
   e.next();
 }, "devices");
+
+// A name someone types for themselves: no control or invisible characters (they can make it
+// read as someone else's, or break the psychologist's exports), at most 80 characters.
+onRecordUpdateRequest((e) => {
+  const core = require(`${__hooks}/lib/core.js`);
+  const name = e.record.getString("name");
+  const clean = core.str(name, 80);
+  if (clean !== name) e.record.set("name", clean);
+  if (!clean && e.record.getString("role") === "patient") throw new BadRequestError("Please enter a name.");
+  e.next();
+}, "users");
 
 /* =====================================================================
  * Server updates (for psychologists marked serverAdmin; the work is done on the
@@ -835,4 +901,32 @@ cronAdd("steady_cleanup", "30 2 * * *", () => {
   old.forEach((n) => { try { $app.delete(n); } catch (_) { /* ignore */ } });
   const stale = $app.findRecordsByFilter("devices", "updated < {:t}", "", 5000, 0, { t: s.dateValue(now - 120 * s.core.DAY).string() });
   stale.forEach((d) => { try { $app.delete(d); } catch (_) { /* ignore */ } });
+  // device links nobody finished, and old wrong-try counts
+  try {
+    $app.findRecordsByFilter("devicelinks", "expiresAt < {:t}", "", 5000, 0, { t: s.dateValue(now - s.core.DAY).string() })
+      .forEach((d) => { try { $app.delete(d); } catch (_) { /* ignore */ } });
+  } catch (_) { /* no device links on this server */ }
+  try { require(`${__hooks}/lib/signin.js`).prune($app); } catch (_) { /* ignore */ }
+});
+
+// A patient's request to delete their account: the practice has 30 days. Its psychologist is
+// reminded after 7 and 21 days, and the master clinicians from day 25, so it isn't forgotten.
+cronAdd("steady_deletion_reminders", "40 6 * * *", () => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const D = require(`${__hooks}/lib/deletion.js`);
+  const now = s.nowMs();
+  let waiting = [];
+  try { waiting = $app.findRecordsByFilter("users", "role = 'patient' && deletionRequestedAt != ''", "", 2000, 0); } catch (_) { return; }
+  waiting.forEach((p) => {
+    const day = Math.floor((now - s.toMs(p, "deletionRequestedAt")) / s.core.DAY);
+    const left = D.DAYS - day;
+    let to = [];
+    if (day === 7 || day === 21) to = D.practiceContacts($app, p);
+    if (day >= 25) to = $app.findRecordsByFilter("users", "role = 'clinician' && master = true && active = true", "", 20, 0).map((m) => m.id);
+    to.forEach((id) => s.notify($app, {
+      recipient: id, kind: "system", patient: p.id, severity: "warn",
+      title: left > 0 ? "Account deletion due in " + left + " day" + (left === 1 ? "" : "s") : "Account deletion overdue",
+      body: s.displayName(p) + " asked to delete their Steady account " + day + " days ago. Export what belongs in your clinical records, then delete the account on their page."
+    }));
+  });
 });

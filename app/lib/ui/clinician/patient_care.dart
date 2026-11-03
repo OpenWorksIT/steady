@@ -61,6 +61,8 @@ class _NotesTabState extends State<NotesTab> with AutomaticKeepAliveClientMixin 
       builder: (context, notes, _) => ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 28), children: [
         if (widget.canWrite) ...[
           TextField(
+            // keyboards don't learn from what's typed here
+            enableIMEPersonalizedLearning: false,
             controller: _text,
             minLines: 2,
             maxLines: 6,
@@ -113,6 +115,8 @@ Future<bool> reviewFlagFlow(BuildContext context, String patientId, Flag flag) a
             style: TextStyle(color: c.sc.ink2)),
         const SizedBox(height: 12),
         TextField(
+          // keyboards don't learn from what's typed here
+          enableIMEPersonalizedLearning: false,
           controller: note,
           minLines: 2,
           maxLines: 4,
@@ -235,6 +239,8 @@ class _PatientSettingsScreenState extends State<PatientSettingsScreen> {
                 style: TextStyle(color: c.sc.ink2)),
             const SizedBox(height: 12),
             TextField(
+              // keyboards don't learn from what's typed here
+              enableIMEPersonalizedLearning: false,
               controller: ctl,
               autofocus: true,
               maxLength: 200,

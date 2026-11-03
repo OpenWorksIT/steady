@@ -11,9 +11,12 @@ import '../build_info.dart';
 import 'calm.dart';
 import 'widgets.dart';
 
-/// True when this is the Android app and the server has a different (newer) build.
+/// True when this is the Android app, not from a store, signed in, and the server has a
+/// different (newer) build. Only once signed in: before that the server is just an address
+/// someone typed or scanned, and an app from it isn't one to offer.
 bool appUpdateAvailable(AppState state) {
-  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return false;
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android || kStoreBuild.isNotEmpty) return false;
+  if (!state.api.signedIn) return false;
   final latest = state.config.appBuild;
   return state.config.appUpdatable && kAppBuild.isNotEmpty && latest.isNotEmpty && latest != kAppBuild;
 }

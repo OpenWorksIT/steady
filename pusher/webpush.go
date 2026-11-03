@@ -52,7 +52,7 @@ type webPushSub struct {
 // that resolve to private addresses. Redirects are not followed.
 func publicOnlyClient(allowPrivate bool) *http.Client {
 	dialer := &net.Dialer{
-		Timeout: 10 * time.Second,
+		Timeout: 4 * time.Second,
 		Control: func(network, address string, _ syscall.RawConn) error {
 			if allowPrivate {
 				return nil
@@ -74,8 +74,12 @@ func publicOnlyClient(allowPrivate bool) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DialContext = dialer.DialContext
 	transport.Proxy = nil
+	// the endpoint's server is whoever registered it: a short wait, and no huge answers
+	transport.TLSHandshakeTimeout = 4 * time.Second
+	transport.ResponseHeaderTimeout = 4 * time.Second
+	transport.MaxResponseHeaderBytes = 16 << 10
 	return &http.Client{
-		Timeout:   15 * time.Second,
+		Timeout:   5 * time.Second,
 		Transport: transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -94,16 +98,35 @@ func isPublicAddr(ip netip.Addr) bool {
 			return false
 		}
 	}
+	// IPv6 addresses that carry an IPv4 one (NAT64 and 6to4) reach that IPv4 address
+	if nat64.Contains(ip) {
+		b := ip.As16()
+		return isPublicAddr(netip.AddrFrom4([4]byte(b[12:16])))
+	}
+	if sixToFour.Contains(ip) {
+		b := ip.As16()
+		return isPublicAddr(netip.AddrFrom4([4]byte(b[2:6])))
+	}
 	return true
 }
 
+var (
+	nat64     = netip.MustParsePrefix("64:ff9b::/96")
+	sixToFour = netip.MustParsePrefix("2002::/16")
+)
+
 var nonPublic = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),     // "this network": 0.x addresses can reach the server itself
 	netip.MustParsePrefix("100.64.0.0/10"), // carrier-grade NAT
 	netip.MustParsePrefix("192.0.0.0/24"),
 	netip.MustParsePrefix("198.18.0.0/15"),
 	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/96"), // IPv4-compatible (deprecated)
 	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("100::/64"),  // discard
+	netip.MustParsePrefix("2001::/32"), // Teredo: tunnels to an IPv4 address
 	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("fec0::/10"), // site-local (deprecated)
 }
 
 func newWebPushFromEnv() (*WebPush, error) {

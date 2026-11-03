@@ -47,6 +47,32 @@ function load(dir, envName) {
   return out;
 }
 
+var MAX_CONSENT = 20000;
+
+/**
+ * The consent statement patients agree to when they join: the practice's own (consent.md in
+ * the brand folder, installed with brand.sh, so updates never touch it), or Steady's draft.
+ * version: brand.json's "consentVersion", or else a fingerprint of the text, so any change to
+ * the statement asks patients to agree again. draft: still Steady's draft, or placeholders left.
+ */
+function consent() {
+  var dir = $os.getenv("STEADY_BRAND_DIR") || "/pb/brand";
+  var own = readText(dir + "/consent.md");
+  var text, version;
+  if (own !== null && own.trim() && own.length <= MAX_CONSENT) {
+    text = own;
+    var j = null;
+    try { j = JSON.parse(readText(dir + "/brand.json") || "null"); } catch (e) { j = null; }
+    version = j && typeof j.consentVersion === "string" && /^[A-Za-z0-9._-]{1,40}$/.test(j.consentVersion) ? j.consentVersion : "";
+    if (!version) version = "practice-" + $security.sha256(own).slice(0, 12);
+  } else {
+    text = readText(__hooks + "/content/consent.md") || "";
+    version = $os.getenv("STEADY_CONSENT_VERSION") || "draft-1";
+  }
+  var draft = /^\s*DRAFT/i.test(text) || text.indexOf("[Practice name") >= 0 || /^draft/i.test(version);
+  return { text: text, version: version, draft: draft };
+}
+
 /** The brand for this server (reads the folder each time: it is small and changes rarely). */
 function current() {
   return load($os.getenv("STEADY_BRAND_DIR") || "/pb/brand", $os.getenv("STEADY_PRACTICE_NAME"));
@@ -61,4 +87,4 @@ function forConfig(b) {
   };
 }
 
-module.exports = { load: load, current: current, forConfig: forConfig, MAX_LOGO: MAX_LOGO };
+module.exports = { load: load, current: current, forConfig: forConfig, consent: consent, MAX_LOGO: MAX_LOGO, MAX_CONSENT: MAX_CONSENT };

@@ -16,7 +16,9 @@ function isObj(v) { return v !== null && typeof v === "object" && !Array.isArray
 function isNum(v) { return typeof v === "number" && isFinite(v); }
 function str(v, max) {
   if (v === null || v === undefined) return "";
-  var s = String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
+  // control characters, and the invisible ones that reorder or hide text (bidi controls,
+  // zero-width characters): they can make a name read as someone else's, or break exports
+  var s = String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF\uFFFE\uFFFF]/g, "").trim();
   return max && s.length > max ? s.slice(0, max) : s;
 }
 function rank(sev) { var i = SEVERITIES.indexOf(sev); return i < 0 ? 0 : i; }

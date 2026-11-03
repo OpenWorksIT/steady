@@ -47,13 +47,27 @@ routerAdd("POST", "/api/steady/me/confirm", (e) => {
   s.requireSignedIn(e);
   const G = require(`${__hooks}/lib/signin.js`);
   const u = $app.findRecordById("users", e.auth.id);
-  G.checkResting(u);
+  G.attempt($app, u.email(), u, e, "code");
   const how = D.confirm($app, u, s.body(e), D.fromRequest($app, u, e));
   if (!how) {
-    G.failed($app, u, e, "code");
     s.audit($app, e, "account.confirm.failed", "", "");
     throw s.badRequest(s.twoStepOn(u) ? "That code didn't work. Try the newest code from your authenticator app." : "That password isn't right.",
       { confirm: new ValidationError(s.twoStepOn(u) ? "code" : "password", "Not confirmed.") });
   }
+  G.succeeded($app, u.email());
   return e.json(200, { confirmed: true, how: how, forMs: D.CONFIRM_MS });
+}, $apis.requireAuth());
+
+// Signing out ends the session on the server too: a new token key makes every token issued
+// before it invalid, so a copy of the token (a shared computer, a stolen phone backup) stops
+// working. PocketBase can't revoke one session alone, so this signs the account out on every
+// device.
+routerAdd("POST", "/api/steady/me/sign-out", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  if (!e.auth || e.auth.isSuperuser()) throw new UnauthorizedError("Please sign in.");
+  const u = $app.findRecordById("users", e.auth.id);
+  u.refreshTokenKey();
+  $app.unsafeWithoutHooks().save(u);
+  s.audit($app, e, "auth.signed-out", "", u.getString("role") === "patient" ? u.id : "");
+  return e.json(200, { signedOut: true });
 }, $apis.requireAuth());

@@ -25,6 +25,12 @@ never touches it), holding:
 - `brand.json`: `{"name": "...", "tagline": "...", "accent": "#B0690C"}`. Name required;
   tagline (up to 80 characters) and accent colour optional.
 - `logo.png`: the practice's logo, PNG, at most 1 MB.
+- `consent.md` (optional until go-live, then required): the consent statement patients agree to
+  when they join, in plain text, written with the practice (its Information Officer, how to
+  complain, its AI note-taking service if any). Steady's draft in
+  `server/pb_hooks/content/consent.md` is a starting point. A new version of the text asks
+  patients who agreed to an earlier one to read and agree to it the next time they open the app
+  (Steady 1.0.4 and later); set `"consentVersion"` in `brand.json` to name versions yourself.
 
 OpenWorks IT installs it; psychologists can't change it in the app. It takes effect at once,
 with no restart: the apps pick it up the next time they open.
@@ -34,7 +40,7 @@ with no restart: the apps pick it up the next time they open.
 deploy/brand.sh push vps1 ~/brands/vr-psych
 
 # or on the server itself
-sudo ./brand.sh install /tmp/vr-psych            # a folder, or a .tgz of the two files
+sudo ./brand.sh install /tmp/vr-psych            # a folder, or a .tgz of those files
 ./brand.sh show
 sudo ./brand.sh remove                           # back to plain Steady
 ```

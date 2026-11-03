@@ -31,7 +31,7 @@ import urllib.parse
 import urllib.request
 
 DEFAULT_URL = "https://community.steadyapp.co.za"
-CONTACT_EMAIL = "community@steadyapp.co.za"
+CONTACT_EMAIL = "info@openworks.co.za"  # shown to members as the forum's contact address
 
 # Permission levels Discourse uses for category access.
 FULL, CREATE_POST, READONLY = 1, 2, 3
@@ -269,9 +269,9 @@ def say(action, text):
 # --- site settings --------------------------------------------------------------------
 
 def desired_settings(args):
-    """Settings applied through the API. Those also pinned in app.yml are only checked."""
+    """Settings applied through the API. Those also pinned in community.yml are only checked."""
     return [
-        # Hard rules (also pinned in app.yml; checked here in case the pin was removed).
+        # Hard rules (also pinned in community.yml; checked here in case the pin was removed).
         ("login_required", "true"),
         ("invite_only", "true"),
         ("enforce_second_factor", "all"),
@@ -311,7 +311,7 @@ def desired_settings(args):
     ]
 
 
-# Pinned in community/app.yml.example as DISCOURSE_<NAME>. A pinned setting is hidden from
+# Pinned in community/community.yml.example as DISCOURSE_<NAME>. A pinned setting is hidden from
 # the admin list, so the API can't change it; this script can only read some of them back.
 PINNED_IN_APP_YML = {
     "login_required", "invite_only", "enforce_second_factor", "enable_local_logins_via_email",
@@ -355,14 +355,14 @@ def apply_settings(api, args, group_ids):
             api.put(f"/admin/site_settings/{name}.json", {name: value})
             say("set", f"{name} = {value}")
         elif name in effective:
-            # Hidden from the admin list: pinned in app.yml (or a hidden setting). Check it.
+            # Hidden from the admin list: pinned in community.yml (or a hidden setting). Check it.
             if norm(effective[name]) == norm(value):
-                say("ok", f"{name} = {value} (pinned in app.yml)")
+                say("ok", f"{name} = {value} (pinned in community.yml)")
             else:
-                say("WRONG", f"{name} is {effective[name]!r}, should be {value!r}; fix it in app.yml and rebuild")
+                say("WRONG", f"{name} is {effective[name]!r}, should be {value!r}; fix it in community.yml and rebuild")
                 mismatched.append(name)
         elif name in PINNED_IN_APP_YML:
-            say("pinned", f"{name} = {value} (set in app.yml; the API can't read it back)")
+            say("pinned", f"{name} = {value} (set in community.yml; the API can't read it back)")
         else:
             say("skipped", f"{name}: not offered by this Discourse version")
             unknown.append(name)
@@ -721,11 +721,11 @@ def main(argv=None):
 
     print()
     if unknown:
-        print("Not offered by this Discourse (check by hand in Admin > Settings, or in app.yml):")
+        print("Not offered by this Discourse (check by hand in Admin > Settings, or in community.yml):")
         for name in unknown:
             print(f"  - {name}")
     if mismatched:
-        print("Pinned to the wrong value (fix in containers/app.yml, then ./launcher rebuild app):")
+        print("Pinned to the wrong value (fix in containers/community.yml, then ./launcher rebuild community):")
         for name in mismatched:
             print(f"  - {name}")
         return 1

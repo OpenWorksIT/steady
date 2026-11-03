@@ -17,8 +17,8 @@ STEADY_DOMAIN {
 		-Server
 	}
 
-	# The dashboard and superuser sign-in are not on the internet: use the SSH tunnel
-	# (ssh -L 8091:localhost:8091 <server>, then http://localhost:8091/_/).
+	# The dashboard and superuser sign-in are not on the internet: accounts.sh does account
+	# work from inside the server (docs/DEPLOY.md, step 5).
 	@admin path_regexp admin (?i)^/(_|_/.*|api/collections/(_superusers|pbc_3142635823)(/.*)?)$
 	respond @admin 404
 

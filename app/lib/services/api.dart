@@ -10,6 +10,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../feedback/trail.dart';
 import '../models.dart';
+import 'session_store.dart';
 
 /// Server address. Practice builds set it at build time:
 ///   flutter build appbundle --dart-define=STEADY_SERVER=https://steady.yourpractice.co.za
@@ -229,15 +230,15 @@ class Api {
     String? initial;
     String? saved;
     try {
-      initial = await storage.read(key: _authKey);
+      initial = await readSession(storage, _authKey);
       saved = await storage.read(key: _serverKey);
     } catch (_) {
       initial = null; // e.g. keychain unavailable after restore; user signs in again
     }
     final store = AsyncAuthStore(
-      save: (data) => storage.write(key: _authKey, value: data),
+      save: (data) => writeSession(storage, _authKey, data),
       initial: initial,
-      clear: () => storage.delete(key: _authKey),
+      clear: () => deleteSession(storage, _authKey),
     );
     final url = kServerUrl.isNotEmpty
         ? kServerUrl
@@ -287,6 +288,9 @@ class Api {
   int get tzOffset => DateTime.now().timeZoneOffset.inMinutes;
   bool get wearableConnected => (me?.getStringValue('wearableConsentAt') ?? '').isNotEmpty;
   String get privacyNoticeVersion => me?.getStringValue('privacyNoticeVersion') ?? '';
+
+  /// The version of the practice's consent statement this patient agreed to.
+  String get myConsentVersion => me?.getStringValue('consentVersion') ?? '';
 
   /* ---------------- session ---------------- */
 
@@ -506,6 +510,15 @@ class Api {
 
   void signOut() => pb.authStore.clear();
 
+  /// Ends this account's sessions on the server too (every device: PocketBase can't end just
+  /// one), so a copy of the token stops working. Best effort: signing out here goes ahead anyway.
+  Future<void> endSessionsOnServer() async {
+    if (!signedIn) return;
+    try {
+      await pb.send('/api/steady/me/sign-out', method: 'POST').timeout(const Duration(seconds: 8));
+    } catch (_) {/* offline: the local sign-out still happens */}
+  }
+
   String? _deviceToken;
 
   /// Removes this phone's push registration, so a signed-out account gets no more
@@ -579,7 +592,7 @@ class Api {
     });
   }
 
-  /// kind: privacy | wearable. Refreshes the account afterwards so its consent fields are current.
+  /// kind: privacy | wearable | consent. Refreshes the account afterwards so its consent fields are current.
   Future<void> setConsent(String kind, String version, {bool accepted = true}) async {
     await pb.send('/api/steady/consent', method: 'POST', body: {'kind': kind, 'version': version, 'accepted': accepted});
     await pb.collection('users').authRefresh();

@@ -16,17 +16,12 @@
 		-Server
 	}
 
-	# The PocketBase dashboard and superuser sign-in are for OpenWorks/practice IT only.
-	# Restrict them to your office or VPN addresses (edit the ranges), or remove the
-	# allowed block and reach the dashboard over an SSH tunnel instead.
+	# The PocketBase dashboard and superuser sign-in are not on the internet, from anywhere:
+	# accounts.sh does account work from inside the server (docs/DEPLOY.md, step 5). An
+	# address allow-list here isn't safe: Docker can hand on connections from its own private
+	# addresses. PocketBase refuses these from outside its container as well.
 	@dashboard path_regexp dashboard (?i)^/(_|_/.*|api/collections/(_superusers|pbc_3142635823)(/.*)?)$
-	handle @dashboard {
-		@allowed remote_ip 127.0.0.1/32 10.0.0.0/8 192.168.0.0/16
-		handle @allowed {
-			reverse_proxy pocketbase:8090
-		}
-		respond 404
-	}
+	respond @dashboard 404
 
 	handle {
 		# the web app: only this site's own code, fonts and API (tested with the Flutter build)

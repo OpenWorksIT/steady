@@ -12,8 +12,8 @@
 
 // The dashboard at /_/ shows every record to whoever holds a superuser login, so it's off.
 // Superuser sign-in works only from inside the server container (deploy/accounts.sh), unless
-// STEADY_SUPERUSER_API=open (the test stack on a PC). STEADY_DASHBOARD=on reopens /_/ for an
-// emergency; it still needs a superuser, which only accounts.sh can make.
+// STEADY_SUPERUSER_API=open (the test stack on a PC). STEADY_DASHBOARD=on reopens /_/ on the
+// test stack; deploy/docker-compose.yml passes neither on, so .env can't open them on a server.
 routerUse((e) => {
   const path = e.request.url.path;
   if ((path === "/_" || path.indexOf("/_/") === 0) && $os.getenv("STEADY_DASHBOARD") !== "on") {
@@ -26,17 +26,65 @@ routerUse((e) => {
   if (/^\/api\/collections\/[^/]+\/(request-password-reset|confirm-password-reset|request-verification|confirm-verification|request-email-change|confirm-email-change|request-otp|auth-with-otp|auth-with-oauth2|impersonate)/.test(lower)) {
     throw new NotFoundError("Not found.");
   }
-  if (lower.indexOf("_superusers") >= 0 || lower.indexOf("pbc_3142635823") >= 0) {
-    const addr = String(e.request.remoteAddr || "");
-    const local = addr.indexOf("127.0.0.1:") === 0 || addr.indexOf("[::1]:") === 0;
-    if (!local && $os.getenv("STEADY_SUPERUSER_API") !== "open") throw new NotFoundError("Not found.");
+  // Superusers only from inside the container. Decided by the collection PocketBase actually
+  // resolves, not the path's text: it matches names with Unicode case folding, so a spelling
+  // such as "_ſuperusers" (long s) reaches _superusers too. And a superuser token from
+  // outside is refused on every route, whatever its path.
+  const addr = String(e.request.remoteAddr || "");
+  const local = addr.indexOf("127.0.0.1:") === 0 || addr.indexOf("[::1]:") === 0;
+  const superuser = e.auth && e.auth.isSuperuser();
+  if (!local && $os.getenv("STEADY_SUPERUSER_API") !== "open") {
+    let su = lower.indexOf("_superusers") >= 0 || lower.indexOf("pbc_3142635823") >= 0 || superuser;
+    const m = /^\/api\/collections\/([^/]+)/.exec(path);
+    if (!su && m) {
+      try { su = $app.findCachedCollectionByNameOrId(m[1]).name === "_superusers"; } catch (_) { /* no such collection */ }
+    }
+    if (su) throw new NotFoundError("Not found.");
   }
-  // The web app's files keep the same names from one version to the next, so browsers must
-  // check for a newer copy each time (unchanged files come back as a quick "not modified").
-  // Without this a browser can keep running an old web app for hours after an update.
-  if (path.indexOf("/api/") !== 0) e.response.header().set("Cache-Control", "no-cache");
+  // expand would return related records (a patient's check-ins through their user record)
+  // without the read being written to the access log. The app uses one: an assignment's
+  // instrument (the questionnaire itself, not anything about the patient). PocketBase reads
+  // the first expand value, as this does.
+  const expand = e.request.url.query().get("expand");
+  if (lower.indexOf("/api/collections/") === 0 && !superuser && expand &&
+      !(expand === "instrument" && /^\/api\/collections\/assignments\/records(\/[a-z0-9]+)?$/.test(lower))) {
+    throw new BadRequestError("expand isn't available.");
+  }
+  if (path.indexOf("/api/") === 0) {
+    // Answers can hold patient information: never kept in a browser's or proxy's cache,
+    // so nothing is left behind on a shared computer after signing out.
+    if (path !== "/api/steady/brand/logo") e.response.header().set("Cache-Control", "no-store");
+  } else {
+    // The web app's files keep the same names from one version to the next, so browsers must
+    // check for a newer copy each time (unchanged files come back as a quick "not modified").
+    // Without this a browser can keep running an old web app for hours after an update.
+    e.response.header().set("Cache-Control", "no-cache");
+  }
   return e.next();
 });
+
+// Requests are small: 256 KB is plenty, except feedback (a screenshot) and questionnaire
+// imports, which set their own limit. PocketBase's default is 32 MB, enough for a few
+// requests at once to use up a small server's memory.
+routerUse($apis.bodyLimit(256 * 1024));
+
+// Live updates: the same rule as expand, for subscriptions.
+onRealtimeSubscribeRequest((e) => {
+  const superuser = e.auth && e.auth.isSuperuser();
+  if (!superuser && (e.subscriptions || []).some((t) => String(t).toLowerCase().indexOf("expand") >= 0)) {
+    throw new BadRequestError("expand isn't available.");
+  }
+  e.next();
+});
+
+// PocketBase's own superuser sign-in: only from inside the container (deploy/accounts.sh),
+// whatever path or spelling reached it.
+onRecordAuthRequest((e) => {
+  // remoteIP() is the connection's own address, never a forwarded header
+  const ip = String(e.remoteIP() || "");
+  if (ip !== "127.0.0.1" && ip !== "::1" && $os.getenv("STEADY_SUPERUSER_API") !== "open") throw new NotFoundError("Not found.");
+  e.next();
+}, "_superusers");
 
 // Rules give staff without two-step sign-in nothing, when it's required (the default).
 onBootstrap((e) => {
@@ -71,11 +119,11 @@ onBootstrap((e) => {
 onRecordAuthWithPasswordRequest((e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const G = require(`${__hooks}/lib/signin.js`);
+  // counted before checking, per email, the same for unknown emails
+  G.attempt($app, e.record ? e.record.email() : String(e.identity || ""), e.record, e, "password");
   // an unknown email takes as long as a known one
   if (!e.record) { G.dummyCheck($app, e.password); return e.next(); }
-  G.checkResting(e.record);
   const right = e.record.validatePassword(e.password);
-  if (!right) G.failed($app, e.record, e, "password");
   if (s.isStaff(e.record) && require(`${__hooks}/lib/devices.js`).required()) {
     if (right) throw new BadRequestError("Please update Steady to sign in.", { device: new ValidationError("update_app", "Please update Steady to sign in.") });
     throw new BadRequestError("Failed to authenticate.");
@@ -86,7 +134,7 @@ onRecordAuthWithPasswordRequest((e) => {
   }
   if (!right) throw new BadRequestError("Failed to authenticate.");
   e.next();
-  G.succeeded($app, e.record);
+  G.succeeded($app, e.record.email());
 }, "users");
 
 routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
@@ -98,10 +146,11 @@ routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
   const G = require(`${__hooks}/lib/signin.js`);
   let u = null;
   try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
+  // counted before checking, per email, the same for unknown emails
+  G.attempt($app, email, u, e, "password");
   // an unknown email takes as long as a known one
   if (!u) { G.dummyCheck($app, password); throw new BadRequestError("Failed to authenticate."); }
-  G.checkResting(u);
-  if (!password || !u.validatePassword(password)) { G.failed($app, u, e, "password"); throw new BadRequestError("Failed to authenticate."); }
+  if (!password || !u.validatePassword(password)) throw new BadRequestError("Failed to authenticate.");
   if (!u.getBool("active")) throw new BadRequestError("Failed to authenticate.");
   if (s.twoStepOn(u)) {
     const code = String(b.code || "").trim();
@@ -130,7 +179,6 @@ routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
     });
     u = $app.findRecordById("users", u.id);
     if (!how) {
-      G.failed($app, u, e, "code");
       s.audit($app, actor, "auth.two-step.failed", "", u.getString("role") === "patient" ? u.id : "");
       throw new BadRequestError("That code didn't work. Check the time on your phone, or use one of your recovery codes.", { twoStep: new ValidationError("two_step_wrong", "That code didn't work.") });
     }
@@ -143,7 +191,7 @@ routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
       }
     }
   }
-  G.succeeded($app, u);
+  G.succeeded($app, email);
   // staff: only from a linked device; a new device gets a code by email first
   const D = require(`${__hooks}/lib/devices.js`);
   if (s.isStaff(u) && D.required()) {
@@ -181,9 +229,9 @@ routerAdd("POST", "/api/steady/auth/lock", (e) => {
   const G = require(`${__hooks}/lib/signin.js`);
   let u = null;
   try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
+  G.attempt($app, email, u, e, "password");
   if (!u) { G.dummyCheck($app, password); throw new BadRequestError("That email and password didn't match."); }
-  G.checkResting(u);
-  if (!password || !u.validatePassword(password)) { G.failed($app, u, e, "password"); throw new BadRequestError("That email and password didn't match."); }
+  if (!password || !u.validatePassword(password)) throw new BadRequestError("That email and password didn't match.");
   if (!s.isStaff(u)) throw new BadRequestError("That email and password didn't match.");
   if (s.isSupport(u)) throw s.badRequest("OpenWorks accounts are locked on the server.");
   const n = require(`${__hooks}/lib/devices.js`).unlinkAll($app, u);
@@ -213,14 +261,23 @@ routerAdd("POST", "/api/steady/me/password", (e) => {
   const u = $app.findRecordById("users", e.auth.id);
   if (!u.validatePassword(old)) throw s.badRequest("Your current password isn't right.");
   if (u.getBool("emailCodeNeeded")) {
-    const rc = s.readJson(u, "resetCode") || {};
     const given = String(b.emailCode || "").replace(/[^0-9]/g, "");
-    if (!rc.hash || !rc.expires || rc.expires < s.nowMs() || (rc.tries || 0) >= 5) {
+    // the try is counted first, in a transaction with a fresh read, so codes sent at once
+    // can't all be checked against the same count
+    let rc = {};
+    let allowed = false;
+    $app.runInTransaction((tx) => {
+      const fresh = tx.findRecordById("users", u.id);
+      rc = s.readJson(fresh, "resetCode") || {};
+      if (!rc.hash || !rc.expires || rc.expires < s.nowMs() || (rc.tries || 0) >= 5) return;
+      fresh.set("resetCode", { hash: rc.hash, expires: rc.expires, tries: (rc.tries || 0) + 1 });
+      tx.unsafeWithoutHooks().save(fresh);
+      allowed = true;
+    });
+    if (!allowed) {
       throw s.badRequest("The emailed code has expired. Please ask the practice to reset your password again.", { emailCode: new ValidationError("expired", "Expired.") });
     }
     if (!given || !$security.equal($security.sha256(u.id + ":" + given), rc.hash)) {
-      u.set("resetCode", { hash: rc.hash, expires: rc.expires, tries: (rc.tries || 0) + 1 });
-      $app.unsafeWithoutHooks().save(u);
       throw s.badRequest(given ? "That code didn't work. Check the newest email from Steady." : "Enter the code we emailed you.", { emailCode: new ValidationError(given ? "wrong" : "needed", "Code needed.") });
     }
     u.set("resetCode", null);
@@ -341,8 +398,10 @@ routerAdd("POST", "/api/steady/people/{id}/reset-password", (e) => {
   const D = require(`${__hooks}/lib/devices.js`);
   // A full reset hands over an account with no authenticator. Only the emailed device code (to
   // the staff member's own inbox) then stops whoever did the reset from signing in as them.
-  if (b.twoStep === true && target !== "patient" && !D.required()) {
-    throw s.badRequest("This server can't email device codes yet, so a full reset would let whoever does it sign in as them. Set up email first (docs/DEPLOY.md, 5a), or reset on the server with accounts.sh.");
+  // The same when the staff member has no authenticator yet: then any reset hands it over,
+  // whoever does it (the practice admin, a colleague or OpenWorks support).
+  if (target !== "patient" && !D.required() && (b.twoStep === true || !s.twoStepOn(u))) {
+    throw s.badRequest("This server can't email device codes yet, so this reset would let whoever does it sign in as them. Set up email first (docs/DEPLOY.md, 5a), or reset on the server with accounts.sh.");
   }
   // A patient's reset by anyone but their own psychologist is finished only with a code emailed to
   // the patient: whoever reset it then can't choose the new password and read the patient's data.
@@ -481,7 +540,7 @@ routerAdd("POST", "/api/steady/admin/patients/{id}/reassign", (e) => {
   s.audit($app, e, "patient.reassign", "from:" + old + " to:" + c.id, p.id);
   const who = e.auth.getString("name");
   s.notify($app, { recipient: c.id, kind: "system", patient: p.id, title: s.displayName(p) + " is now with you", body: "Moved by " + who + ".", severity: "info" });
-  if (old) s.notify($app, { recipient: old, kind: "system", title: s.displayName(p) + " moved to " + c.getString("name"), body: "Moved by " + who + ".", severity: "info", push: false });
+  if (old) s.notify($app, { recipient: old, kind: "system", patient: p.id, title: s.displayName(p) + " moved to " + c.getString("name"), body: "Moved by " + who + ".", severity: "info", push: false });
   return e.json(200, { id: p.id, clinician: { id: c.id, name: c.getString("name") } });
 }, $apis.requireAuth());
 
@@ -589,7 +648,7 @@ routerAdd("GET", "/api/steady/patients/{id}/export", (e) => {
   const joined = s.toMs(p, "created");
   const span = r.range(q, 3660, Math.ceil((s.nowMs() - joined) / s.core.DAY) + 1);
   const rec = r.patientRecord($app, p, span[0], span[1], { answers: true, radr: true, clinical: true });
-  s.audit($app, e, "patient.export", "user:" + p.id + " " + rec.from.slice(0, 10) + ".." + rec.to.slice(0, 10), p.id);
+  s.audit($app, e, "patient.export", "user:" + p.id + " " + rec.from.slice(0, 10) + ".." + rec.to.slice(0, 10), p.id, true);
   return e.json(200, {
     practice: require(`${__hooks}/lib/brand.js`).current().name,
     clinician: e.auth.getString("name"),
@@ -623,7 +682,7 @@ routerAdd("POST", "/api/steady/patients/{id}/heidi-export", (e) => {
   const mark = { at: s.nowMs(), from: String(b.from), to: String(b.to), part: part, by: e.auth.getString("name"), radr: require(`${__hooks}/lib/radr.js`).VERSION };
   p.set("lastHeidiExport", mark);
   $app.unsafeWithoutHooks().save(p);
-  s.audit($app, e, "patient.export.heidi", "user:" + p.id + " " + mark.from + ".." + mark.to + " part:" + part, p.id);
+  s.audit($app, e, "patient.export.heidi", "user:" + p.id + " " + mark.from + ".." + mark.to + " part:" + part, p.id, true);
   return e.json(200, mark);
 }, $apis.requireAuth());
 
@@ -647,7 +706,11 @@ routerAdd("GET", "/api/steady/export", (e) => {
   // (each patient's own export still has it)
   const radr = list.length <= EXPORT_RADR;
   const out = list.map((p) => r.patientRecord($app, p, Math.max(span[0], s.toMs(p, "created") - s.core.DAY), span[1], { answers: true, radr: radr, clinical: true }));
-  s.audit($app, e, "patients.export", "count:" + out.length, "");
+  // one row per patient in it: an export of everyone is a look at each of them
+  if (!list.length) s.audit($app, e, "patients.export", "count:0", "", true);
+  $app.runInTransaction((tx) => {
+    list.forEach((p) => s.audit(tx, e, "patients.export", "count:" + out.length, p.id, true));
+  });
   return e.json(200, {
     practice: require(`${__hooks}/lib/brand.js`).current().name,
     clinician: e.auth.getString("name"),
@@ -679,7 +742,7 @@ routerAdd("GET", "/api/steady/integration/patients/{id}/feed", (e) => {
   const p = s.ownPatient($app, c.id, e.request.pathValue("id"));
   const span = r.range(e.requestInfo().query || {}, 400, 28);
   const feed = r.patientRecord($app, p, span[0], span[1], { answers: false });
-  s.audit($app, { auth: null, realIP: () => e.realIP() }, "integration.feed", "clinician:" + c.id + " " + feed.from.slice(0, 10) + ".." + feed.to.slice(0, 10), p.id);
+  s.audit($app, { auth: null, realIP: () => e.realIP() }, "integration.feed", "clinician:" + c.id + " " + feed.from.slice(0, 10) + ".." + feed.to.slice(0, 10), p.id, true);
   return e.json(200, feed);
 });
 
@@ -758,7 +821,7 @@ routerAdd("GET", "/api/steady/ops/audit", (e) => {
   const days = Math.max(1, Math.min(3660, Number(q.days) || 90));
   let filter = "created >= {:since}";
   const params = { since: s.dateValue(s.nowMs() - days * s.core.DAY).string() };
-  if (q.patient) { filter += " && patient = {:p}"; params.p = String(q.patient); }
+  if (q.patient) { filter += " && (patient = {:p} || patientRef = {:p})"; params.p = String(q.patient); }
   if (q.actor) { filter += " && actor = {:a}"; params.a = String(q.actor); }
   const names = {};
   const rows = $app.findRecordsByFilter("auditlog", filter, "-created", 20000, 0, params).map((r) => ({
@@ -766,7 +829,7 @@ routerAdd("GET", "/api/steady/ops/audit", (e) => {
     actor: r.getString("actor") ? s.clinicianName($app, r.getString("actor"), names) || r.getString("actor") : "(system)",
     action: r.getString("action"),
     target: r.getString("target"),
-    patient: r.getString("patient"),
+    patient: r.getString("patient") || r.getString("patientRef"),
     ip: r.getString("ip")
   }));
   return e.json(200, { rows: rows });

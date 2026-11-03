@@ -2,7 +2,7 @@
 //
 // Shown once on first launch, before sign-in. DRAFT for the practice to approve.
 // Change [privacyNoticeVersion] whenever the text changes so everyone sees it again.
-const privacyNoticeVersion = 'privacy-2';
+const privacyNoticeVersion = 'privacy-3';
 
 const privacyNoticeTitle = 'Your privacy';
 
@@ -17,23 +17,29 @@ const privacyNoticeSections = <(String, String)>[
     'What is collected',
     'Your name and email address; your check-ins and anything you write in them; your answers to questionnaires '
         'and exercises; and, only if you turn it on, daily summaries of heart rate, sleep, steps and blood oxygen '
-        'from your watch. A notification token lets the app tell you when something new arrives.',
+        'from your watch. Also some technical details: the app version and kind of phone, your time zone, a '
+        'notification token so the app can tell you when something new arrives, and the internet address you '
+        'connect from, which the practice keeps in its access log for security.',
   ),
   (
     'Who can see it',
     'Your own psychologist. Another psychologist at the practice only if your psychologist shares your record with '
         'them (for supervision or cover); you can see who in Settings. The practice\'s master clinician and '
         'administrator see your name and whether your app is set up and connected, not what you share. Your '
-        'psychologist may add what you share to your clinical record at the practice. The practice\'s IT provider '
-        'looks after the system under a confidentiality agreement and does not see patients\' information. It is not '
-        'sold, not used for advertising, and not shared with anyone else unless the law requires it.',
+        'psychologist may add what you share to your clinical record at the practice; if the practice uses an AI '
+        'note-taking service, its consent statement says so. OpenWorks IT runs the practice\'s server on its behalf: '
+        'it can technically reach the server to keep it running, does not read patients\' information, and is bound to '
+        'keep it confidential. Your information is not sold, not used for advertising, and not shared with anyone '
+        'else unless the law requires it.',
   ),
   (
     'How it is protected',
     'Information travels over encrypted connections and is stored on the practice\'s own servers in South Africa. '
-        'Your psychologist can only see their own patients, and every time patient information is viewed it is '
-        'logged. Practice staff sign in with a password, a code and a device they have linked. Notifications never '
-        'show your name, scores or what you wrote, and nothing about you is ever sent by email.',
+        'Your psychologist can only see their own patients, and who opens your record, and when, is logged. Practice '
+        'staff sign in with a password, a code and a device they have linked. Notifications reach your phone through '
+        'Apple or your Android phone\'s notification service and only say that there is something new: never your '
+        'name, scores or what you wrote. Emails to you are only about your account (such as a deletion you asked '
+        'for) and never contain what you shared.',
   ),
   (
     'Your rights under POPIA',

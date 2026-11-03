@@ -126,6 +126,16 @@ void main() {
     expect(x.tables['RADR (research)']!.maxRows, 1 + 30 - 14);
   });
 
+  test('control characters (from a pasted name or check-in) leave a workbook that still opens', () {
+    final raw = sample();
+    final pat = ((raw['patients'] as List).first as Map<String, dynamic>);
+    (pat['patient'] as Map<String, dynamic>)['name'] = 'Megan\u0001 A.\u001b';
+    final bytes = buildWorkbook(ExportBundle.fromJson(raw));
+    final x = Excel.decodeBytes(bytes);
+    final names = x.tables['Patients']!.rows.skip(1).map((r) => r.first?.value?.toString() ?? '').toList();
+    expect(names, contains('Megan A.'));
+  });
+
   test('the PDF report builds, for short and long periods', () async {
     for (final days in [1, 30, 200]) {
       final b = ExportBundle.fromJson(sample(days: days));

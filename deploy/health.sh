@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # How this Steady server is coping, in a few lines: speed, errors, database, disk, memory.
-#   ./health.sh             the last 15 minutes, hour and day
-#   ./health.sh --json      everything, as JSON (what a central dashboard reads)
-#   watch -n 30 ./health.sh keep it on screen
-# Uses STEADY_MONITOR_KEY from .env (gen-keys.sh makes one).
+#   sudo ./health.sh             the last 15 minutes, hour and day
+#   sudo ./health.sh --json      everything, as JSON (what a central dashboard reads)
+#   sudo watch -n 30 ./health.sh keep it on screen
+# Uses STEADY_MONITOR_KEY from .env (gen-keys.sh makes one); as root, since .env is root-only.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
 cd "$(dirname "$0")"
 KEY="$(grep -E '^STEADY_MONITOR_KEY=' .env 2>/dev/null | cut -d= -f2- || true)"
 [ -n "$KEY" ] || { echo "Set STEADY_MONITOR_KEY in deploy/.env first (./gen-keys.sh prints one), then: docker compose up -d" >&2; exit 1; }
-JSON="$(docker compose exec -T pocketbase wget -qO- --header "X-Steady-Monitor: $KEY" "http://127.0.0.1:8090/api/steady/health?hours=24")" \
+# the key is the container's own (STEADY_MONITOR_KEY), handed to curl on stdin: it never
+# appears on a command line, where anyone on the server could read it in the process list
+JSON="$(docker compose exec -T pocketbase sh -c 'printf "X-Steady-Monitor: %s\n" "$STEADY_MONITOR_KEY" | curl -fsS -H @- "http://127.0.0.1:8090/api/steady/health?hours=24"')" \
   || { echo "The server didn't answer. Check: docker compose ps" >&2; exit 1; }
 if [ "${1:-}" = "--json" ]; then echo "$JSON"; exit 0; fi
 command -v jq >/dev/null || { echo "$JSON"; exit 0; }

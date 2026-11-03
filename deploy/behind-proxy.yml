@@ -13,9 +13,7 @@ services:
     networks:
       edge:
         aliases: [steady-pocketbase]
-    # the dashboard, for an SSH tunnel only: ssh -L 8091:localhost:8091 <server>
-    ports:
-      - "127.0.0.1:8091:8090"
+    # no published port: the dashboard is closed, and accounts.sh works inside the container
 
 networks:
   edge:

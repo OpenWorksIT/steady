@@ -10,8 +10,16 @@
 #
 # Only Caddy is exposed. PocketBase and the push relay talk on an internal network.
 
+# each service's log (docker compose logs) is kept to 5 files of 10 MB, not without end
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   caddy:
+    logging: *logging
     image: caddy:2
     restart: unless-stopped
     ports:
@@ -27,9 +35,15 @@ services:
     depends_on:
       - pocketbase
     networks: [edge, internal]
+    # it only needs its own two volumes and ports 80/443
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
 
   pocketbase:
+    logging: *logging
     build: ../server
     restart: unless-stopped
     # only the practice's own site may call the API from a browser
@@ -41,6 +55,8 @@ services:
       # only for servers set up before branding moved to deploy/brand (./brand.sh)
       STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-}
       STEADY_BRAND_DIR: /pb/brand
+      # shown in OpenWorks' fleet view
+      STEADY_DOMAIN: ${STEADY_DOMAIN:-}
       # lets deploy/health.sh and a central dashboard read /api/steady/health
       STEADY_MONITOR_KEY: ${STEADY_MONITOR_KEY:-}
       STEADY_FLEET_KEY: ${STEADY_FLEET_KEY:-}
@@ -86,6 +102,7 @@ services:
       internal: {}
 
   pusher:
+    logging: *logging
     build: ../pusher
     restart: unless-stopped
     read_only: true

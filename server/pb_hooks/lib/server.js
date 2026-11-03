@@ -219,18 +219,54 @@ function env(name, fallback) {
 
 /* ---------- audit ---------- */
 
-function audit(app, e, action, target, patientId) {
+/** Writes one access-log row. strict (reads of patient data): if the row can't be written,
+ *  the read is refused rather than shown without a trace. */
+function audit(app, e, action, target, patientId, strict) {
   try {
     var rec = new Record(app.findCollectionByNameOrId("auditlog"));
     rec.set("actor", e && e.auth ? e.auth.id : "");
     rec.set("action", action);
     rec.set("target", core.str(target, 200));
-    if (patientId) rec.set("patient", patientId);
+    if (patientId) {
+      rec.set("patient", patientId);
+      // plain text too: the relation is emptied when the account is deleted, and the log of
+      // who opened the record must stay findable afterwards
+      rec.set("patientRef", patientId);
+    }
     rec.set("ip", e && e.realIP ? e.realIP() : "");
     app.save(rec);
   } catch (err) {
     app.logger().warn("steady: audit write failed", "error", String(err));
+    if (strict) throw new ApiError(500, "Steady couldn't record this access, so nothing was shown. Please try again.");
   }
+}
+
+/**
+ * The patient overview shows each patient's latest check-in, flags and scores: a look at each
+ * of them. Written once a day per psychologist and patient (the overview opens many times a
+ * day), before the answer goes out; which ones are already written today is remembered in
+ * memory, so a restart costs at most one more row per patient.
+ */
+function auditOverview(app, e, patientIds) {
+  var day = new Date(nowMs()).toISOString().slice(0, 10);
+  var key = "steady.overview." + (e && e.auth ? e.auth.id : "");
+  var seen = {};
+  var mem = null;
+  try { mem = app.store(); } catch (err) { mem = null; }
+  if (mem) {
+    try {
+      var prev = JSON.parse(String(mem.get(key) || "{}"));
+      if (prev && prev.d === day && prev.ids) seen = prev.ids;
+    } catch (err) { seen = {}; }
+  }
+  var todo = (patientIds || []).filter(function (id) { return id && !seen[id]; });
+  if (!(patientIds || []).length) audit(app, e, "patients.overview", "count:0", "", true);
+  if (!todo.length) return;
+  app.runInTransaction(function (tx) {
+    todo.forEach(function (id) { audit(tx, e, "patients.overview", "daily", id, true); });
+  });
+  todo.forEach(function (id) { seen[id] = 1; });
+  if (mem) mem.set(key, JSON.stringify({ d: day, ids: seen }));
 }
 
 /* ---------- invites ---------- */
@@ -357,6 +393,7 @@ function push(app, userId, kind) {
       method: "POST",
       body: JSON.stringify(payload),
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + env("STEADY_PUSHER_SECRET", "") },
+      // the relay sends to every device at once and gives up on a slow one well within this
       timeout: 10
     });
     if (res.statusCode !== 200) {
@@ -366,8 +403,13 @@ function push(app, userId, kind) {
     var parsed = {};
     try { parsed = JSON.parse(toString(res.body)) || {}; } catch (err) { parsed = {}; }
     var gone = Array.isArray(parsed.invalid) ? parsed.invalid : [];
+    // only this request's own devices: the relay talks to servers patients choose, so its
+    // answer must never be able to remove anyone else's registration
+    var mine = {};
+    targets.forEach(function (t) { mine[t.id] = true; });
     gone.forEach(function (id) {
-      try { app.delete(app.findRecordById("devices", id)); } catch (e) { /* already removed */ }
+      if (!mine[String(id)]) return;
+      try { app.delete(app.findRecordById("devices", String(id))); } catch (e) { /* already removed */ }
     });
   } catch (err) {
     app.logger().warn("steady: push failed", "error", String(err));
@@ -601,6 +643,7 @@ module.exports = {
   createInvite: createInvite,
   env: env,
   audit: audit,
+  auditOverview: auditOverview,
   ownPatient: ownPatient,
   displayName: displayName,
   instrumentDef: instrumentDef,

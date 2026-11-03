@@ -1,0 +1,29 @@
+# The community forum's site, for the Caddy in ops/compose.yml (docs/COMMUNITY.md).
+# Discourse runs as the container "community" on the community-edge network, which only it and
+# Caddy are on.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+community.steadyapp.co.za {
+	reverse_proxy community:80
+	header {
+		-Server
+		X-Robots-Tag "noindex, nofollow"
+	}
+	log {
+		format filter {
+			wrap json
+			# no addresses: invitation, password-reset and confirmation links carry their key
+			# in the path; no keys or cookies either way
+			fields {
+				request>uri delete
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+				request>headers>Api-Key delete
+				request>headers>Api-Username delete
+				request>headers>User-Api-Key delete
+				request>headers>User-Api-Client-Id delete
+				request>headers>X-Csrf-Token delete
+				resp_headers>Set-Cookie delete
+			}
+		}
+	}
+}

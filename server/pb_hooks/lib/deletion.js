@@ -25,7 +25,9 @@ var OWNED = [
   ["notifications", "recipient"],
   ["devices", "user"],
   ["devicelinks", "user"],
-  ["feedback", "who"]
+  ["feedback", "who"],
+  // the invite they joined with (it carries the name the psychologist typed)
+  ["invites", "usedBy"]
 ];
 
 var WHY = [

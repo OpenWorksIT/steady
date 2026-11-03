@@ -2,13 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 FROM alpine:3.24
 
-ARG PB_VERSION=0.40.5
+ARG PB_VERSION=0.40.6
 ARG TARGETARCH=amd64
 # The release's own checksums.txt comes from the same place as the zip, so it only catches a
 # broken download. These are pinned here (checked against that file and a copy downloaded
-# separately); a new PB_VERSION needs new ones.
-ARG PB_SHA256_amd64=1dbea1b01eb3dfe64953513859d01e759c96650c4e3264fa4eecd54b769382e4
-ARG PB_SHA256_arm64=570baa1c45d2fb92fc0073582b945ca0ece03cbf9837ccabf49a222f99dd02e3
+# separately); a new PB_VERSION needs new ones. PocketBase said 0.40.6 is likely its last
+# release on GitHub (later ones come from its author's own site): a newer version needs
+# this download address checked too, not only new sums.
+ARG PB_SHA256_amd64=0e1f609158ed945f809f8a02ae012aa0427129c66ebb63c1aee76f2c0309373f
+ARG PB_SHA256_arm64=d22c66ceb67ca92b7d767f36d826e848a276bcfa3c197ead20bf87c42208984f
 
 RUN apk add --no-cache ca-certificates tzdata unzip wget sqlite curl \
  && cd /tmp \

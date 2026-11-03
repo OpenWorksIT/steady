@@ -86,6 +86,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 const SizedBox(height: 12),
                 for (final c in list) Padding(padding: const EdgeInsets.only(bottom: 8), child: CheckinCard(c)),
               ],
+              // looking back over hard weeks can bring things up: help is always on the screen
+              const SizedBox(height: 16),
+              const CrisisFooter(),
             ]);
           },
         ),

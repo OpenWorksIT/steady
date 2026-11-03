@@ -19,6 +19,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -67,6 +68,16 @@ type Server struct {
 
 const maxTargets = 50
 
+// Sends go out at once (a few at a time), each given perTarget and all of them perRequest:
+// the server waits 10 seconds for the answer, and one slow or stalling device server (Web
+// Push endpoints are chosen by whoever registered the device) must not hold up the others or
+// the server's request.
+const (
+	perTarget  = 4 * time.Second
+	perRequest = 8 * time.Second
+	parallel   = 10
+)
+
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -103,23 +114,47 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Message = clampMessage(req.Message)
 	out := sendResponse{Invalid: []string{}}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), perRequest)
 	defer cancel()
-	for _, t := range req.Targets {
+	type result struct {
+		res Outcome
+		err error
+	}
+	results := make([]result, len(req.Targets))
+	slots := make(chan struct{}, parallel)
+	var wg sync.WaitGroup
+	for i, t := range req.Targets {
 		p, ok := s.Providers[t.Provider]
 		if !ok || p == nil {
-			out.Failed++
+			results[i] = result{Failed, nil}
 			continue
 		}
-		res, err := p.Send(ctx, t, req.Message)
-		switch res {
+		wg.Add(1)
+		go func(i int, t Target, p Sender) {
+			defer wg.Done()
+			select {
+			case slots <- struct{}{}:
+				defer func() { <-slots }()
+			case <-ctx.Done():
+				results[i] = result{Failed, ctx.Err()}
+				return
+			}
+			tctx, tcancel := context.WithTimeout(ctx, perTarget)
+			defer tcancel()
+			res, err := p.Send(tctx, t, req.Message)
+			results[i] = result{res, err}
+		}(i, t, p)
+	}
+	wg.Wait()
+	for i, t := range req.Targets {
+		switch results[i].res {
 		case Delivered:
 			out.Sent++
 		case Invalid:
 			out.Invalid = append(out.Invalid, t.ID)
 		default:
 			out.Failed++
-			if err != nil && s.Logger != nil {
+			if err := results[i].err; err != nil && s.Logger != nil {
 				// never log tokens: a network error's text holds the whole address (an APNs
 				// device token, a UnifiedPush topic), so log only what went wrong
 				s.Logger.Printf("send via %s failed: %s", t.Provider, safeErr(err))

@@ -73,6 +73,8 @@ class _JoinScreenState extends State<JoinScreen> {
   @override
   Widget build(BuildContext context) {
     final cfg = AppScope.of(context).config;
+    // which server the account is made on, in plain sight: an invite from anyone else shows up here
+    final host = Uri.tryParse(AppScope.api(context).serverUrl)?.host ?? '';
     return Scaffold(
       appBar: AppBar(title: const Text('Join with an invite code')),
       body: SafeArea(
@@ -85,9 +87,9 @@ class _JoinScreenState extends State<JoinScreen> {
               decoration: const InputDecoration(labelText: 'Invite code', hintText: 'ABCD-2345'),
             ),
             const SizedBox(height: 12),
-            TextField(controller: _name, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Your name', helperText: 'What Steady will call you')),
+            TextField(controller: _name, enableIMEPersonalizedLearning: false, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Your name', helperText: 'What Steady will call you')),
             const SizedBox(height: 12),
-            TextField(controller: _email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email')),
+            TextField(controller: _email, enableIMEPersonalizedLearning: false, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email')),
             const SizedBox(height: 12),
             TextField(
               controller: _password,
@@ -110,6 +112,10 @@ class _JoinScreenState extends State<JoinScreen> {
                 ]),
               ),
             ),
+            if (host.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Your account will be on $host.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!, style: TextStyle(color: context.cs.error)),
