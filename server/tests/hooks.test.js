@@ -1383,7 +1383,7 @@ test("roles: an administrator sees names only and can't open patient data", () =
   assert.equal(rt.call("GET", "/api/steady/me/care-team", { auth: rt.app.findRecordById("users", pat.id) }).status, 403, "nothing but a new password");
 });
 
-test("care: most concerning first (RADR counted), stable at the bottom, archived off the list", () => {
+test("care: answers waiting for review first, then RADR; stable at the bottom, archived off the list", () => {
   const G = require(path.join(HOOKS, "lib", "research_demo.js"));
   const rt = makeRuntime({ env: ENV });
   const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
@@ -1398,10 +1398,14 @@ test("care: most concerning first (RADR counted), stable at the bottom, archived
   // working out the latest RADR day happens on upload; here, via a settings change
   assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr-exclusions", { auth: doc, body: { domain: "sleep", excluded: false } }).status, 200);
 
+  // B's low check-ins (an answer waiting for review) come before C's RADR, and C before A, who
+  // hasn't checked in yet (alphabetical order would put C last)
   let list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
-  assert.deepEqual(list.map((p) => p.name), ["Demo C", "Demo B", "Demo A"], "alphabetical order would put Demo C last");
-  assert.equal(list[0].radr.level, "alert");
-  assert.equal(list[0].radr.convergent, 4);
+  assert.deepEqual(list.map((p) => p.name), ["Demo B", "Demo C", "Demo A"]);
+  assert.deepEqual(list.map((p) => p.attention.why.kind), ["answer", "radr", "other"]);
+  assert.equal(list[1].radr.level, "away", "RADR orders the list; it is never an alert");
+  assert.equal(list[1].radr.convergent, 4);
+  assert.match(list[1].attention.why.text, /4 of 4 areas .* not an alert/);
 
   // switching RADR measures off for one patient (a shift worker's sleep): needs a reason
   assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr-exclusions", { auth: doc, body: { domain: "sleep", excluded: true } }).status, 400);
@@ -1461,6 +1465,132 @@ test("care: most concerning first (RADR counted), stable at the bottom, archived
   assert.equal(rt.pushes.length, 0);
   assert.equal(rt.call("POST", "/api/steady/patients/" + a.id + "/care", { auth: doc, body: { status: "" } }).status, 200);
   assert.equal(rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients.length, 3);
+});
+
+test("RADR: every number explained with its data, flags reviewed by staff who may see the patient, below screening answers", () => {
+  const G = require(path.join(HOOKS, "lib", "research_demo.js"));
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
+  const col = rt.makeUser({ name: "Dr Colleague", role: "clinician", active: true, email: "col@example.org" });
+  const other = rt.makeUser({ name: "Dr Other", role: "clinician", active: true, email: "other@example.org" });
+  const adm = rt.makeUser({ name: "Front Desk", role: "admin", active: true, email: "adm@example.org" });
+  const sup = rt.makeUser({ name: "OpenWorks", role: "support", active: true, email: "ow@example.org" });
+  const mk = (name, extra) => rt.makeUser(Object.assign({ name, role: "patient", clinician: doc.id, active: true, tzOffset: 120,
+    email: name.replace(/ /g, "").toLowerCase() + "@example.org" }, extra || {}));
+  // C: the acute sleep disruption watch data (all four domains away from usual)
+  const c = mk("Demo C", { wearableConsentAt: "2026-09-01 00:00:00.000Z" });
+  G.generate(rt.now(), 120).find((p) => p.key === "disruption").days.forEach((d) => rt.makeRecord("biometrics", { patient: c.id, day: d.day, values: d.values }));
+  rt.create("checkins", c, { patient: c.id, mood: 3, anxiety: 3, sleep: 3, energy: 3 });
+  // D: a PHQ-9 two days ago with item 9 answered, older than C's latest RADR day
+  const d = mk("Demo D");
+  const phq = rt.store.instruments.find((r) => r.getString("key") === "phq9");
+  rt.makeRecord("assignments", { patient: d.id, clinician: doc.id, instrument: phq.id, status: "done",
+    completedAt: new Date(rt.now() - 2 * 86400e3).toISOString().replace("T", " "),
+    score: { total: 6, max: 27, band: "Mild", bandSeverity: "info", severity: "alert", flags: [{ label: "Item 9 endorsed: review", severity: "alert" }] } });
+  rt.create("checkins", d, { patient: d.id, mood: 3, anxiety: 3, sleep: 3, energy: 3 });
+  // E: hasn't checked in yet
+  mk("Demo E");
+  // C's latest RADR day is worked out when watch data arrives; here, via a settings change
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr-exclusions", { auth: doc, body: { domain: "sleep", excluded: false } }).status, 200);
+
+  // RADR comes below a screening answer even when it is more recent, and is never an alert
+  let list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
+  assert.deepEqual(list.map((p) => p.name), ["Demo D", "Demo C", "Demo E"]);
+  const cRow = list[1];
+  assert.equal(cRow.radr.level, "away");
+  assert.ok(cRow.attention.rank < list[0].attention.rank);
+  assert.equal(cRow.radr.flags.length, 4);
+  assert.ok(cRow.radr.flags.every((f) => /^radr:(sleep|circadian|activity|cardiac):\d{4}-\d{2}-\d{2}$/.test(f.key) && f.reviewed === null));
+  assert.ok(!JSON.stringify(list).match(/"alert"/) || list[0].flags.some((f) => f.severity === "alert"), "only the answer is an alert");
+
+  // the latest day explained: plain words, the usual range, now, how far, why, and the data behind it
+  const before = rt.store.auditlog.length;
+  const ex = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc });
+  assert.equal(ex.status, 200, JSON.stringify(ex));
+  const x = ex.data;
+  assert.equal(x.day, x.latestDay);
+  assert.equal(x.flags.length, 4);
+  assert.match(x.words, /4 of 4 areas were away from this person's usual/);
+  assert.match(x.domains.sleep.words, /^Sleep: \d\.\d of 4, away from usual/);
+  const sl = x.measures.sleep_min;
+  assert.match(sl.words, /Usually .* give or take .*, so .* from \d+ nights between .* Now .* than usual/);
+  assert.match(sl.why, /Littlewood/);
+  assert.equal(sl.window.length, 3);
+  assert.equal(sl.baseline.values.length, sl.baseline.days);
+  assert.ok(sl.baseline.days >= 14 && sl.baseline.values.every((v) => v.day >= sl.baseline.from && v.day <= sl.baseline.to));
+  // the same numbers as the RADR tab
+  const tab = rt.call("GET", "/api/steady/patients/" + c.id + "/radr", { auth: doc }).data;
+  assert.deepEqual(tab.latest.domains, Object.fromEntries(Object.entries(x.domains).map(([k, v]) => [k, v.score])));
+  assert.equal(tab.latest.features.sleep_min.z, sl.z);
+  assert.deepEqual(tab.flags.map((f) => f.key), x.flags.map((f) => f.key));
+  // reading it is logged, as other patient reads are
+  const logged = rt.store.auditlog.slice(before).filter((r) => r.getString("action") === "patient.radr.explain");
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0].getString("patient"), c.id);
+  // an earlier day explains too, without flags to review; nonsense days are refused
+  const earlier = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc, query: { day: tab.days[10].day } });
+  assert.equal(earlier.status, 200);
+  assert.deepEqual(earlier.data.flags, []);
+  for (const bad of ["2099-01-01", "yesterday", "2026-02-30"]) {
+    assert.equal(rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc, query: { day: bad } }).status, 400, bad);
+  }
+
+  // who may read and mark it: the patient's psychologist and a colleague it's shared with
+  const key = x.flags[0].key;
+  for (const [who, status] of [[other, 404], [col, 404], [c, 403], [adm, 403], [sup, 403]]) {
+    assert.equal(rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: who }).status, status, who.getString("name"));
+    assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: who, body: { key } }).status, status, who.getString("name"));
+  }
+  assert.equal(rt.store.radrreviews.length, 0);
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/share", { auth: doc, body: { clinician: col.id, shared: true } }).status, 200);
+  const shared = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: col });
+  assert.equal(shared.status, 200);
+  assert.ok(rt.store.auditlog.some((r) => r.getString("action") === "patient.radr.explain" && /shared/.test(r.getString("target"))));
+  const one = rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: col, body: { key, note: "Spoke to them; new night shifts." } });
+  assert.equal(one.status, 200, JSON.stringify(one));
+  assert.equal(one.data.reviewed.by, "Dr Colleague");
+  assert.ok(one.data.reviewed.at > 0);
+  const rec = rt.store.radrreviews[0];
+  assert.equal(rec.getString("reviewer"), col.id);
+  assert.equal(rec.getString("key"), key);
+  // only today's flags, and only well-formed keys
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: doc, body: { key: "a:x:f0" } }).status, 400);
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: doc, body: { key: "radr:sleep:2020-01-01" } }).status, 400);
+
+  // one of four reviewed: still placed by RADR, and the review shows who and when
+  list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
+  let cNow = list.find((p) => p.name === "Demo C");
+  assert.equal(cNow.radr.level, "away");
+  assert.equal(cNow.radr.flags.find((f) => f.key === key).reviewed.by, "Dr Colleague");
+  assert.equal(rt.call("GET", "/api/steady/patients/" + c.id + "/radr", { auth: doc }).data.flags.find((f) => f.key === key).reviewed.note,
+    "Spoke to them; new night shifts.");
+
+  // all reviewed: C drops below E (no check-ins yet) until something new appears
+  for (const f of x.flags.slice(1)) {
+    assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: doc, body: { key: f.key } }).status, 200);
+  }
+  list = rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients;
+  assert.deepEqual(list.map((p) => p.name), ["Demo D", "Demo E", "Demo C"]);
+  cNow = list[2];
+  assert.equal(cNow.radr.level, "reviewed");
+  assert.equal(cNow.attention.rank, 0);
+  assert.match(cNow.attention.why.text, /marked as reviewed/);
+  // the colleague's list follows the same reviews
+  assert.equal(rt.call("GET", "/api/steady/overview", { auth: col }).data.patients.find((p) => p.id === c.id).radr.level, "reviewed");
+
+  // if the access log can't be written, nothing is shown and nothing is marked
+  const save = rt.app.save;
+  rt.app.save = (r) => { if (r.collectionName === "auditlog") throw new Error("disk full"); return save(r); };
+  const refused = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc });
+  const refusedReview = rt.call("POST", "/api/steady/patients/" + c.id + "/radr/review", { auth: doc, body: { key } });
+  rt.app.save = save;
+  assert.equal(refused.status, 500);
+  assert.equal(refused.data, undefined);
+  assert.equal(refusedReview.status, 500);
+  assert.equal(rt.store.radrreviews.length, 4);
+
+  // reviews go with the patient's account when it is deleted
+  assert.ok(require(path.join(HOOKS, "lib", "deletion.js")).OWNED.some((o) => o[0] === "radrreviews"));
 });
 
 test("care: notes are the psychologist's own, shared colleagues read them, patients never", () => {

@@ -564,11 +564,19 @@ function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names, 
   var radr = readJson(patient, "radrLatest");
   var radrLevel = R.level(radr, w.localDay(now, patient.getInt("tzOffset") || 120));
   var careStatus = patient.getString("careStatus");
+  // RADR's flags on its latest day (kept by radr_data.js refreshLatest; older days kept none)
+  var radrFlags = radr && Array.isArray(radr.flags) ? radr.flags : [];
+  var awayNames = (radrFlags.length ? radrFlags.map(function (f) { return f.domain; }) :
+    R.DOMAINS.filter(function (k) { return radr && radr.domains && radr.domains[k] >= R.NOTABLE; }))
+    .map(function (k) { return R.LABELS[k] || k; });
+  var place = radr && radrLevel !== "none" ?
+    { level: radrLevel, convergent: radr.convergent || 0, at: Date.parse(radr.day + "T12:00:00Z"), dayText: R.dayLabel(radr.day), away: awayNames } : null;
   return {
     careStatus: careStatus,
-    radr: radr ? { day: radr.day, watch: radr.watch, convergent: radr.convergent, level: radrLevel } : null,
+    radr: radr ? { day: radr.day, watch: radr.watch, convergent: radr.convergent, level: radrLevel, flags: radrFlags } : null,
     lastNote: readJson(patient, "lastNote"),
-    attention: core.attention(flags, radrLevel, radr ? Date.parse(radr.day + "T12:00:00Z") : 0, careStatus),
+    // where they are in the list and why (answers waiting for review first, then RADR)
+    attention: core.attention(flags, place, careStatus),
     app: { build: patient.getString("appBuild"), platform: patient.getString("appPlatform"), seenAt: toMs(patient, "appSeenAt") },
     // the phone stopped letting Steady read watch data (often after an update)
     watchPermission: watchPermission(patient),

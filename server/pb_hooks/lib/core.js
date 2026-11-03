@@ -393,21 +393,52 @@ function reviewFlags(checkins, assignments, nowMs) {
 }
 
 /**
- * Where a patient goes in the psychologist's list: the most serious flag not yet marked as
- * reviewed, or the RADR level, whichever is higher (0 none .. 3 alert). Patients marked
- * "stable" sort below everyone (-1). Returns { rank, at } (at: when the deciding item happened).
+ * Where a patient goes in the psychologist's list, and why, in plain words for the app. An
+ * ordering of data, not alerts. Highest first:
+ *   4 to 6  an answer not yet marked as reviewed (a questionnaire's flag or band, a run of low
+ *           check-ins), by its severity
+ *   1 to 3  RADR: watch data away from the person's usual, not all of it marked as reviewed, by how
+ *           many domains (radr.convergent, at most 3)
+ *   0 to 1  anything else, such as no check-in for a few days
+ * so RADR never comes before an answer waiting for review. Patients marked "stable" sort below
+ * everyone (-1). Ties: the most recent first (at), then the name.
+ * radr: null, or { level ("away" or "reviewed"), convergent, at, dayText, away: [domain names] }.
+ * Returns { rank, at, why: { kind: "answer" | "radr" | "other" | "none" | "stable", text } }.
  */
-function attention(flags, radrLevel, radrAt, careStatus) {
-  if (careStatus === "stable") return { rank: -1, at: 0 };
-  var best = 0, at = 0;
+function attention(flags, radr, careStatus) {
+  if (careStatus === "stable") {
+    return { rank: -1, at: 0, why: { kind: "stable", text: "Marked as stable: at the bottom of your list, with nothing highlighted." } };
+  }
+  var best = 0, at = 0, top = null;
   (flags || []).forEach(function (f) {
     if (f.reviewed) return;
-    var r = rank(f.severity);
-    if (r > best || (r === best && r > 0 && (f.at || 0) > at)) { best = r; at = f.at || 0; }
+    var sev = rank(f.severity);
+    var r = f.key ? (sev > 0 ? 3 + sev : 0) : sev;
+    if (r > best || (r === best && r > 0 && (f.at || 0) > at)) { best = r; at = f.at || 0; top = f; }
   });
-  var rr = rank(radrLevel || "none");
-  if (rr > best || (rr === best && rr > 0 && (radrAt || 0) > at)) { best = rr; at = radrAt || 0; }
-  return { rank: best, at: at };
+  var rr = radr && radr.level === "away" ? Math.min(3, radr.convergent || 0) : 0;
+  if (rr > best || (rr === best && rr > 0 && (radr.at || 0) > at)) { best = rr; at = radr.at || 0; top = null; }
+  var why;
+  if (top && best >= 4) {
+    why = { kind: "answer", text: "An answer not yet marked as reviewed: " + top.label + ". Answers waiting for review come first." };
+  } else if (best > 0 && !top) {
+    var n = radr.convergent || 0;
+    why = {
+      kind: "radr",
+      text: "RADR: " + n + " of 4 areas of their watch data " + (n === 1 ? "was" : "were") + " away from their usual on " + radr.dayText +
+        ((radr.away || []).length ? " (" + radr.away.join(", ").toLowerCase() + ")" : "") + ", not yet marked as reviewed. " +
+        "RADR comes after answers waiting for review. It orders your list; it is not an alert."
+    };
+  } else if (top) {
+    why = { kind: "other", text: top.label + ". This comes after answers waiting for review and RADR." };
+  } else {
+    why = {
+      kind: "none",
+      text: (radr && radr.level === "reviewed" ? "Nothing waiting for review: what RADR showed on " + radr.dayText + " is marked as reviewed." : "Nothing waiting for review.") +
+        " In order of name."
+    };
+  }
+  return { rank: best, at: at, why: why };
 }
 
 /** Sorts patient summaries (each with .attention and .name) for the list, in place. */

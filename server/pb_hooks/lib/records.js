@@ -164,14 +164,23 @@ function patientRecord(app, p, fromMs, toMs, opts) {
     };
   }
   if (opts.radr && connected) {
-    // the research view for the period (at most its last year), for the report
+    // RADR for the period (at most its last year), for the report
     var W = require(__hooks + "/lib/wearable.js");
     var R = require(__hooks + "/lib/radr.js");
     var D = require(__hooks + "/lib/radr_data.js");
     var tzr = p.getInt("tzOffset") || 120;
     var rTo = W.localDay(Math.min(toMs, s.nowMs()), tzr);
     var rFrom = W.localDay(Math.max(fromMs, Math.min(toMs, s.nowMs()) - 364 * core.DAY), tzr);
-    if (rFrom <= rTo) out.radr = D.compact(D.forPatient(app, p, rFrom, R.addDays(rTo, 0)));
+    if (rFrom <= rTo) {
+      out.radr = D.compact(D.forPatient(app, p, rFrom, R.addDays(rTo, 0)));
+      // the flags on the latest day, and whether each was marked as reviewed (the period reaches today)
+      if (opts.clinical && rTo === W.localDay(s.nowMs(), tzr)) {
+        out.radr.flags = D.current(app, p).flags.map(function (f) {
+          return { key: f.key, label: f.label, domain: f.domain, since: f.since, day: f.day, score: f.score,
+            review: f.reviewed ? { by: f.reviewed.by, at: iso(f.reviewed.at), note: f.reviewed.note } : null };
+        });
+      }
+    }
   }
   return out;
 }

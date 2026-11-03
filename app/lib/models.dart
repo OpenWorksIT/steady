@@ -299,13 +299,27 @@ class Note {
   factory Note.fromJson(Map<String, dynamic> j) => Note('${j['id'] ?? ''}', '${j['text'] ?? ''}', '${j['by'] ?? ''}', fromMs(j['at']));
 }
 
-/// The patient's latest RADR day, as kept for the list: [level] only orders the list.
+/// The patient's latest RADR day, as kept for the list: [level] only orders the list ('none',
+/// 'away', or 'reviewed' when every flag was marked as reviewed). Never an alert.
 class RadrBrief {
   final String day, level;
   final int convergent;
-  RadrBrief(this.day, this.level, this.convergent);
+  final List<RadrFlag> flags;
+  RadrBrief(this.day, this.level, this.convergent, {this.flags = const []});
   factory RadrBrief.fromJson(Map<String, dynamic> j) =>
-      RadrBrief('${j['day'] ?? ''}', '${j['level'] ?? 'none'}', (j['convergent'] as num?)?.toInt() ?? 0);
+      RadrBrief('${j['day'] ?? ''}', '${j['level'] ?? 'none'}', (j['convergent'] as num?)?.toInt() ?? 0,
+          flags: asList(j['flags']).map((f) => RadrFlag.fromJson(asMap(f))).toList());
+}
+
+/// One RADR domain away from the person's usual on the latest day, since [since] ([key] stays the
+/// same while that lasts). [reviewed]: who marked it as reviewed and when (null: not yet).
+class RadrFlag {
+  final String key, domain, since, day;
+  final double? score;
+  final FlagReview? reviewed;
+  RadrFlag(this.key, this.domain, this.since, this.day, this.score, this.reviewed);
+  factory RadrFlag.fromJson(Map<String, dynamic> j) => RadrFlag('${j['key'] ?? ''}', '${j['domain'] ?? ''}', '${j['since'] ?? ''}',
+      '${j['day'] ?? ''}', (j['score'] as num?)?.toDouble(), j['reviewed'] is Map ? FlagReview.fromJson(asMap(j['reviewed'])) : null);
 }
 
 class Subscale {
@@ -500,8 +514,12 @@ class PatientSummary {
 
   /// When the patient asked, in the app, for their account to be deleted (null: they haven't).
   final DateTime? deletionRequestedAt;
+
+  /// Why they are where they are in the list, in plain words (the server's attention.why).
+  final String whyHere;
   PatientSummary({
     this.deletionRequestedAt,
+    this.whyHere = '',
     this.watchLapsedSince,
     this.appBuild = '',
     this.appPlatform = '',
@@ -547,6 +565,7 @@ class PatientSummary {
       appBuild: '${asMap(j['app'])['build'] ?? ''}',
       appPlatform: '${asMap(j['app'])['platform'] ?? ''}',
       deletionRequestedAt: fromMs(j['deletionRequestedAt']),
+      whyHere: '${asMap(asMap(j['attention'])['why'])['text'] ?? ''}',
     );
   }
 

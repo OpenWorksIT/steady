@@ -21,6 +21,7 @@ var OWNED = [
   ["biometrics", "patient"],
   ["notes", "patient"],
   ["flagreviews", "patient"],
+  ["radrreviews", "patient"],
   ["notifications", "patient"],
   ["notifications", "recipient"],
   ["devices", "user"],

@@ -15,6 +15,8 @@ const _actions = {
   'patient.summary': 'Opened a patient',
   'patient.biometrics': 'Looked at watch data',
   'patient.radr': 'Looked at RADR',
+  'patient.radr.explain': 'Looked at how RADR was worked out',
+  'patient.radr.review': 'Marked RADR as reviewed',
   'patient.notes': 'Read notes',
   'patient.note.add': 'Added a note',
   'patient.export': 'Exported a patient',

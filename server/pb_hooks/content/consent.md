@@ -11,7 +11,7 @@ What we collect
 - Your answers to questionnaires and exercises your psychologist sends you.
 - Technical information: which version of the app you use and on what kind of phone, when you last opened it, your time zone, and a token so your phone can receive notifications.
 - The internet address your phone connects from, kept in the practice's access log for security.
-- Only if you choose to connect a watch: a daily summary of your heart rate, sleep, steps and blood oxygen. You are asked separately before this starts, and you can stop it at any time in Settings.
+- Only if you choose to connect a watch: a daily summary of your heart rate, sleep, steps and blood oxygen. You are asked separately before this starts, and you can stop it at any time in Settings. Watch data you share may be added to your clinical record, and your psychologist may then use it as part of your care, including in AI note-taking tools such as Heidi.
 
 Who can see it
 - Your psychologist.
