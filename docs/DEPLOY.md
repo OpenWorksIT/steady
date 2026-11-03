@@ -327,10 +327,11 @@ request. The monthly round of these updates, and the rest of Steady's upkeep, is
 [UPKEEP.md](UPKEEP.md).
 
 GitHub rulesets keep it that way: `main` and `test` change only through a pull request with CI
-green and can't be deleted or force-pushed; `working` can't be deleted or force-pushed; the
-branches CI publishes (`web-dist`, `web-dist-test`, `previews`) can be written only by GitHub
-Actions, so not even an owner's token can swap a web build; release tags (`v*`, `web-v*`) only
-by an admin, never moved or deleted. The `signing` environment (the store and test-build keys)
+green and can't be deleted or force-pushed; `working` can't be deleted or force-pushed; release
+tags (`v*`, `web-v*`) only by an admin, never moved or deleted. The branches CI publishes
+(`web-dist`, `web-dist-test`, `previews`) have no ruleset (GitHub doesn't let a repository
+ruleset make GitHub Actions the only writer): `release.sh` checks instead that CI itself pushed
+the web build after a successful run for that very commit. The `signing` environment (the store and test-build keys)
 is open to `main` and `test` only. `deploy/github-settings.sh` sets all of this from your own
 computer (GitHub CLI signed in as an admin; safe to run again), and `--retire-v1` drops the old
 `v1` branch's ruleset and signing access once vps1 follows `test`.
