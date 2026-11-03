@@ -291,6 +291,33 @@ class LookTest(unittest.TestCase):
         self.assertNotIn(10, f.topics)
 
 
+class SidebarTest(unittest.TestCase):
+    def test_everyones_side_menu_gets_the_categories_in_order(self):
+        forum = Forum()
+        forum.settings["default_navigation_menu_categories"] = "4"   # Discourse's General
+        sent = []
+        orig = forum.handle
+
+        def spy(method, path, body, ctype):
+            if method == "PUT" and "default_navigation_menu_categories" in path:
+                sent.append(json.loads(body))
+            return orig(method, path, body, ctype)
+
+        forum.handle = spy
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            with redirect_stdout(io.StringIO()):
+                setup.ensure_sidebar(api, {"announcements": 5, "clinical-practice": 6, "research-and-studies": 7})
+                setup.ensure_sidebar(api, {"announcements": 5, "clinical-practice": 6, "research-and-studies": 7})
+            self.assertEqual(forum.settings["default_navigation_menu_categories"], "5|6|7")
+            self.assertEqual(len(sent), 1)                       # the second run changes nothing
+            self.assertEqual(sent[0]["update_existing_user"], "true")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
 class TextsTest(unittest.TestCase):
     def test_a_text_discourse_refuses_doesnt_stop_the_others(self):
         forum = Forum()

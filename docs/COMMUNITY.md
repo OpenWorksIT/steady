@@ -367,8 +367,11 @@ dark mode.
 | Words | `TEXTS` in `setup.py`: the box members type in, the welcome above the lists, and the places Discourse names itself |
 | Discourse's own topics | Its welcome topic and admin guide are removed; its guidelines topic gets Steady Community's (`GUIDELINES_RAW`). Its terms and privacy topics stay (`/tos`, `/privacy`) |
 
-Settings: `enable_powered_by_discourse` off (no "Powered by Discourse") and Discourse's tutorial
-bot off.
+Settings: `enable_powered_by_discourse` off (no "Powered by Discourse"), Discourse's tutorial
+bot off, people shown by their names rather than usernames, and chat off: one place to talk,
+topics and personal messages, which flags and the guidelines cover (switch `chat_enabled` on in
+`setup.py` if the community wants it). Everyone's side menu lists the community's categories in
+order, and the link to Discourse's kanban boards is hidden.
 
 To change something, edit the file in `community/brand/` (or `PALETTES`, `TEXTS` in `setup.py`)
 and run `setup.py` again: it changes only what differs, and the forum shows it at once. The

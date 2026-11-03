@@ -352,6 +352,11 @@ def desired_settings(args):
         # Steady Community, not Discourse: no maker's badge, no Discourse tutorial bot
         ("enable_powered_by_discourse", "false"),
         ("discourse_narrative_bot_enabled", "false"),
+        # people by their names ("Welcome back, Test Clinician"), not their usernames
+        ("prioritize_username_in_ux", "false"),
+        # one place to talk: topics and personal messages, which flags and the guidelines cover.
+        # Chat is real-time and invites a quick aside about a patient; switch it on here if wanted.
+        ("chat_enabled", "false"),
     ]
 
 
@@ -590,6 +595,31 @@ def lock_other_categories(api, managed_slugs):
     if not any_found:
         say("ok", "none")
     return problems
+
+
+# --- the side menu --------------------------------------------------------------------
+
+def ensure_sidebar(api, cat_ids):
+    """Everyone's side menu lists Steady Community's categories, in order (Discourse starts
+    with its General only). Applied to existing members too."""
+    print("Side menu")
+    ids = [str(i) for i in cat_ids.values() if i is not None]
+    if not ids:
+        say("skipped", "no categories yet")
+        return
+    value = "|".join(ids)
+    listed = api.get("/admin/site_settings.json")
+    current = {x["setting"]: x.get("value") for x in listed.get("site_settings", [])}
+    name = "default_navigation_menu_categories"
+    if name not in current:
+        say("skipped", f"{name}: not offered by this Discourse version")
+    elif norm(current[name]) == norm(value):
+        say("ok", "the categories, in order")
+    elif api.dry_run:
+        say("would set", "the categories, in order, for everyone")
+    else:
+        api.put(f"/admin/site_settings/{name}.json", {name: value, "update_existing_user": "true"})
+        say("set", "the categories, in order, for everyone")
 
 
 # --- welcome topic --------------------------------------------------------------------
@@ -1084,6 +1114,7 @@ def run(api, args, groups, categories):
 
         group_ids = ensure_groups(api, groups)
         cat_ids = ensure_categories(api, categories, set(group_ids))
+        ensure_sidebar(api, cat_ids)
         if not args.leave_other_categories:
             mismatched_categories = lock_other_categories(api, {c["slug"] for c in categories})
         else:
