@@ -22,6 +22,7 @@ import 'widgets.dart';
 import 'clinician/feedback_inbox_screen.dart';
 import 'clinician/patient_care.dart';
 import 'practice/audit_screen.dart';
+import 'practice/operator_agreement_screen.dart';
 
 Future<void> showSettingsSheet(BuildContext context) => showModalBottomSheet(
       context: context,
@@ -202,6 +203,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               ),
             if (state.api.isManager)
               _Link(icon: Icons.policy_outlined, title: 'Audit report', subtitle: 'Who opened or changed what', open: () => const AuditScreen()),
+            if (state.api.isManager || state.api.isSupport)
+              _Link(icon: Icons.description_outlined, title: 'Operator agreement', subtitle: 'What the practice signed with OpenWorks IT', open: () => const OperatorAgreementCopyScreen()),
             if (state.api.canSeeHealth && !state.api.canUpdate)
               _Link(icon: Icons.monitor_heart_outlined, title: 'Server health', subtitle: 'How the practice\'s server is coping', open: () => const ServerHealthScreen()),
             if (!state.api.isSupport)
