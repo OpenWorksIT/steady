@@ -36,6 +36,10 @@ class Forum:
             13: {"title": "Admin Guide: Getting Started", "user": -1},
             14: {"title": "Terms of Service", "user": -1},
         }
+        self.keys = [{"id": 1, "description": "setup.py", "created_at": "2026-11-03T10:00:00Z", "revoked_at": None},
+                     {"id": 2, "description": "openworks-stats", "created_at": "2026-11-03T11:00:00Z", "revoked_at": None},
+                     {"id": 3, "description": "setup.py", "created_at": "2026-11-03T12:00:00Z", "revoked_at": None}]
+        self.deleted_keys = []
         self.writes = []
         self.lock = threading.Lock()
 
@@ -49,6 +53,13 @@ class Forum:
         route = p.path
         if method != "GET":
             self.writes.append((method, route))
+        if route == "/admin/api/keys.json":
+            return {"keys": sorted(self.keys, key=lambda k: k["created_at"], reverse=True)}
+        m = re.fullmatch(r"/admin/api/keys/(\d+)\.json", route)
+        if m and method == "DELETE":
+            self.deleted_keys.append(int(m.group(1)))
+            self.keys = [k for k in self.keys if k["id"] != int(m.group(1))]
+            return {"success": "OK"}
         if route == "/admin/site_settings.json":
             return {"site_settings": [{"setting": k, "value": v} for k, v in self.settings.items()]}
         m = re.fullmatch(r"/admin/site_settings/(\w+)\.json", route)
@@ -268,6 +279,22 @@ class LookTest(unittest.TestCase):
         self.assertIn("palettes_and_theme", problems[0])
         self.assertTrue(f.texts["js.composer.reply_placeholder"].startswith("Type here. Never"))
         self.assertNotIn(10, f.topics)
+
+
+class KeyTest(unittest.TestCase):
+    def test_revoke_removes_the_one_off_keys_this_one_last(self):
+        forum = Forum()
+        srv = serve(forum)
+        try:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                setup.revoke_keys(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system")
+            self.assertEqual(forum.deleted_keys, [1, 3])
+            self.assertEqual([k["description"] for k in forum.keys], ["openworks-stats"])
+            self.assertIn("Removed the one-off key", out.getvalue())
+        finally:
+            srv.shutdown()
+            srv.server_close()
 
 
 if __name__ == "__main__":

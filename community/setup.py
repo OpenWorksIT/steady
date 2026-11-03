@@ -171,6 +171,7 @@ When someone leaves a practice, the practice stops their Steady account, and wit
 """
 
 TOO_MANY_REQUESTS_RETRIES = 4
+KEY_DESCRIPTION = "setup.py"  # the one-off key's description (community/run-setup.sh, docs/COMMUNITY.md)
 
 
 class SetupError(Exception):
@@ -1014,6 +1015,9 @@ def main(argv=None):
     parser.add_argument("--leave-other-categories", action="store_true",
                         help="don't close other categories (General, Site Feedback, ...) to OpenWorks")
     parser.add_argument("--skip-welcome", action="store_true", help="don't post the welcome topic")
+    parser.add_argument("--revoke-key", action="store_true",
+                        help=f"at the end, remove the API key(s) described '{KEY_DESCRIPTION}', this one last "
+                             "(community/run-setup.sh makes such a key for one run)")
     parser.add_argument("--skip-brand", action="store_true",
                         help="leave the look alone (logo, palettes, theme, wording: community/brand/)")
     parser.add_argument("--stats-account", action="store_true",
@@ -1043,6 +1047,15 @@ def main(argv=None):
         return 2
 
     api = Discourse(args.url, api_key, api_user, args.dry_run)
+    try:
+        return run(api, args, groups, categories)
+    finally:
+        if args.revoke_key:
+            revoke_keys(args.url, api_key, api_user)
+
+
+def run(api, args, groups, categories):
+    api_user = api.headers["Api-Username"]
     print(f"{'Dry run against' if args.dry_run else 'Setting up'} {api.base}\n")
     try:
         me = api.get(f"/u/{urllib.parse.quote(api_user)}.json")
@@ -1081,6 +1094,22 @@ def main(argv=None):
         return 1
     print("Dry run finished; nothing was changed." if args.dry_run else "Done.")
     return 0
+
+
+
+def revoke_keys(url, api_key, api_user):
+    """Removes this run's one-off key (and any other left behind under the same description),
+    through the API: the key in use goes last. Used by community/run-setup.sh."""
+    api = Discourse(url, api_key, api_user, False)
+    try:
+        listing = api.get("/admin/api/keys.json") or {}
+        keys = [k for k in listing.get("keys", []) if k.get("description") == KEY_DESCRIPTION and not k.get("revoked_at")]
+        keys.sort(key=lambda k: k.get("created_at") or "")
+        for k in keys:
+            api.delete(f"/admin/api/keys/{k['id']}.json")
+        print(f"\nRemoved the one-off key ({len(keys)} '{KEY_DESCRIPTION}' key(s) in all).")
+    except SetupError as err:
+        print(f"\nCouldn't remove the one-off key: {err}\nRemove it by hand: docs/COMMUNITY.md, step 4.", file=sys.stderr)
 
 
 if __name__ == "__main__":
