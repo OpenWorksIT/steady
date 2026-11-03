@@ -14,6 +14,7 @@ services:
   pocketbase:
     build: ../../server
     restart: unless-stopped
+    pids_limit: 512   # as on practice servers
     environment:
       STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-VR Clinical Psychology}
       STEADY_CONSENT_VERSION: test-1
@@ -72,7 +73,7 @@ services:
 
   # Keeps the PocketBase dashboard off the internet; everything else passes through.
   caddy:
-    image: caddy:2
+    image: caddy:2.11.7 # pinned: Dependabot proposes updates as pull requests into working
     restart: unless-stopped
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

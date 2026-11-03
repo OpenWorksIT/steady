@@ -235,8 +235,8 @@ token or a compromised build can't reach it:
    (`v1.0.0`, ...) signed by that key, with the matching signed web app (`web-v1.0.0`), and refuse
    a web app holding links or special files. Without the file, a server follows the `main` and
    `web-dist` branches unsigned (test servers only; `audit-server.sh` flags it), or, with
-   `STEADY_TRACK=v1` in `.env`, the `v1` branch and the web app CI built from it (`web-dist-v1`),
-   to try a release on a test server before it's signed.
+   `STEADY_TRACK=test` in `.env` (vps1), the `test` branch and the web app CI built from it
+   (`web-dist-test`), to try a release on a test server before it's signed.
 2. To release, on OpenWorks' own computer, once CI's "Test builds" has run for that commit:
    `deploy/release.sh 1.0.0`. It checks the web app was built from the same commit, shows what
    changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >
@@ -249,6 +249,27 @@ that the web app is the very build the signed release names (its `web-dist:` lin
 server already has are never replaced. A server without `allowed_signers` installs unsigned code
 only when `.env` says so (`STEADY_UNSIGNED=yes`, or `STEADY_TRACK=...`), and never once it has
 installed a signed release.
+
+### Branches
+
+Three branches, and changes move one way:
+
+| Branch | What it is | Who changes it | Where it runs |
+|---|---|---|---|
+| `working` | where new work is built and tested in CI | pushes and pull requests (Dependabot's too) | nowhere: CI only |
+| `test` | what's being tried | a pull request from `working`, with CI green | vps1 (`STEADY_TRACK=test`), web app from `web-dist-test` |
+| `main` | production | a pull request from `test`, with CI green | practice servers, only as a signed release (`release.sh`) |
+
+So an update to Caddy, PocketBase, Go or any package (Dependabot opens those as pull requests
+into `working`) runs on vps1 before any practice gets it. Caddy and PocketBase are pinned to
+exact versions; nothing a practice server runs changes without a pull request.
+
+GitHub rulesets keep it that way: `main` and `test` change only through a pull request with CI
+green and can't be deleted or force-pushed; `working` can't be deleted or force-pushed; the
+branches CI publishes (`web-dist`, `web-dist-test`, `previews`) can be written only by GitHub
+Actions, so not even an owner's token can swap a web build; release tags (`v*`, `web-v*`) only
+by an admin, never moved or deleted. The `signing` environment (the store and test-build keys)
+is open to `main` and `test` only (Settings > Environments > signing > Deployment branches).
 
 One-time setup for signing: `git config --global gpg.format ssh` and
 `git config --global user.signingkey ~/.ssh/id_ed25519.pub`.

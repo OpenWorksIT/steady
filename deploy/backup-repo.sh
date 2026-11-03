@@ -8,7 +8,8 @@
 # In the folder, whenever something changed on GitHub:
 #   steady-v1.0.0.zip, steady-web-v1.0.0.zip   each release's code, and its web app with the
 #                                              Android app (once per release, kept for good)
-#   steady-main-<date>.zip, steady-v1-<date>.zip  the main and v1 branches as they were (last 10)
+#   steady-main-<date>.zip, steady-test-<date>.zip, steady-working-<date>.zip
+#                                              the three branches as they were (last 10 each)
 #   steady-<date>.bundle                       everything, history included (last 10); restore
 #                                              with: git clone steady-<date>.bundle steady
 # and mirror.git/, the copy it works from. deploy/release.sh runs this after every release.
@@ -114,7 +115,7 @@ for t in $(git -C "$mirror" tag -l 'v[0-9]*.[0-9]*.[0-9]*'); do
 done
 
 # the working branches, when they've moved
-for b in main v1; do
+for b in main test working; do
   git -C "$mirror" rev-parse -q --verify "refs/heads/$b" >/dev/null || continue
   sha="$(git -C "$mirror" rev-parse --short "refs/heads/$b")"
   [ -f "$dir/.$b" ] && [ "$(cat "$dir/.$b")" = "$sha" ] && continue
