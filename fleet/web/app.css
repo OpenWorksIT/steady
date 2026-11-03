@@ -3,7 +3,7 @@
 @media (prefers-color-scheme:dark){:root{--bg:#121b1c;--card:#1a2627;--ink:#e4ecea;--ink2:#a9b8b7;--line:#2c3b3c;--teal:#7fc2c8;--good:#7fcf9c;--slow:#f0b45c;--bad:#f2a19b;--note:#1f3335}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line)}
-header nav{display:flex;gap:16px;align-items:center}header form{margin:0}
+header nav{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center}header nav a{white-space:nowrap}header form{margin:0}
 .brand{font-weight:700;color:var(--teal);text-decoration:none}a{color:var(--teal)}
 main{max-width:1200px;margin:0 auto;padding:20px}main.narrow{max-width:420px;padding-top:12vh}
 h1{font-size:1.5rem;margin:.2em 0 .4em}h2{font-size:1.15rem;margin-top:1.6em}
@@ -35,5 +35,30 @@ h2.sev{display:flex;align-items:center;gap:10px}h2.sev.fix{color:var(--bad)}h2.s
 h2.sev .n{font-size:.85rem;font-weight:700;border:1px solid currentColor;border-radius:999px;padding:0 9px}
 ul.feed{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:10px}
 ul.feed li{padding:10px 14px;border-bottom:1px solid var(--line)}ul.feed li:last-child{border-bottom:0}ul.feed li div{margin-top:3px}
+nav.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:10px}
+nav.tabs a{padding:8px 14px;text-decoration:none;color:var(--ink2);border-bottom:2px solid transparent;margin-bottom:-1px}
+nav.tabs a.on{color:var(--teal);border-bottom-color:var(--teal);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 4px}
+.chips a{padding:4px 12px;border:1px solid var(--line);border-radius:999px;text-decoration:none;color:var(--ink);background:var(--card);font-size:.9rem}
+.chips a.on{background:var(--teal);border-color:var(--teal);color:#fff}.chips .n{font-weight:700;opacity:.75}
+.chips.small{margin-top:6px}.chips.small a{font-size:.8rem;padding:2px 10px}
+ul.feed.todo li,ul.feed.upkeep li{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+ul.feed li div.what{flex:1;min-width:0;margin-top:0}ul.feed li form{margin:0;flex:none}
+a.title{font-weight:600;color:var(--ink);text-decoration:none}a.title:hover,a.title:focus{color:var(--teal);text-decoration:underline}
+ul.feed.closed a.title{font-weight:400;color:var(--ink2)}ul.feed.upkeep li.ok div.what{color:var(--ink2)}
+button.small{padding:4px 12px;font-size:.85rem}
+.pill.todo{color:var(--teal)}.pill.look{color:var(--slow)}.pill.waiting,.pill.dropped,.pill.pri-later{color:var(--ink2)}.pill.done{color:var(--good)}
+.pill.pri-now{color:var(--bad)}.pill.pri-soon{color:var(--slow)}
+h2.pri{display:flex;align-items:center;gap:10px}h2.pri.now{color:var(--bad)}h2.pri.soon{color:var(--slow)}h2.pri.later{color:var(--ink2)}h2.pri.done{color:var(--good)}
+h2.pri .n{font-size:.85rem;font-weight:700;border:1px solid currentColor;border-radius:999px;padding:0 9px}
+.overdue{color:var(--bad);font-weight:600}
+.detail{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin-bottom:12px}
+textarea,select{font:inherit;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}textarea{resize:vertical}
+.todo-form{display:flex;flex-direction:column;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:6px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.buttons{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+p.progress{display:flex;align-items:center;gap:12px}p.progress svg{max-width:320px}
+.b-track{fill:var(--line)}.b-done{fill:var(--good)}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 footer{max-width:1200px;margin:30px auto;padding:0 20px;color:var(--ink2);font-size:.8rem}
 @media (max-width:640px){dl{grid-template-columns:1fr}dt{margin-top:6px}}

@@ -1,5 +1,6 @@
 // The fleet view's pages: sign-in (name, password, authenticator code), the overview of every
-// practice server, one server's detail with Check / Update / Restart, and the audit log.
+// practice server, one server's detail with Check / Update / Restart, the checks, the audit log,
+// and OpenWorks' to-do list (todo_web.go).
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
@@ -59,10 +60,17 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /s/{n}/action", a.signedIn(a.action))
 	mux.HandleFunc("GET /audit", a.signedIn(a.audit))
 	mux.HandleFunc("GET /checks", a.signedIn(a.checks))
+	mux.HandleFunc("GET /todo", a.signedIn(a.todo))
+	mux.HandleFunc("POST /todo", a.signedIn(a.todoAdd))
+	mux.HandleFunc("GET /todo/{id}", a.signedIn(a.todoItem))
+	mux.HandleFunc("POST /todo/{id}", a.signedIn(a.todoChange))
+	mux.HandleFunc("GET /upkeep", a.signedIn(a.upkeep))
+	mux.HandleFunc("POST /upkeep", a.signedIn(a.upkeepChange))
 	return headers(mux)
 }
 
-// headers: nothing from elsewhere, no framing, no caching, no referrer; forms are small.
+// headers: nothing from elsewhere, no framing, no caching, no referrer; forms are small (the
+// to-do list's a little less so: a few paragraphs).
 func headers(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hd := w.Header()
@@ -73,7 +81,11 @@ func headers(h http.Handler) http.Handler {
 		hd.Set("Cache-Control", "no-store")
 		hd.Set("Strict-Transport-Security", "max-age=31536000")
 		if r.Method == "POST" {
-			r.Body = http.MaxBytesReader(w, r.Body, 4096)
+			limit := int64(4096)
+			if r.URL.Path == "/todo" || strings.HasPrefix(r.URL.Path, "/todo/") {
+				limit = 32 << 10
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		h.ServeHTTP(w, r)
 	})
