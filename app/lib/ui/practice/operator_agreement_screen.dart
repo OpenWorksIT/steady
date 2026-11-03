@@ -3,7 +3,7 @@
 // The operator agreement between the practice and OpenWorks IT (POPIA section 21). OpenWorks runs
 // the practice's Steady server, so the law asks for a written contract between them: the master
 // clinician signs it here before using Steady, and again when a new version comes. Other staff
-// aren't asked. Settings > The practice > Operator agreement shows what was signed, with a PDF.
+// aren't asked. Settings > Practice > Operator agreement shows what was signed, with a PDF.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -183,7 +183,7 @@ class _OperatorAgreementSignScreenState extends State<OperatorAgreementSignScree
     try {
       await api.signOperatorAgreement(widget.agreement, details, signature: _signature.text);
       if (!mounted) return;
-      showSnack(context, 'Signed. The signed copy is under Settings > The practice > Operator agreement.');
+      showSnack(context, 'Signed. The signed copy is under Settings > Practice > Operator agreement.');
       final done = widget.onSigned;
       if (done != null) {
         done();
@@ -277,7 +277,7 @@ class _OperatorAgreementSignScreenState extends State<OperatorAgreementSignScree
           BusyButton(label: 'Sign', onPressed: _authorised ? _sign : null),
           const SizedBox(height: 10),
           Text("Steady asks you to confirm it's you, then keeps the signed copy. You, the practice admin and OpenWorks can "
-              'open it under Settings > The practice, and download it as a PDF.',
+              'open it under Settings > Practice, and download it as a PDF.',
               style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
           if (gate) ...[
             const SizedBox(height: 16),
@@ -294,7 +294,7 @@ class _OperatorAgreementSignScreenState extends State<OperatorAgreementSignScree
   }
 }
 
-/// Settings > The practice > Operator agreement: what was signed (master clinician, practice
+/// Settings > Practice > Operator agreement: what was signed (master clinician, practice
 /// admin, OpenWorks support), with a PDF to download. The master clinician can sign again with
 /// new details.
 class OperatorAgreementCopyScreen extends StatefulWidget {

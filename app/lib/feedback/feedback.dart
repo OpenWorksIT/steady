@@ -3,8 +3,8 @@
 // The Feedback button on psychologists' and administrators' screens (never patients'): "Love this",
 // "Don't like this" and "Bug found", as in Sorted. A bug report carries a screenshot of the screen
 // as it was when the button was pressed, always blurred so no one can be read from it (OpenWorks
-// IT reads it and never sees patients), and the last 60 steps (trail.dart). Read in Settings > Feedback (master
-// psychologist and administrators) and by OpenWorks IT with deploy/feedback.sh.
+// IT reads it and never sees patients), and the last 60 steps (trail.dart). Read in Settings > Practice >
+// Feedback tickets (psychologists and administrators) and by OpenWorks IT with deploy/feedback.sh.
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';

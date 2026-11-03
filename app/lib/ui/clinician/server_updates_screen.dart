@@ -312,11 +312,9 @@ class _UpdateControlsState extends State<UpdateControls> {
     }
   }
 
-  void _open(BuildContext context, {String? ask}) {
-    final nav = Navigator.of(context);
-    nav.pop();
-    nav.push(MaterialPageRoute(builder: (_) => ServerUpdatesScreen(ask: ask)));
-  }
+  // on top of Settings, so back comes back to it
+  void _open(BuildContext context, {String? ask}) =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => ServerUpdatesScreen(ask: ask)));
 
   @override
   Widget build(BuildContext context) {
