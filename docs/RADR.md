@@ -1,13 +1,19 @@
 # RADR: Research Amon Dîn Rating
 
-RADR is a **research view** in the psychologist's app (patient > RADR tab). It shows, day by
-day, how far a patient's watch data and check-ins are from that person's own normal, grouped into
-four domains, and whether the watch and the check-ins move together. It exists so the practice
-can study, in ordinary care, what the research below reports, and use that to decide how Amon Dîn
-should work.
+RADR is a view in the psychologist's app (patient > RADR tab). It shows, day by day, how far a
+patient's watch data and check-ins are from that person's own normal, **to improve care**,
+grouped into four domains, and whether the watch and the check-ins move together. It applies what
+the research below reports to ordinary care.
 
-**It is not a risk score, a prediction or a diagnosis**, it is not monitored around the clock,
-and nothing is triggered by it. The code is `server/pb_hooks/lib/radr.js` (version `radr-1`).
+**It is not a risk score, a prediction or a diagnosis**, it is not watched around the clock, and
+nothing is triggered by it. In the psychologist's list it only **orders** patients: an ordering of
+data, not alerts, and always below answers waiting for review such as PHQ-9 item 9. The code is
+`server/pb_hooks/lib/radr.js` (version `radr-1`).
+
+Kempie van Rooyen (VR Clinical Psychology) approved RADR for use in care; its ethics and patient
+consent sit with him. Patients agree to share watch data separately (the watch consent in the app,
+`wearable-2`), which says the data may be added to their clinical record and used in their care,
+including in AI note-taking tools such as Heidi.
 
 ## What the research says, in short
 
@@ -34,7 +40,7 @@ and nothing is triggered by it. The code is `server/pb_hooks/lib/radr.js` (versi
   clinical-only models were similar and combining them roughly doubled recall (Lee et al. 2026).
 
 So RADR combines domains, compares each person with themselves, and keeps the check-ins beside the
-watch rather than inside it, so the practice can see whether the watch adds anything.
+watch rather than inside it, so the psychologist can see whether the watch adds anything.
 
 ## How RADR works
 
@@ -64,7 +70,7 @@ watch rather than inside it, so the practice can see whether the watch adds anyt
 `sudo ./accounts.sh demo-patients <psychologist email>` adds three **fictional** patients with eight
 weeks of watch data, check-ins and weekly PHQ-9 and GAD-7 results (`--remove` takes them out). They
 are shaped after the patterns above, not a validated model of any illness, and must never be mixed
-into research results.
+with real patients' data in any analysis.
 
 | Demo | Pattern | What RADR shows (latest day) |
 |---|---|---|
@@ -82,13 +88,49 @@ into research results.
 - The thresholds (14-day minimum, 1.5 for "away from usual", cap of 4) are starting points to be
   tested, not validated cut-offs.
 
+## Every number explained
+
+Everything RADR shows in the app opens one tap down: the latest scores, each domain, each day on
+the chart or the heatmap, each flag, and why a patient is where they are in the list. The sheet
+gives, in plain words, what was measured, this person's usual range, the value then, how far it
+is from usual and why that counts (the research above), then the data behind it: the readings
+averaged for the value, and the 4 weeks of values the usual range came from.
+
+The server works this out (`explain()` in `lib/radr.js`) from the same data and maths as the
+rating itself, and adds nothing: the tests check that both give the same numbers. "Usual" is the
+median of the baseline, and "give or take" is the spread RADR divides by (1.4826 times the median
+absolute deviation, or the measure's minimum spread when the person varies less than that).
+Opening an explanation is written to the access log, like every other read of patient data; if
+the log can't be written, nothing is shown.
+
+## Flags, reviews and the order of the list
+
+- On the latest rated day, each counted domain at 1.5 or more is a **flag**, such as "Sleep away
+  from usual since Tue 28 Oct". Its key (`radr:<domain>:<first day>`) stays the same while that run
+  of days away from usual lasts. Days without data don't end a run unless there are more than 7
+  in a row.
+- The patient's psychologist, or a colleague the patient is shared with, can **mark a flag as
+  reviewed**, with an optional note. Steady keeps who and when (`radrreviews`, readable only
+  through the RADR routes, never by the patient, the practice admin or OpenWorks) and shows
+  "Reviewed by <name>, <date>" wherever the flag appears.
+- **The list order** (`attention()` in `lib/core.js`): first, answers not yet marked as reviewed
+  (questionnaire flags and bands, low mood in the last 3 check-ins), most serious first; then RADR,
+  more domains away first; then anything else, such as no check-in for a few days; then everyone
+  else by name. RADR never comes before an answer waiting for review, however recent. When every
+  flag on the latest day is marked as reviewed, RADR stops moving the patient up the list **until
+  something new appears**: another domain moving away from usual, or a domain coming back to usual
+  and moving away again. A domain moving further from usual within the same run doesn't count as
+  new.
+- RADR is never shown in alarm colours or as an alert, and nothing about it is sent as a
+  notification.
+
 ## In the app and in exports
 
 - Psychologists can **switch a domain off for one patient** (for example sleep for a shift worker),
   with a reason. It's still collected and shown, just not counted; exports list it.
-- Tapping a day on the chart or the heatmap gives a plain-language breakdown with the numbers.
-- The patient list uses RADR only to **order** patients (how many domains are away from usual on a
-  recent day), never as a label.
+- Tapping any number, day, domain or flag opens the explanation above.
+- Exports for the clinical record (PDF, Heidi) list the flags on the latest day and whether each
+  was marked as reviewed in Steady, as they do for the other flags.
 - **Every export states the version** (`radr-1`) and its settings (baseline days, the gap before
   them, smoothing, the "away" threshold), so a file read later, or by Heidi, says how its numbers
   were made. A Heidi export in a series says so plainly if the method changed since the previous

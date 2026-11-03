@@ -5,7 +5,7 @@ change isn't released until they pass.
 
 ## Automated
 
-**Server logic** (`node --test server/tests/*.test.js`, about 60 tests)
+**Server logic** (`node --test server/tests/*.test.js`, about 75 tests)
 
 - Scoring for every built-in questionnaire (PHQ-9 with every band boundary and the item 9 flag,
   GAD-7, WHO-5, PCL-5 with its clusters); answers outside the allowed options rejected;
@@ -13,11 +13,17 @@ change isn't released until they pass.
 - Check-ins, the SAST day boundary, repeats, review flags (item 9, high bands, low mood three
   times in a row, missed days) and their stable keys for "marked as reviewed".
 - Watch data: the daily summaries, usual ranges, consent and withdrawal; RADR: baselines, the
-  four domains, exclusions per patient, levels for the patient list.
+  four domains, exclusions per patient; each day explained (the same numbers as the rating, in
+  plain words, with the days and values behind them); flags whose key holds until something new
+  appears; reviewed flags no longer lifting a patient.
+- The list order: answers waiting for review first (however old), then RADR, then the rest, with
+  why in plain words.
 - **The real hook files and migrations** against an in-memory imitation of PocketBase: invites,
   joining, notifications with no patient data, the patient list order (most concerning first,
   stable last, archived off), notes, patient settings, the five kinds of account and who may
-  reset, stop and restore whom, OpenWorks seeing no patients, the audit report, feedback tickets,
+  reset, stop and restore whom, OpenWorks seeing no patients, RADR explanations and reviews (only the
+  patient's psychologist or a colleague it's shared with, logged, refused if the log can't be
+  written), the audit report, feedback tickets,
   app versions and watch permissions, exports (flag reviews, notes, methods, the Heidi series),
   and staff sign-in: device links with emailed codes (wrong, reused and expired codes), "confirm
   it's you", locking your own account, password resets unlinking devices, PocketBase's own email
@@ -64,9 +70,13 @@ text, Schedule and PDF.
 2. Reset a patient's password: the app asks to confirm it's you first.
 3. Invite a patient on another phone, check in with mood 1, send and complete a PHQ-9 with item
    9 above 0: the notification shows no name or scores; the flag appears; mark it as reviewed.
-4. Export for Heidi twice: the second offers "since the last export" and says part 2.
-5. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
+4. With the demo patients (`accounts.sh demo-patients`), open Demo C's RADR tab: tap a domain and a
+   day, read the reasoning and the data behind it, and mark a flag as reviewed. Its chip says who and
+   when; once all are reviewed, Demo C moves down the list. Nothing about RADR is red or reads as an
+   alert, and a patient with a PHQ-9 item 9 answer stays above Demo C.
+5. Export for Heidi twice: the second offers "since the last export" and says part 2.
+6. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
    On a fresh test server, the master clinician is asked to sign the operator agreement first;
    Settings > The practice > Operator agreement then shows it and downloads the PDF.
-6. "Lost your phone? Lock your account" on the sign-in screen, then restore it as OpenWorks.
-7. `./backup.sh` and a restore to a scratch machine.
+7. "Lost your phone? Lock your account" on the sign-in screen, then restore it as OpenWorks.
+8. `./backup.sh` and a restore to a scratch machine.

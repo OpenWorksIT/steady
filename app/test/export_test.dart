@@ -123,7 +123,7 @@ void main() {
     final answerRow = x.tables['Answers']!.rows[1].map((c) => c?.value?.toString() ?? '').toList();
     expect(answerRow, contains('Little interest or pleasure in doing things'));
     expect(x.tables['Watch']!.rows.first.map((c) => c?.value?.toString()), contains('Resting heart rate (bpm)'));
-    expect(x.tables['RADR (research)']!.maxRows, 1 + 30 - 14);
+    expect(x.tables['RADR']!.maxRows, 1 + 30 - 14);
   });
 
   test('control characters (from a pasted name or check-in) leave a workbook that still opens', () {
@@ -170,6 +170,11 @@ void main() {
       {'domain': 'sleep', 'since': 0, 'by': 'Dr Démo', 'reason': 'night shifts'},
     ];
     r['start'] = {'day': '2026-09-15', 'features': {'sleep_min': {'value': 410, 'z': 0.2, 'usual': 420}, 'rhr': {'value': 61, 'z': 0.1, 'usual': 60}}};
+    r['flags'] = [
+      {'key': 'radr:circadian:2026-09-25', 'domain': 'circadian', 'since': '2026-09-25', 'day': '2026-09-30', 'score': 2.4,
+        'review': {'by': 'Dr Démo', 'at': '2026-09-30T09:00:00Z', 'note': 'New night shifts.'}},
+      {'key': 'radr:activity:2026-09-28', 'domain': 'activity', 'since': '2026-09-28', 'day': '2026-09-30', 'score': 1.7, 'review': null},
+    ];
     p['lastHeidiExport'] = {'at': 1788000000000, 'from': '2026-08-01', 'to': '2026-08-31', 'part': 2, 'by': 'Dr Démo', 'radr': 'radr-0'};
     return raw;
   }
@@ -186,6 +191,11 @@ void main() {
     expect(p.before.single.total, 6);
     expect(p.radr!.method['notable'], 1.5);
     expect(p.radr!.exclusions.single['reason'], 'night shifts');
+    // RADR flags on the latest day say whether each was marked as reviewed, like the other flags
+    expect(p.radr!.flags, hasLength(2));
+    expect(ExportRadr.flagText(p.radr!.flags.first, (d) => '${d.day}/${d.month}'),
+        'Body clock away from usual since 25/9: marked as reviewed in Steady by Dr Démo on 30/9 ("New night shifts.")');
+    expect(ExportRadr.flagText(p.radr!.flags.last, (d) => '${d.day}/${d.month}'), 'Activity away from usual since 28/9: not yet marked as reviewed in Steady');
     expect(p.lastHeidi!.part, 2);
     expect(p.lastHeidi!.to, '2026-08-31');
 
@@ -203,6 +213,8 @@ void main() {
       final p = b.patients.single;
       final bytes = await buildHeidiPdf(b, p, kind: kind, previous: p.lastHeidi);
       expect(String.fromCharCodes(bytes.take(5)), '%PDF-', reason: '$kind');
+      // the PDF report with the same flags and reviews
+      expect(String.fromCharCodes((await buildPdfReport(b, p)).take(5)), '%PDF-', reason: 'report');
       final dir = Platform.environment['STEADY_PREVIEW_DIR'];
       if (dir != null && dir.isNotEmpty) File('$dir/heidi-${kind.name}.pdf').writeAsBytesSync(bytes);
     }

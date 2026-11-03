@@ -22,6 +22,7 @@ import urllib.parse
 import urllib.request
 
 import devicelink
+import radrdata
 
 def load_env():
     env = dict(os.environ)
@@ -267,6 +268,29 @@ def main():
           "a personal baseline range is calculated", bio["baseline"]["rhr"][-1])
     s, r = call("GET", "/api/collections/biometrics/records", pat)
     check(s == 200 and r.get("totalItems") == 12, "patient can read only their own watch data", r.get("totalItems"))
+
+    # RADR: eight weeks of watch data, the last one away from usual
+    s, r = call("POST", "/api/steady/biometrics", pat, {"platform": "android", "source": "smoke", "days": radrdata.days(today)})
+    check(s == 200 and r.get("saved") == 56, "patient uploads eight weeks of watch summaries", r)
+    s, rr = call("GET", f"/api/steady/patients/{pat_id}/radr", doc)
+    flags = rr.get("flags", [])
+    check(s == 200 and len(flags) >= 2, "RADR shows the domains away from usual as flags", [f.get("key") for f in flags])
+    s, x = call("GET", f"/api/steady/patients/{pat_id}/radr/explain", doc)
+    check(s == 200 and x.get("words") and all(x["domains"][k]["words"] for k in ("sleep", "circadian", "activity", "cardiac"))
+          and x["measures"]["steps"]["baseline"]["values"], "each number comes with its reasoning and the data behind it", x.get("words") if s == 200 else x)
+    s, ov = call("GET", "/api/steady/overview", doc)
+    me = [p for p in ov.get("patients", []) if p["id"] == pat_id]
+    check(me and (me[0].get("radr") or {}).get("level") == "away" and me[0]["attention"]["why"]["kind"] == "answer",
+          "the item 9 answer still comes first: RADR orders below answers, and is no alert", me[0].get("attention") if me else ov)
+    for f in flags:
+        s, r = call("POST", f"/api/steady/patients/{pat_id}/radr/review", doc, {"key": f["key"], "note": "smoke"})
+        check(s == 200 and (r.get("reviewed") or {}).get("by"), f"the psychologist marks {f['domain']} as reviewed", r)
+    s, ov = call("GET", "/api/steady/overview", doc)
+    me = [p for p in ov.get("patients", []) if p["id"] == pat_id]
+    check(me and (me[0].get("radr") or {}).get("level") == "reviewed" and all(f.get("reviewed") for f in me[0]["radr"]["flags"]),
+          "once all are reviewed, RADR no longer moves them up the list", me[0].get("radr") if me else ov)
+    s, r = call("GET", f"/api/steady/patients/{pat_id}/radr/explain", pat)
+    check(s == 403, "the patient can't read RADR", r)
     s, r = call("POST", "/api/steady/consent", doc, {"kind": "privacy", "version": "privacy-1"})
     check(s == 200, "privacy notice acknowledgement is recorded", r)
 

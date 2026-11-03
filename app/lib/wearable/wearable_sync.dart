@@ -7,7 +7,10 @@ import '../services/api.dart';
 import 'health_source.dart';
 import 'summary.dart';
 
-const wearableConsentVersion = 'wearable-1';
+/// The watch consent the patient agreed to (watch_screens.dart), recorded with the time.
+/// wearable-2: says shared watch data may go into their clinical record and be used in their care,
+/// including AI note-taking tools such as Heidi. Patients who agreed to wearable-1 aren't asked again.
+const wearableConsentVersion = 'wearable-2';
 
 class SyncResult {
   final int days;
