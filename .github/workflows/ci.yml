@@ -215,10 +215,21 @@ jobs:
       - name: build apk
         working-directory: app
         timeout-minutes: 30
+        # Android notifications through OpenWorks IT's Firebase project (repository variables, not
+        # secrets: they're in every copy of the app). Without them the app has no Android
+        # notifications and says so in Settings. docs/APP.md, "Notifications".
+        env:
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          FIREBASE_SENDER_ID: ${{ vars.FIREBASE_SENDER_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
           set -o pipefail
           flutter create --org za.co.openworks --project-name steady --platforms android . > ../create.txt 2>&1
           rm -f test/widget_test.dart
           python3 scripts/patch_android.py 2>&1 | tee ../patch.txt
           grep -q 'Theme.AppCompat' android/app/src/main/res/values/styles.xml || { echo "::error title=patch_android::LaunchTheme isn't AppCompat"; exit 1; }
-          flutter build apk --debug --target-platform android-arm64 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          grep -q 'default_notification_icon' android/app/src/main/AndroidManifest.xml || { echo "::error title=patch_android::no notification icon for Firebase"; exit 1; }
+          flutter build apk --debug --target-platform android-arm64 \
+            --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
+            --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }

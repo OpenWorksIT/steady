@@ -66,10 +66,21 @@ jobs:
       - name: build apk
         working-directory: app
         timeout-minutes: 30
+        # Android notifications through OpenWorks IT's Firebase project (repository variables, not
+        # secrets: they're in every copy of the app). Without them the app has no Android
+        # notifications and says so in Settings. docs/APP.md, "Notifications".
+        env:
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          FIREBASE_SENDER_ID: ${{ vars.FIREBASE_SENDER_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
           set -o pipefail
+          [ -n "$FIREBASE_APP_ID" ] || echo "::warning title=notifications::No FIREBASE_* repository variables: this APK has no Android notifications. See docs/APP.md, 'Notifications'."
           # 64-bit ARM only: every current phone, and a third of the native (QR scanner) build time
           flutter build apk --release --target-platform android-arm64 \
+            --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
+            --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
             --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
 
       - name: build web

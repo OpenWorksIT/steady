@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -75,21 +76,35 @@ func (a *APNs) providerToken() (string, error) {
 	return t, nil
 }
 
-func (a *APNs) Send(ctx context.Context, t Target, m Message) (Outcome, error) {
+// apnsPayload is the whole notification Apple gets: the alert and a sound. No custom keys
+// beside "aps", no thread or collapse id.
+func apnsPayload() []byte {
+	type alert struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	type aps struct {
+		Alert alert  `json:"alert"`
+		Sound string `json:"sound"`
+	}
+	body, _ := json.Marshal(struct {
+		Aps aps `json:"aps"`
+	}{aps{alert{noticeTitle, noticeBody}, "default"}})
+	return body
+}
+
+// the token goes into the request's path: hex only (the server checks this too)
+var apnsToken = regexp.MustCompile(`^[0-9a-fA-F]{64,200}$`)
+
+func (a *APNs) Send(ctx context.Context, t Target) (Outcome, error) {
+	if !apnsToken.MatchString(t.Token) {
+		return Invalid, nil
+	}
 	jwt, err := a.providerToken()
 	if err != nil {
 		return Failed, err
 	}
-	payload := map[string]any{
-		"aps": map[string]any{
-			"alert": map[string]string{"title": m.Title, "body": m.Body},
-			"sound": "default",
-		},
-	}
-	for k, v := range m.Data {
-		payload[k] = v
-	}
-	body, _ := json.Marshal(payload)
+	body := apnsPayload()
 	base := a.ProdURL
 	if t.Sandbox {
 		base = a.SandboxURL

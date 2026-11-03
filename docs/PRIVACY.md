@@ -30,7 +30,7 @@ These are engineering notes to help the practice and its advisers. They are not 
 | Access logging | Every read of patient data through the API (check-ins, results, watch data and a psychologist's notifications, as lists, single records and live updates; a patient's summary, notes, RADR view and exports; and each patient on the overview, once a day) is written to `auditlog` with who, what and when, before the answer goes out: if the row can't be written, nothing is shown. Rows keep the patient's id after the account is deleted. The master clinician and the practice admin read it in the app (Settings > Audit report), for example for a patient's access request; reading it is logged too. OpenWorks can also print it on the server with `accounts.sh audit`. Shared reads, exports, resets, stops, sign-in codes, device links and the Sorted feed are logged too. |
 | Security in transit | HTTPS only (Caddy, automatic certificates, HSTS). |
 | Security at rest | Encrypt the server's disk. Backups are encrypted with `age` before they're written. |
-| Push notifications | No names, scores or text ever go to Apple, Google or UnifiedPush servers. |
+| Push notifications | Every notification is titled "Steady" and says "New notification", nothing else: no names, scores or text, not even what kind of thing is new, and no ids. iPhones get them through Apple (APNs), Android phones through Google (Firebase Cloud Messaging, in OpenWorks IT's Firebase project). The server tells its push relay only which devices to notify; the relay sends Apple or Google the device's token and those words. The app loads what's new over its own connection when it's opened. The web app has no notifications. |
 | Retention | In-app notifications are deleted after 90 days (configurable). Clinical records (check-ins, results) are kept as part of the patient file; the practice decides the period under its record-keeping obligations. |
 | Deleting an account | A patient asks in the app (Settings > Delete my account, with their password). Their psychologist is told in the app and has 30 days: export what belongs in the clinical record (HPCSA Booklet 9: at least six years after the record becomes dormant, until a minor's 21st birthday, for life for a patient who is mentally incompetent), then delete the account on the patient's page. Everything Steady holds about the patient goes; the access log stays. The patient is emailed when they ask and when it's done. |
 | Stopping | A psychologist can stop a patient's access; the account can't sign in and waiting activities are cancelled. Records stay for the file. |
@@ -56,5 +56,9 @@ If watch data is being collected to inform research (for example the design of A
 
 - The free-text box can contain anything, including disclosures of risk. The app says it isn't monitored around the clock; psychologists should agree how often they look.
 - Patients' phones are outside the practice's control. Encourage a screen lock.
+- Notifications pass through Apple's and Google's servers, outside South Africa. What they carry
+  is a device token and the words "New notification" (the consent statement and the privacy
+  notice say so). The Firebase project, and so Google's terms for it, are OpenWorks IT's; the
+  operator agreement should name Apple and Google as the services notifications go through.
 - Review the audit log periodically (Settings > Audit report).
 - Sharing a patient with a colleague is a disclosure inside the practice, for the patient's care. The consent statement should say that other psychologists at the practice may be given access for supervision or cover; the patient sees who in Settings.

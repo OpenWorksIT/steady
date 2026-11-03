@@ -391,8 +391,7 @@ def run(su):
     s, r = call("GET", "/api/collections/auditlog/records", doc1)
     check(T, "psychologists can't read the audit log", s == 403 or (s == 200 and not items(r)), r)
     s, r = call("POST", "/api/collections/devices/records", patB,
-                {"user": a, "platform": "android", "provider": "unifiedpush",
-                 "token": json.dumps({"endpoint": "https://ntfy.sh/up" + tag, "p256dh": "B" + "A" * 86, "auth": "A" * 22})})
+                {"user": a, "platform": "android", "provider": "fcm", "token": "sec" + tag + ":APA91b" + "x" * 140})
     check(T, "a push registration can't be made for someone else", (s in (400, 403)) or (s == 200 and r.get("user") == b), r)
 
     s, r = call("POST", "/api/steady/self-start", patA, {"instrument": phq9, "result": {}})

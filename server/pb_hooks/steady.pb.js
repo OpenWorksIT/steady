@@ -43,8 +43,6 @@ routerAdd("GET", "/api/steady/config", (e) => {
     consentText: consent.text,
     // Steady's own draft (or placeholders left): the practice still has to write its statement
     consentDraft: consent.draft,
-    // UnifiedPush (Android) apps register with this so the relay can sign with VAPID
-    vapidPublicKey: s.env("STEADY_VAPID_PUBLIC_KEY", ""),
     // "staff": psychologists and administrators sign in with a code from an authenticator app
     twoStep: s.env("STEADY_REQUIRE_2FA", "staff") === "off" ? "off" : "staff",
     // staff sign in only from devices they've linked with a code by email
@@ -787,8 +785,8 @@ onRecordUpdate((e) => {
   e.next();
 }, "users");
 
-// Push registrations: check the shape (the relay POSTs to UnifiedPush endpoints, so they
-// must be https URLs) and hand over a phone's token to whoever signed in on it last.
+// Push registrations: check the shape (an APNs or a Firebase token) and hand over a phone's
+// token to whoever signed in on it last.
 onRecordCreateRequest((e) => {
   const s = require(`${__hooks}/lib/server.js`);
   if (!e.auth || !e.auth.getBool("active")) throw new ForbiddenError("Please sign in.");

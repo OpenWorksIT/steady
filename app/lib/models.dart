@@ -31,7 +31,7 @@ class CrisisLine {
 }
 
 class AppConfig {
-  final String practiceName, crisisNotice, consentVersion, consentText, vapidPublicKey;
+  final String practiceName, crisisNotice, consentVersion, consentText;
 
   /// "staff": psychologists and administrators must use two-step sign-in. "off": optional.
   final String twoStep;
@@ -55,7 +55,6 @@ class AppConfig {
     required this.crisisNotice,
     required this.consentVersion,
     required this.consentText,
-    required this.vapidPublicKey,
     required this.crisisLines,
     this.twoStep = 'staff',
     this.appBuild = '',
@@ -92,7 +91,6 @@ class AppConfig {
         crisisNotice: _crisisNotice,
         consentVersion: '',
         consentText: '',
-        vapidPublicKey: '',
         crisisLines: _withBuiltInLines(const []),
       );
 
@@ -101,7 +99,6 @@ class AppConfig {
         crisisNotice: '${j['crisisNotice'] ?? ''}'.trim().isEmpty ? _crisisNotice : '${j['crisisNotice']}',
         consentVersion: '${j['consentVersion'] ?? ''}',
         consentText: '${j['consentText'] ?? ''}',
-        vapidPublicKey: '${j['vapidPublicKey'] ?? ''}',
         twoStep: '${j['twoStep'] ?? 'staff'}',
         crisisLines: _withBuiltInLines(asList(j['crisisLines']).map((e) => CrisisLine.fromJson(asMap(e))).toList()),
         appBuild: '${asMap(j['app'])['build'] ?? ''}',

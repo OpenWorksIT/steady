@@ -18,7 +18,6 @@ import 'source_link.dart';
 import 'patient/delete_account_screen.dart';
 import 'calm.dart';
 import 'theme.dart';
-import 'widgets.dart';
 import 'clinician/feedback_inbox_screen.dart';
 import 'clinician/patient_care.dart';
 import 'practice/audit_screen.dart';
@@ -39,16 +38,6 @@ class _SettingsSheet extends StatefulWidget {
 }
 
 class _SettingsSheetState extends State<_SettingsSheet> {
-  List<String> _distributors = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    PushService.instance.distributors().then((d) {
-      if (mounted) setState(() => _distributors = d);
-    }).catchError((_) {});
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -62,32 +51,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           const SizedBox(height: 18),
           Text('Notifications', style: context.tt.titleMedium),
           const SizedBox(height: 4),
-          Text(
-            state.pushEnabled
-                ? 'On. Notifications never show names or answers, only that there is something new.'
-                : kIsWeb
-                    ? 'The web version can\'t send notifications. New items appear here while the page is open; install the app for alerts.'
-                    : android
-                    ? 'Off. On Android, Steady delivers notifications through a free app such as ntfy, so no data goes to Google. Install one, then choose it below.'
-                    : 'Off. Allow notifications for Steady in your phone\'s settings.',
-            style: TextStyle(color: context.sc.ink2),
-          ),
-          if (android && _distributors.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            for (final d in _distributors)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.notifications_active_outlined),
-                title: Text(d.split('.').last),
-                subtitle: Text(d),
-                onTap: () async {
-                  await PushService.instance.useDistributor(d);
-                  await state.enablePush();
-                  if (context.mounted) showSnack(context, 'Notifications set up');
-                },
-              ),
-          ],
-          if (!state.pushEnabled && !kIsWeb) ...[
+          Text(pushStatusText(on: state.pushEnabled), style: TextStyle(color: context.sc.ink2)),
+          // a copy built without Firebase can't get notifications on Android, however often it tries
+          if (!state.pushEnabled && !kIsWeb && (!android || kAndroidPushBuiltIn)) ...[
             const SizedBox(height: 8),
             OutlinedButton(onPressed: () => state.enablePush(), child: const Text('Try again')),
           ],

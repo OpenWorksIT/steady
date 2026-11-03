@@ -347,7 +347,8 @@ function sendable(rec) {
 /* ---------- notifications and push ---------- */
 
 /**
- * Stores an in-app notification and sends a content-free push to the recipient's devices.
+ * Stores an in-app notification and sends a push that says only "New notification" to the
+ * recipient's devices. The title, body and kind stay here, in the app.
  * opts: { recipient, kind, patient, assignment, title, body, severity, push }
  */
 function notify(app, opts) {
@@ -361,16 +362,19 @@ function notify(app, opts) {
   rec.set("severity", opts.severity || "none");
   rec.set("read", false);
   app.save(rec);
-  if (opts.push !== false) push(app, opts.recipient, opts.kind);
+  if (opts.push !== false) push(app, opts.recipient);
   return rec;
 }
 
 /*
- * Push payloads never contain patient names, scores or text: they travel through
- * Apple/Google/UnifiedPush servers and show on lock screens. The app fetches the
- * detail over its own authenticated connection.
+ * Pushes travel through Apple's and Google's servers and show on lock screens, so they carry
+ * nothing: every one says "Steady" and "New notification" (the relay sets those words). The
+ * relay is told which devices to notify and nothing else, not who or why. The app loads what's
+ * new over its own connection when it's opened.
  */
-function push(app, userId, kind) {
+var PUSH_PROVIDERS = { apns: true, fcm: true };
+
+function push(app, userId) {
   var url = env("STEADY_PUSHER_URL", "");
   if (!url) return;
   var devices;
@@ -378,15 +382,11 @@ function push(app, userId, kind) {
     devices = app.findRecordsByFilter("devices", "user = {:u}", "-updated", 10, 0, { u: userId });
   } catch (e) { return; }
   if (!devices || !devices.length) return;
-  var targets = devices.map(function (d) {
+  var targets = devices.filter(function (d) { return PUSH_PROVIDERS[d.getString("provider")] === true; }).map(function (d) {
     return { id: d.id, provider: d.getString("provider"), token: d.getString("token"), sandbox: d.getBool("sandbox") };
   });
-  var payload = {
-    targets: targets,
-    title: env("STEADY_PUSH_TITLE", "Steady"),
-    body: env("STEADY_PUSH_BODY", "You have a new update."),
-    data: { kind: kind }
-  };
+  if (!targets.length) return;
+  var payload = { targets: targets };
   try {
     var res = $http.send({
       url: url.replace(/\/+$/, "") + "/send",
@@ -403,8 +403,8 @@ function push(app, userId, kind) {
     var parsed = {};
     try { parsed = JSON.parse(toString(res.body)) || {}; } catch (err) { parsed = {}; }
     var gone = Array.isArray(parsed.invalid) ? parsed.invalid : [];
-    // only this request's own devices: the relay talks to servers patients choose, so its
-    // answer must never be able to remove anyone else's registration
+    // only this request's own devices: the relay's answer must never be able to remove anyone
+    // else's registration
     var mine = {};
     targets.forEach(function (t) { mine[t.id] = true; });
     gone.forEach(function (id) {

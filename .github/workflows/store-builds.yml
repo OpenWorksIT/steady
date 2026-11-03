@@ -60,9 +60,20 @@ jobs:
       - name: build app bundle
         working-directory: app
         timeout-minutes: 40
+        # Android notifications through OpenWorks IT's Firebase project (repository variables, not
+        # secrets: they're in every copy of the app). Without them the app has no Android
+        # notifications and says so in Settings. docs/APP.md, "Notifications".
+        env:
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          FIREBASE_SENDER_ID: ${{ vars.FIREBASE_SENDER_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
           set -o pipefail
+          [ -n "$FIREBASE_APP_ID" ] || { echo "::error title=notifications::Store builds need the FIREBASE_* repository variables for Android notifications. See docs/APP.md, 'Notifications'."; exit 1; }
           flutter build appbundle --release --build-name=$VERSION_NAME --build-number=$VERSION_CODE \
+            --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
+            --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
             --dart-define=STEADY_BUILD=$STEADY_BUILD --dart-define=STEADY_BUILD_DATE=$STEADY_BUILD_DATE --dart-define=STEADY_SERVER=${{ vars.STEADY_SERVER }} \
             --dart-define=STEADY_STORE=play 2>&1 | tee ../aab.txt \
             || { echo "::error title=flutter build appbundle::$(sed 's/%/%25/g' ../aab.txt | grep -iE 'error|failed' | tail -c 20000 | awk '{printf "%s%%0A", $0}')"; exit 1; }

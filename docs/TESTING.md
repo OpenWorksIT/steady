@@ -15,7 +15,8 @@ change isn't released until they pass.
 - Watch data: the daily summaries, usual ranges, consent and withdrawal; RADR: baselines, the
   four domains, exclusions per patient, levels for the patient list.
 - **The real hook files and migrations** against an in-memory imitation of PocketBase: invites,
-  joining, notifications with no patient data, the patient list order (most concerning first,
+  joining, notifications with no patient data (the relay is told which devices and nothing
+  else; old UnifiedPush registrations are deleted and refused), the patient list order (most concerning first,
   stable last, archived off), notes, patient settings, the five kinds of account and who may
   reset, stop and restore whom, OpenWorks seeing no patients, the audit report, feedback tickets,
   app versions and watch permissions, exports (flag reviews, notes, methods, the Heidi series),
@@ -24,9 +25,13 @@ change isn't released until they pass.
   routes closed; the operator agreement (only the master clinician signs, only the version shown,
   every field checked, signed copies never change) and its text, version and docs copy agreeing.
 
-**Push relay** (`cd pusher && go test ./...`): Web Push encryption against an independent
-decryption, ES256 signatures and key formats, APNs requests against a local HTTP/2 server, the
-`/send` endpoint.
+**Push relay** (`cd pusher && go test ./...`): what Apple and Google get, byte for byte (the
+words "Steady" and "New notification" and the device's token, no data keys, no collapse or
+thread ids), even when the server's request holds a name, a score and a kind; APNs requests
+against a local HTTP/2 server; FCM's OAuth token exchange and sends against a local server, and
+which answers mean a dead token; the service-account file (and a clear error for
+`google-services.json`); ES256 signatures and key formats; the `/send` endpoint and its time
+limits.
 
 **The real server** (CI's `e2e` job: the Docker test stack with PocketBase, the relay, Caddy and a
 mail catcher):
@@ -43,7 +48,8 @@ mail catcher):
   signing the operator agreement), ending with the rate limits.
 - Moving the test stack's data to a vps1-style production setup and signing in there.
 
-**The app** (`flutter analyze` and `flutter test` in `app/`, and an Android build): data parsing,
+**The app** (`flutter analyze` and `flutter test` in `app/`, and an Android build with the
+Firebase plugin): what Settings says about notifications, data parsing,
 server addresses and invite links, the watch summaries, chart periods, the patient words and
 calm transitions, the feedback trail, layout rules, the exports (PDF report, Excel workbook,
 Heidi PDF for a full export, a part of a series and chosen dates), and the operator agreement's
@@ -62,8 +68,10 @@ text, Schedule and PDF.
 1. On a test server, sign in as a psychologist on a new phone: the emailed code links it; the app
    locks after two minutes in the background and unlocks with the screen lock.
 2. Reset a patient's password: the app asks to confirm it's you first.
-3. Invite a patient on another phone, check in with mood 1, send and complete a PHQ-9 with item
-   9 above 0: the notification shows no name or scores; the flag appears; mark it as reviewed.
+3. Invite a patient on another phone (one Android, one iPhone across releases), check in with
+   mood 1, send and complete a PHQ-9 with item 9 above 0: the notification says "Steady" and
+   "New notification" and nothing else, with the app closed and open; tapping it opens Steady
+   on what's new; the flag appears; mark it as reviewed.
 4. Export for Heidi twice: the second offers "since the last export" and says part 2.
 5. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
    On a fresh test server, the master clinician is asked to sign the operator agreement first;

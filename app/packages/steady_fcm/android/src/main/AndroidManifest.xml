@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 13 and later ask before an app may show notifications -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <application>
+        <!-- takes Firebase's messages before its own default service (which shows nothing while
+             the app is open) -->
+        <service
+            android:name=".SteadyFcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
+        <!-- in the background Firebase shows the notification itself, in Steady's channel -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="steady_updates"/>
+        <!-- no token until the person has signed in and Steady asks for one -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false"/>
+    </application>
+</manifest>
