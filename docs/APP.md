@@ -80,6 +80,11 @@ dependencies {
 
 and in `android/app/src/main/AndroidManifest.xml` add `<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>` and `android:allowBackup="false"` on `<application>`.
 
+For notifications it gives Firebase Steady's mark as the status-bar icon
+(`com.google.firebase.messaging.default_notification_icon`, `@mipmap/ic_launcher_foreground`)
+and removes the advertising ID permission (`com.google.android.gms.permission.AD_ID`), which a
+Google library could otherwise bring in. Steady doesn't use one.
+
 For the staff screen lock (`local_auth`), the script also adds `USE_BIOMETRIC`, the
 `androidx.appcompat` library, and makes `LaunchTheme` in `res/values*/styles.xml` inherit from
 `Theme.AppCompat.DayNight.NoActionBar` (the fingerprint dialog crashes on Android 8 without an
@@ -97,24 +102,55 @@ lock; it asks for an authenticator code before sensitive actions instead.
 
 ## Notifications
 
-- **iOS**: Apple Push Notification service through the small `packages/steady_apns` plugin in this repo. No Firebase.
-- **Android**: [UnifiedPush](https://unifiedpush.org). The user installs a distributor app such as ntfy (F-Droid or Play Store) once; Steady finds it automatically, or the user picks it under Settings in the app. Messages are end-to-end encrypted to the device (RFC 8291) and shown as a local notification. If no distributor is installed, everything still works when the app is opened; there's just no alert.
+Every notification is titled "Steady" and says "New notification", on every phone. Nothing else
+leaves the server: no names, scores or text, not even what kind of thing is new. Opening the app
+loads what's new over its own connection (and a tap while it's open refreshes the screen).
 
-If the practice later prefers zero-setup Android notifications, the relay already supports Firebase (FCM); the app would need the `firebase_messaging` package added.
+- **iOS**: Apple Push Notification service through the small `packages/steady_apns` plugin in this repo. No Firebase.
+- **Android**: Firebase Cloud Messaging (Google) through the small `packages/steady_fcm` plugin in
+  this repo, built on Google's Firebase Android SDK (messaging only: no Analytics). It's an
+  Android-only plugin, so Firebase isn't in the iPhone or web app. The phone needs Google Play
+  services (every phone with the Play Store has them). In the background Firebase shows the
+  notification; while the app is open the plugin shows the same words itself.
+- **Web**: none. New items appear while the page is open.
+
+The Android app has no `google-services.json` and doesn't use the Google services Gradle plugin.
+It's built with the Firebase project's four settings instead, which CI passes in from
+**repository variables** (not secrets: they identify the app to Firebase and are in every copy
+of it):
+
+| Variable | From the Firebase project (Project settings, or the `google-services.json` it offers) |
+|---|---|
+| `FIREBASE_API_KEY` | `client[0].api_key[0].current_key` |
+| `FIREBASE_APP_ID` | the Android app's App ID, `1:…:android:…` (`mobilesdk_app_id`) |
+| `FIREBASE_SENDER_ID` | the project number (`project_number`) |
+| `FIREBASE_PROJECT_ID` | the project ID (`project_id`) |
+
+Set them in the steady repository > **Settings > Secrets and variables > Actions > Variables**.
+The Test builds, Store builds and CI workflows pass them to `flutter build` as
+`--dart-define=FIREBASE_API_KEY=...` and so on; Store builds stop without them. A build without
+them (a fork, `flutter run` on your own machine) works the same but has no notifications on
+Android, and Settings says so. To try notifications locally, pass the four `--dart-define`s.
+
+The Firebase project belongs to OpenWorks IT. Its Android app's package name is
+`za.co.openworks.steady` (the `--org za.co.openworks --project-name steady` that
+`setup_platforms.sh` and CI give `flutter create`). The servers send with a service-account key
+of the same project (docs/DEPLOY.md, step 3a).
 
 ## Structure
 
 ```
 lib/
-  main.dart               start-up, push set-up before runApp (UnifiedPush needs this)
+  main.dart               start-up, push set-up before runApp
   app_state.dart          who is signed in, server config
   models.dart             data classes, mirrors the server's JSON
   services/api.dart       every server call, error messages
-  services/push.dart      APNs (iOS) and UnifiedPush (Android)
+  services/push.dart      APNs (iOS) and Firebase Cloud Messaging (Android)
   ui/auth/                sign in, join with invite code + consent
   ui/patient/             home, check-in, questionnaire, breathing, steps, history
   ui/clinician/           patients, patient detail, send, results, alerts, library, builder, import
 packages/steady_apns/     iOS push bridge (Swift)
+packages/steady_fcm/      Android push bridge (Java, Firebase Cloud Messaging)
 ```
 
 ## Signing key (test builds)

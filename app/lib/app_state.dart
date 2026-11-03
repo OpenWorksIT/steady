@@ -120,7 +120,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> enablePush() async {
     try {
-      pushEnabled = await PushService.instance.enable(vapidPublicKey: config.vapidPublicKey);
+      pushEnabled = await PushService.instance.enable();
     } catch (_) {
       pushEnabled = false;
     }

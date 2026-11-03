@@ -6,7 +6,8 @@
 #   sudo ./audit-server.sh --domain steady.example.co.za   # if STEADY_DOMAIN isn't in .env
 #
 # Covers: SSH, the firewall, what listens on the network, automatic security updates, pending
-# updates, disk encryption, file permissions of .env and secrets, containers (user, privileges,
+# updates, disk encryption, file permissions of .env and secrets (with the Firebase key for
+# Android notifications), containers (user, privileges,
 # published ports), backups (age, recent, key not on the server), the site's TLS certificate and
 # security headers, the PocketBase dashboard and superuser API from outside, email for staff
 # sign-in, and accounts.sh's own checks.
@@ -123,9 +124,26 @@ if [ -d secrets ]; then
     [ -f "$f" ] || continue
     { [ "$(stat -c %u "$f")" = 0 ] && [ -z "$(find "$f" -perm /go+w)" ]; } || fail "$f must belong to root and be writable only by root: chown root:root $f && chmod 644 $f"
   done
-  find secrets -type f ! -name '*.pub' ! -name allowed_signers -perm /o+r 2>/dev/null | while read -r f; do
-    case "$f" in *vapid.pem) warn "$f is world-readable (needed by the relay container's user; 640 with group 65532 is tighter)" ;; *) fail "$f is world-readable" ;; esac
+  find secrets -type f ! -name '*.pub' ! -name allowed_signers ! -name vapid.pem ! -name fcm.json -perm /o+r 2>/dev/null | while read -r f; do
+    fail "$f is world-readable"
   done
+  # Android notifications: the service-account key of OpenWorks IT's Firebase project, read by
+  # the relay (uid 65532) and nobody else
+  f=secrets/fcm.json
+  if [ -f "$f" ]; then
+    if [ -n "$(find "$f" -perm /o+rwx)" ]; then
+      fail "$f can be read by anyone on the server: chown 65532:65532 $f && chmod 600 $f"
+    elif [ "$(stat -c %u "$f")" = 65532 ] || { [ "$(stat -c %g "$f")" = 65532 ] && [ -n "$(find "$f" -perm -g+r)" ]; }; then
+      ok "$f is there and private (the push relay reads it for Android notifications)"
+    else
+      fail "the push relay can't read $f: chown 65532:65532 $f && chmod 600 $f"
+    fi
+    grep -q '"type"[[:space:]]*:[[:space:]]*"service_account"' "$f" 2>/dev/null \
+      || fail "$f isn't a Firebase service-account key (docs/DEPLOY.md, step 3a)"
+  else
+    warn "no secrets/fcm.json: Android phones get no notifications (docs/DEPLOY.md, step 3a)"
+  fi
+  [ -e secrets/vapid.pem ] && warn "secrets/vapid.pem isn't used any more (Android notifications moved to Firebase): rm secrets/vapid.pem"
   priv=""
   for f in secrets/*.age.key secrets/*backup*key*; do
     [ -e "$f" ] && [ "${f%.pub}" = "$f" ] && priv="$f"

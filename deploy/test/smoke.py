@@ -231,16 +231,18 @@ def main():
     s, r = call("POST", "/api/steady/consent", doc, {"kind": "privacy", "version": "privacy-1"})
     check(s == 200, "privacy notice acknowledgement is recorded", r)
 
-    # push registrations: the relay posts to UnifiedPush endpoints, so they must be public https
-    key, secret = "B" + "A" * 86, "A" * 22
-    bad = json.dumps({"endpoint": "http://pocketbase:8090/api/", "p256dh": key, "auth": secret})
+    # push registrations: an iPhone's APNs token or an Android phone's Firebase token. An older
+    # app's UnifiedPush (ntfy) registration is refused: the relay no longer sends to those.
+    old = json.dumps({"endpoint": "https://ntfy.sh/upSmokeTest123", "p256dh": "B" + "A" * 86, "auth": "A" * 22})
     s, r = call("POST", "/api/collections/devices/records", pat,
-                {"user": pat_id, "platform": "android", "provider": "unifiedpush", "token": bad})
-    check(s == 400, "a push endpoint pointing inside the server is refused", r)
-    good = json.dumps({"endpoint": "https://ntfy.sh/upSmokeTest123", "p256dh": key, "auth": secret})
+                {"user": pat_id, "platform": "android", "provider": "unifiedpush", "token": old})
+    check(s == 400, "an old UnifiedPush registration is refused", r)
     s, r = call("POST", "/api/collections/devices/records", pat,
-                {"user": pat_id, "platform": "android", "provider": "unifiedpush", "token": good})
-    check(s == 200, "a normal UnifiedPush registration is accepted", r)
+                {"user": pat_id, "platform": "android", "provider": "fcm", "token": "not a token"})
+    check(s == 400, "a malformed Firebase token is refused", r)
+    s, r = call("POST", "/api/collections/devices/records", pat,
+                {"user": pat_id, "platform": "android", "provider": "fcm", "token": "smokeTest:APA91b" + "x" * 140})
+    check(s == 200, "an Android phone's Firebase token is accepted", r)
     s, r = call("POST", "/api/collections/notifications/records", pat, {"recipient": pat_id, "kind": "system", "title": "x"})
     check(s in (400, 403), "nobody can create notifications directly", r)
     s, r = call("PATCH", f"/api/collections/users/records/{pat_id}", pat, {"consentVersion": "forged"})

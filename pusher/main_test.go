@@ -3,86 +3,30 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
+	"io/fs"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
-
-// decryptAes128gcm is an independent receiver-side implementation of RFC 8291/8188.
-func decryptAes128gcm(t *testing.T, body []byte, uaPriv *ecdh.PrivateKey, auth []byte) []byte {
-	t.Helper()
-	salt := body[:16]
-	rs := binary.BigEndian.Uint32(body[16:20])
-	if rs != 4096 {
-		t.Fatalf("record size %d", rs)
-	}
-	idlen := int(body[20])
-	asPubBytes := body[21 : 21+idlen]
-	ct := body[21+idlen:]
-	asPub, err := ecdh.P256().NewPublicKey(asPubBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secret, err := uaPriv.ECDH(asPub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prkKey, _ := hkdf.Extract(sha256.New, secret, auth)
-	ikm, _ := hkdf.Expand(sha256.New, prkKey, "WebPush: info\x00"+string(uaPriv.PublicKey().Bytes())+string(asPubBytes), 32)
-	prk, _ := hkdf.Extract(sha256.New, ikm, salt)
-	cek, _ := hkdf.Expand(sha256.New, prk, "Content-Encoding: aes128gcm\x00", 16)
-	nonce, _ := hkdf.Expand(sha256.New, prk, "Content-Encoding: nonce\x00", 12)
-	block, _ := aes.NewCipher(cek)
-	gcm, _ := cipher.NewGCM(block)
-	pt, err := gcm.Open(nil, nonce, ct, nil)
-	if err != nil {
-		t.Fatalf("decrypt: %v", err)
-	}
-	if pt[len(pt)-1] != 0x02 {
-		t.Fatalf("missing final-record delimiter")
-	}
-	return pt[:len(pt)-1]
-}
-
-func TestWebPushEncryptionRoundTrip(t *testing.T) {
-	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
-	auth := make([]byte, 16)
-	rand.Read(auth)
-	msg := []byte(`{"title":"Steady","body":"You have a new update."}`)
-	body, err := encryptAes128gcm(msg, ua.PublicKey().Bytes(), auth)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := decryptAes128gcm(t, body, ua, auth); !bytes.Equal(got, msg) {
-		t.Fatalf("round trip mismatch: %s", got)
-	}
-	if _, err := encryptAes128gcm(msg, []byte("nope"), auth); err == nil {
-		t.Fatal("expected bad key error")
-	}
-}
 
 func TestES256JWTVerifies(t *testing.T) {
 	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -133,7 +77,7 @@ type fakeSender struct {
 	result Outcome
 }
 
-func (f *fakeSender) Send(ctx context.Context, t Target, m Message) (Outcome, error) {
+func (f *fakeSender) Send(ctx context.Context, t Target) (Outcome, error) {
 	f.got = append(f.got, t)
 	return f.result, nil
 }
@@ -141,7 +85,7 @@ func (f *fakeSender) Send(ctx context.Context, t Target, m Message) (Outcome, er
 func TestSendEndpoint(t *testing.T) {
 	ok := &fakeSender{result: Delivered}
 	gone := &fakeSender{result: Invalid}
-	s := &Server{Secret: "0123456789abcdef01234567", Providers: map[string]Sender{"apns": ok, "unifiedpush": gone}}
+	s := &Server{Secret: "0123456789abcdef01234567", Providers: map[string]Sender{"apns": ok, "fcm": gone}}
 	ts := httptest.NewServer(s.routes())
 	defer ts.Close()
 
@@ -160,60 +104,50 @@ func TestSendEndpoint(t *testing.T) {
 	if res, _ := post("wrong", `{}`); res.StatusCode != 401 {
 		t.Fatalf("want 401, got %d", res.StatusCode)
 	}
-	body := `{"title":"Steady","body":"You have a new update.","data":{"kind":"checkin"},
-	  "targets":[{"id":"d1","provider":"apns","token":"t1"},{"id":"d2","provider":"unifiedpush","token":"{}"},{"id":"d3","provider":"fcm","token":"x"}]}`
+	// an old phone's UnifiedPush registration: no such provider any more, so it isn't sent
+	body := `{"targets":[{"id":"d1","provider":"apns","token":"t1"},{"id":"d2","provider":"fcm","token":"x"},{"id":"d3","provider":"unifiedpush","token":"{}"}]}`
 	res, out := post(s.Secret, body)
 	if res.StatusCode != 200 || out.Sent != 1 || out.Failed != 1 || len(out.Invalid) != 1 || out.Invalid[0] != "d2" {
 		t.Fatalf("unexpected %d %+v", res.StatusCode, out)
 	}
 }
 
-func TestClampMessage(t *testing.T) {
-	m := clampMessage(Message{Title: strings.Repeat("x", 200), Body: strings.Repeat("y", 500)})
-	if len(m.Title) != 60 || len(m.Body) != 160 {
-		t.Fatal("not clamped")
-	}
-}
+// The whole of what Apple and Google get, byte for byte: the words and nothing else.
+const (
+	wantAPNs = `{"aps":{"alert":{"title":"Steady","body":"New notification"},"sound":"default"}}`
+	wantFCM  = `{"message":{"token":"%s","notification":{"title":"Steady","body":"New notification"},"android":{"priority":"high","ttl":"86400s"}}}`
+)
 
-func TestWebPushSendToEndpoint(t *testing.T) {
-	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
-	auth := make([]byte, 16)
-	rand.Read(auth)
-	var received []byte
-	var headers http.Header
-	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received, _ = io.ReadAll(r.Body)
-		headers = r.Header.Clone()
-		w.WriteHeader(201)
-	}))
-	defer ts.Close()
-
-	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	wp := &WebPush{client: ts.Client(), vapidKey: k, vapidSubject: "mailto:it@example.org"}
-	sub, _ := json.Marshal(webPushSub{Endpoint: ts.URL + "/up/abc", P256dh: b64.EncodeToString(ua.PublicKey().Bytes()), Auth: b64.EncodeToString(auth)})
-	res, err := wp.Send(context.Background(), Target{ID: "d", Provider: "unifiedpush", Token: string(sub)}, Message{Title: "Steady", Body: "You have a new update.", Data: map[string]string{"kind": "assigned"}})
-	if err != nil || res != Delivered {
-		t.Fatalf("send: %v %v", res, err)
+func TestPayloadsCarryOnlyTheWords(t *testing.T) {
+	if got := string(apnsPayload()); got != wantAPNs {
+		t.Fatalf("APNs\n got %s\nwant %s", got, wantAPNs)
 	}
-	if headers.Get("Content-Encoding") != "aes128gcm" || !strings.HasPrefix(headers.Get("Authorization"), "vapid t=") {
-		t.Fatalf("headers %v", headers)
+	if got, want := string(fcmPayload("tok")), strings.Replace(wantFCM, "%s", "tok", 1); got != want {
+		t.Fatalf("FCM\n got %s\nwant %s", got, want)
 	}
-	var msg Message
-	if err := json.Unmarshal(decryptAes128gcm(t, received, ua, auth), &msg); err != nil || msg.Body != "You have a new update." {
-		t.Fatalf("payload %v %v", msg, err)
+	// and structurally: Apple gets "aps" only, Google gets no "data" (or anything else) at all
+	var a map[string]map[string]any
+	json.Unmarshal(apnsPayload(), &a)
+	if len(a) != 1 || len(a["aps"]) != 2 {
+		t.Fatalf("APNs keys: %v", a)
 	}
-	// http endpoints are refused
-	bad, _ := json.Marshal(webPushSub{Endpoint: "http://example.org/x", P256dh: "a", Auth: "b"})
-	if r, _ := wp.Send(context.Background(), Target{Token: string(bad)}, Message{}); r != Invalid {
-		t.Fatal("http endpoint should be invalid")
+	var f map[string]map[string]any
+	json.Unmarshal(fcmPayload("tok"), &f)
+	if len(f) != 1 || len(f["message"]) != 3 || f["message"]["data"] != nil {
+		t.Fatalf("FCM keys: %v", f)
 	}
 }
 
 func TestAPNsSendAgainstFakeServer(t *testing.T) {
+	ok, gone := strings.Repeat("ab", 32), strings.Repeat("cd", 32)
 	var path, topic, authz string
+	var body []byte
+	var headers http.Header
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path, topic, authz = r.URL.Path, r.Header.Get("apns-topic"), r.Header.Get("authorization")
-		if strings.HasSuffix(r.URL.Path, "/gone") {
+		body, _ = io.ReadAll(r.Body)
+		headers = r.Header.Clone()
+		if strings.HasSuffix(r.URL.Path, gone) {
 			w.WriteHeader(410)
 			w.Write([]byte(`{"reason":"Unregistered"}`))
 			return
@@ -225,57 +159,32 @@ func TestAPNsSendAgainstFakeServer(t *testing.T) {
 	defer ts.Close()
 	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	a := &APNs{KeyID: "KID", TeamID: "TEAM", Topic: "za.co.openworks.steady", key: k, client: ts.Client(), ProdURL: ts.URL, SandboxURL: ts.URL}
-	res, err := a.Send(context.Background(), Target{Token: "abc"}, Message{Title: "Steady", Body: "x"})
-	if err != nil || res != Delivered || path != "/3/device/abc" || topic != "za.co.openworks.steady" || !strings.HasPrefix(authz, "bearer ") {
+	res, err := a.Send(context.Background(), Target{Token: ok})
+	if err != nil || res != Delivered || path != "/3/device/"+ok || topic != "za.co.openworks.steady" || !strings.HasPrefix(authz, "bearer ") {
 		t.Fatalf("%v %v %s %s %s", res, err, path, topic, authz)
 	}
-	if res, _ := a.Send(context.Background(), Target{Token: "gone"}, Message{}); res != Invalid {
-		t.Fatal("410 should mark the token invalid")
+	if string(body) != wantAPNs {
+		t.Fatalf("APNs payload\n got %s\nwant %s", body, wantAPNs)
 	}
-}
-
-func TestNewWebPushFromEnvLoadsVapid(t *testing.T) {
-	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	der, _ := x509.MarshalECPrivateKey(k)
-	p := filepath.Join(t.TempDir(), "vapid.pem")
-	os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), 0o600)
-	t.Setenv("VAPID_PRIVATE_KEY_FILE", p)
-	t.Setenv("VAPID_SUBJECT", "mailto:it@example.org")
-	wp, err := newWebPushFromEnv()
-	if err != nil || len(wp.VapidPublicKey()) < 80 {
-		t.Fatalf("vapid: %v %q", err, wp.VapidPublicKey())
-	}
-}
-
-func TestPublicOnlyClientRefusesPrivateAddresses(t *testing.T) {
-	for addr, want := range map[string]bool{
-		"127.0.0.1": false, "10.1.2.3": false, "172.18.0.4": false, "192.168.1.10": false,
-		"169.254.169.254": false, "100.64.1.1": false, "::1": false, "fd00::1": false, "0.0.0.0": false,
-		"::ffff:127.0.0.1": false, "1.1.1.1": true, "8.8.8.8": true, "2606:4700::1111": true,
-		"0.1.2.3": false, "::7f00:1": false, "64:ff9b::7f00:1": false, "64:ff9b::a00:1": false,
-		"64:ff9b::808:808": true, "2002:7f00:1::1": false, "2002:a9fe:a9fe::1": false, "2002:808:808::1": true,
-		"2001:0:4136:e378::1": false, "100::1": false, "fec0::1": false, "fe80::1": false,
-	} {
-		if got := isPublicAddr(netip.MustParseAddr(addr)); got != want {
-			t.Errorf("isPublicAddr(%s) = %v, want %v", addr, got, want)
+	for _, h := range []string{"apns-collapse-id", "apns-id"} {
+		if headers.Get(h) != "" {
+			t.Fatalf("%s must not be set: %q", h, headers.Get(h))
 		}
 	}
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(201) }))
-	defer ts.Close()
-	if _, err := publicOnlyClient(false).Post(ts.URL, "text/plain", nil); err == nil || !strings.Contains(err.Error(), "non-public") {
-		t.Fatalf("expected the loopback test server to be refused, got %v", err)
+	if res, _ := a.Send(context.Background(), Target{Token: gone}); res != Invalid {
+		t.Fatal("410 should mark the token invalid")
 	}
-	res, err := publicOnlyClient(true).Post(ts.URL, "text/plain", nil)
-	if err != nil {
-		t.Fatalf("allowPrivate should connect: %v", err)
+	// anything but a hex token never reaches Apple (it would go into the request's path)
+	path = ""
+	if res, _ := a.Send(context.Background(), Target{Token: "../../../x"}); res != Invalid || path != "" {
+		t.Fatalf("a malformed token should be invalid without a request: %v %q", res, path)
 	}
-	res.Body.Close()
 }
 
 // One stalling device server must not hold up the others, or the answer the server waits for.
 type stallSender struct{}
 
-func (stallSender) Send(ctx context.Context, t Target, m Message) (Outcome, error) {
+func (stallSender) Send(ctx context.Context, t Target) (Outcome, error) {
 	if t.Token == "stall" {
 		<-ctx.Done()
 		return Failed, ctx.Err()
@@ -284,7 +193,7 @@ func (stallSender) Send(ctx context.Context, t Target, m Message) (Outcome, erro
 }
 
 func TestSendDoesNotWaitForAStallingDevice(t *testing.T) {
-	s := &Server{Secret: "secret-secret-secret-secret", Providers: map[string]Sender{"unifiedpush": stallSender{}}}
+	s := &Server{Secret: "secret-secret-secret-secret", Providers: map[string]Sender{"fcm": stallSender{}}}
 	ts := httptest.NewServer(s.routes())
 	defer ts.Close()
 	targets := []string{}
@@ -293,9 +202,9 @@ func TestSendDoesNotWaitForAStallingDevice(t *testing.T) {
 		if i%5 == 0 {
 			tok = "stall"
 		}
-		targets = append(targets, `{"id":"d`+strconv.Itoa(i)+`","provider":"unifiedpush","token":"`+tok+`"}`)
+		targets = append(targets, `{"id":"d`+strconv.Itoa(i)+`","provider":"fcm","token":"`+tok+`"}`)
 	}
-	req, _ := http.NewRequest("POST", ts.URL+"/send", strings.NewReader(`{"title":"Steady","body":"x","targets":[`+strings.Join(targets, ",")+`]}`))
+	req, _ := http.NewRequest("POST", ts.URL+"/send", strings.NewReader(`{"targets":[`+strings.Join(targets, ",")+`]}`))
 	req.Header.Set("Authorization", "Bearer "+s.Secret)
 	start := time.Now()
 	res, err := http.DefaultClient.Do(req)
@@ -311,5 +220,164 @@ func TestSendDoesNotWaitForAStallingDevice(t *testing.T) {
 	}
 	if out.Sent != 40 || out.Failed != 10 {
 		t.Fatalf("unexpected %+v after %v", out, took)
+	}
+}
+
+// a fake of Google's two endpoints: the OAuth token exchange and FCM's send
+type fakeGoogle struct {
+	mu      sync.Mutex
+	grant   url.Values
+	authz   string
+	bodies  []string
+	answers map[string]int // token -> status for the send
+}
+
+func (g *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if r.URL.Path == "/token" {
+		r.ParseForm()
+		g.grant = r.PostForm
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"access_token":"ya29.test","expires_in":3600}`))
+		return
+	}
+	b, _ := io.ReadAll(r.Body)
+	g.bodies = append(g.bodies, string(b))
+	g.authz = r.Header.Get("Authorization")
+	var m struct {
+		Message struct {
+			Token string `json:"token"`
+		} `json:"message"`
+	}
+	json.Unmarshal(b, &m)
+	switch g.answers[m.Message.Token] {
+	case 404:
+		w.WriteHeader(404)
+		w.Write([]byte(`{"error":{"code":404,"status":"NOT_FOUND","details":[{"errorCode":"UNREGISTERED"}]}}`))
+	case 500:
+		w.WriteHeader(500)
+	default:
+		w.Write([]byte(`{"name":"projects/steady-test/messages/1"}`))
+	}
+}
+
+func newTestFCM(t *testing.T, g *fakeGoogle) *FCM {
+	t.Helper()
+	ts := httptest.NewTLSServer(g)
+	t.Cleanup(ts.Close)
+	k, _ := rsa.GenerateKey(rand.Reader, 2048)
+	return &FCM{projectID: "steady-test", clientEmail: "relay@steady-test.iam.gserviceaccount.com", tokenURI: ts.URL + "/token",
+		key: k, client: ts.Client(), SendURL: ts.URL + "/v1/projects/steady-test/messages:send"}
+}
+
+func TestFCMSendAgainstFakeServer(t *testing.T) {
+	g := &fakeGoogle{answers: map[string]int{"gone-token-gone-token": 404, "busy-token-busy-token": 500}}
+	f := newTestFCM(t, g)
+	res, err := f.Send(context.Background(), Target{Token: "fcm-token-fcm-token-1"})
+	if err != nil || res != Delivered {
+		t.Fatalf("send: %v %v", res, err)
+	}
+	if g.grant.Get("grant_type") != "urn:ietf:params:oauth:grant-type:jwt-bearer" || strings.Count(g.grant.Get("assertion"), ".") != 2 {
+		t.Fatalf("oauth grant %v", g.grant)
+	}
+	claims, _ := b64.DecodeString(strings.Split(g.grant.Get("assertion"), ".")[1])
+	if !strings.Contains(string(claims), "firebase.messaging") {
+		t.Fatalf("scope: %s", claims)
+	}
+	if g.authz != "Bearer ya29.test" {
+		t.Fatalf("authorization %q", g.authz)
+	}
+	if want := strings.Replace(wantFCM, "%s", "fcm-token-fcm-token-1", 1); g.bodies[0] != want {
+		t.Fatalf("FCM payload\n got %s\nwant %s", g.bodies[0], want)
+	}
+	if res, _ := f.Send(context.Background(), Target{Token: "gone-token-gone-token"}); res != Invalid {
+		t.Fatal("UNREGISTERED should mark the token invalid")
+	}
+	if res, _ := f.Send(context.Background(), Target{Token: "busy-token-busy-token"}); res != Failed {
+		t.Fatal("a 500 is a failure, not a dead token")
+	}
+}
+
+func TestNewFCMFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	k, _ := rsa.GenerateKey(rand.Reader, 2048)
+	der, _ := x509.MarshalPKCS8PrivateKey(k)
+	sa, _ := json.Marshal(map[string]string{
+		"type": "service_account", "project_id": "steady-test", "client_email": "relay@steady-test.iam.gserviceaccount.com",
+		"private_key": string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})), "token_uri": "https://oauth2.googleapis.com/token",
+	})
+	good := filepath.Join(dir, "fcm.json")
+	os.WriteFile(good, sa, 0o600)
+	t.Setenv("FCM_CREDENTIALS_FILE", good)
+	f, err := newFCMFromEnv()
+	if err != nil || f == nil || f.SendURL != "https://fcm.googleapis.com/v1/projects/steady-test/messages:send" {
+		t.Fatalf("service account: %v %+v", err, f)
+	}
+	// no file yet: FCM is off and the relay carries on (main logs it), it doesn't stop
+	t.Setenv("FCM_CREDENTIALS_FILE", filepath.Join(dir, "missing.json"))
+	if _, err := newFCMFromEnv(); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing file: %v", err)
+	}
+	// the app's google-services.json by mistake: a clear error
+	wrong := filepath.Join(dir, "google-services.json")
+	os.WriteFile(wrong, []byte(`{"project_info":{"project_id":"steady-test"},"client":[]}`), 0o600)
+	t.Setenv("FCM_CREDENTIALS_FILE", wrong)
+	if _, err := newFCMFromEnv(); err == nil || !strings.Contains(err.Error(), "service-account") {
+		t.Fatalf("google-services.json: %v", err)
+	}
+	t.Setenv("FCM_CREDENTIALS_FILE", "")
+	if f, err := newFCMFromEnv(); f != nil || err != nil {
+		t.Fatalf("unset: %v %v", f, err)
+	}
+}
+
+// Whatever the server's request holds (an older server sent a title, a body and the kind),
+// Apple and Google get the words and the device's token, nothing else.
+func TestSendPassesNothingFromTheRequestOn(t *testing.T) {
+	var mu sync.Mutex
+	var apnsBodies []string
+	apple := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		apnsBodies = append(apnsBodies, string(b)+" "+r.Header.Get("apns-collapse-id")+r.Header.Get("apns-thread-id"))
+		mu.Unlock()
+	}))
+	apple.EnableHTTP2 = true
+	apple.StartTLS()
+	defer apple.Close()
+	ek, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	a := &APNs{KeyID: "KID", TeamID: "TEAM", Topic: "za.co.openworks.steady", key: ek, client: apple.Client(), ProdURL: apple.URL, SandboxURL: apple.URL}
+	g := &fakeGoogle{}
+	s := &Server{Secret: "0123456789abcdef01234567", Providers: map[string]Sender{"apns": a, "fcm": newTestFCM(t, g)}}
+	ts := httptest.NewServer(s.routes())
+	defer ts.Close()
+	iphone := strings.Repeat("ef", 32)
+	body := `{"title":"Lerato M","body":"PHQ-9 score 22, item 9","data":{"kind":"checkin","patient":"r123"},"kind":"checkin",
+	  "targets":[{"id":"d1","provider":"apns","token":"` + iphone + `"},{"id":"d2","provider":"fcm","token":"android-token-android-1"}]}`
+	req, _ := http.NewRequest("POST", ts.URL+"/send", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+s.Secret)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out sendResponse
+	json.NewDecoder(res.Body).Decode(&out)
+	res.Body.Close()
+	if out.Sent != 2 {
+		t.Fatalf("sent %+v", out)
+	}
+	if len(apnsBodies) != 1 || apnsBodies[0] != wantAPNs+" " {
+		t.Fatalf("Apple got %q", apnsBodies)
+	}
+	if want := strings.Replace(wantFCM, "%s", "android-token-android-1", 1); len(g.bodies) != 1 || g.bodies[0] != want {
+		t.Fatalf("Google got %q", g.bodies)
+	}
+	for _, got := range append(apnsBodies, g.bodies...) {
+		for _, leak := range []string{"Lerato", "PHQ", "checkin", "r123", "kind", "data"} {
+			if strings.Contains(got, leak) {
+				t.Fatalf("%q reached a payload: %s", leak, got)
+			}
+		}
 	}
 }

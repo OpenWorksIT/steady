@@ -4,7 +4,7 @@
 # Use ./start.sh rather than running this directly; it creates keys and accounts.
 #
 #   phone ──https──> Cloudflare ──tunnel──> caddy:80 ──> pocketbase:8090 (+ web app)
-#                                                         pusher ──> ntfy / Apple
+#                                                         pusher ──> Google / Apple
 #
 # PocketBase's own dashboard is closed. Accounts: ../accounts.sh --test (see docs/DEPLOY.md).
 
@@ -20,7 +20,6 @@ services:
       STEADY_CONSENT_VERSION: test-1
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
-      STEADY_VAPID_PUBLIC_KEY: ${STEADY_VAPID_PUBLIC_KEY}
       # the Cloudflare tunnel passes the visitor's address in this header
       STEADY_TRUSTED_PROXY_HEADER: Cf-Connecting-Ip
       STEADY_REQUIRE_2FA: ${STEADY_REQUIRE_2FA:-staff}
@@ -62,8 +61,8 @@ services:
     restart: unless-stopped
     environment:
       PUSHER_SECRET: ${PUSHER_SECRET}
-      VAPID_PRIVATE_KEY_FILE: /secrets/vapid.pem
-      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:test@example.com}
+      # Android: put the Firebase service-account key here as secrets/fcm.json to try it
+      FCM_CREDENTIALS_FILE: /secrets/fcm.json
       APNS_KEY_FILE: ${APNS_KEY_FILE:-}
       APNS_KEY_ID: ${APNS_KEY_ID:-}
       APNS_TEAM_ID: ${APNS_TEAM_ID:-}

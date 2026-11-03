@@ -6,7 +6,8 @@ One small Linux server is enough for a practice: 1 vCPU, 1 GB RAM, 20 GB disk. H
 
 - A domain name pointing at the server, e.g. `steady.yourpractice.co.za`
 - Docker with the Compose plugin
-- An Apple Developer account (for iOS notifications)
+- An Apple Developer account (for iPhone notifications)
+- A service-account key of OpenWorks IT's Firebase project (for Android notifications, step 3a)
 - `openssl` and, for backups, [`age`](https://age-encryption.org)
 
 ## 2. Configure
@@ -15,7 +16,7 @@ One small Linux server is enough for a practice: 1 vCPU, 1 GB RAM, 20 GB disk. H
 git clone https://github.com/openworksIT/steady.git /opt/steady
 cd /opt/steady/deploy
 sudo install -m 600 .env.example .env   # root only: it will hold the server's keys and passwords
-sudo ./gen-keys.sh        # creates secrets/vapid.pem and prints PUSHER_SECRET and STEADY_VAPID_PUBLIC_KEY
+sudo ./gen-keys.sh        # prints PUSHER_SECRET and the monitor and fleet keys
 ```
 
 Edit `.env`:
@@ -24,8 +25,7 @@ Edit `.env`:
 |---|---|
 | `STEADY_DOMAIN`, `ACME_EMAIL` | Your domain and an email for Let's Encrypt |
 | `STEADY_PRACTICE_NAME` | Only for servers without an installed brand (below); the practice's name now comes from `./brand.sh` |
-| `PUSHER_SECRET`, `STEADY_VAPID_PUBLIC_KEY` | From `gen-keys.sh` |
-| `VAPID_SUBJECT` | `mailto:` your IT contact |
+| `PUSHER_SECRET` | From `gen-keys.sh` |
 | `APNS_*` | See step 3 |
 
 The consent statement patients agree to is the practice's own, installed with its branding as
@@ -40,6 +40,40 @@ ask). The practice's People screen shows who still has an older consent.
 1. developer.apple.com > Certificates, Identifiers & Profiles > **Keys** > create a key with **Apple Push Notifications service** enabled. Download the `.p8` (you can only download it once).
 2. Copy it to `deploy/secrets/` and `sudo chown 65532:65532 deploy/secrets/*.p8`.
 3. In `.env`: `APNS_KEY_FILE=/secrets/AuthKey_XXXX.p8`, `APNS_KEY_ID` (shown with the key), `APNS_TEAM_ID` (top right of the developer portal), `APNS_TOPIC` = the app's bundle identifier.
+
+## 3a. Firebase push (Android)
+
+Android phones get their notifications through Firebase Cloud Messaging, with OpenWorks IT's
+Firebase project (the one the Android app is built with, docs/APP.md). Each server sends with a
+key of a service account that may only send messages:
+
+1. console.cloud.google.com, with the Firebase project selected > **IAM & Admin > Service
+   accounts > Create service account**. Name it `steady-relay`; give it the role **Firebase Cloud
+   Messaging API Admin** and nothing else.
+2. Open it > **Keys > Add key > Create new key > JSON**. Make one key per server, so a server's
+   key can be deleted on its own if the server is lost.
+3. Copy the file to the server and install it as `deploy/secrets/fcm.json`, readable only by the
+   relay:
+
+   ```bash
+   scp steady-relay-*.json <server>:/tmp/fcm.json                 # from your own computer
+   sudo install -o 65532 -g 65532 -m 600 /tmp/fcm.json /opt/steady/deploy/secrets/fcm.json
+   rm /tmp/fcm.json
+   cd /opt/steady/deploy && sudo docker compose restart pusher
+   sudo docker compose logs pusher | tail -3                     # "FCM enabled"
+   ```
+
+   Delete the downloaded copy from your computer once every server has its key.
+
+The relay reads `/secrets/fcm.json` (`FCM_CREDENTIALS_FILE` in `docker-compose.yml`); there's no
+setting in `.env`. Without the file it still starts and iPhones still get their notifications;
+Android phones get none, and `audit-server.sh` says so. It's the service-account key, not the
+`google-services.json` the Firebase console offers for the app (the relay says so if it's given
+that one).
+
+What the relay sends Google is the phone's token and the words "Steady" and "New notification",
+nothing else: the server tells it only which devices to notify, never who or why (the same for
+Apple).
 
 ## 4. Start
 
@@ -224,6 +258,14 @@ From 1.0.5 the app's button builds, and Settings > Server and updates compares t
 with what the server runs (`/var/lib/steady/running`, written by `update.sh` once the new build is
 up), so an update whose build failed is offered again.
 
+**From UnifiedPush to Firebase (Android notifications).** Servers set up before Firebase used
+UnifiedPush (ntfy) for Android. The update deletes those registrations (a migration) and the
+relay no longer sends to them; the updated app registers the phone with Firebase the next time it
+opens, and older copies of the app go without notifications until they're updated. Install the
+Firebase key (step 3a). `VAPID_SUBJECT`, `STEADY_VAPID_PUBLIC_KEY` and `FCM_CREDENTIALS_FILE` in
+an older `.env` are ignored and can be deleted, as can `secrets/vapid.pem` (`audit-server.sh`
+points it out). Patients who installed ntfy only for Steady can uninstall it.
+
 ### Signed releases (live servers)
 
 A practice's server installs only releases OpenWorks has signed, so a push to GitHub, a stolen
@@ -323,8 +365,8 @@ cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config 
 ```bash
 cd /opt/steady/deploy
 sudo install -m 600 .env.example .env
-sudo ./gen-keys.sh            # paste PUSHER_SECRET and STEADY_VAPID_PUBLIC_KEY into .env
-sudo nano .env                # STEADY_DOMAIN, practice name, VAPID_SUBJECT, and uncomment
+sudo ./gen-keys.sh            # paste PUSHER_SECRET and the other keys it prints into .env
+sudo nano .env                # STEADY_DOMAIN, practice name, and uncomment
                               # COMPOSE_FILE=docker-compose.yml:behind-proxy.yml
 sudo ./update.sh              # pulls, fetches the web app, builds and starts
 ```
@@ -355,8 +397,9 @@ these folders up (a server from before 1.0 is moved over by its next update).
 | Symptom | Check |
 |---|---|
 | "Update now" failed, the log ends in "read-only file system" | A server on 1.0.4 or older: update once from the shell (section 8). |
-| The push relay keeps restarting (`audit-server.sh`: "can't enter secrets/") | `sudo chown root:65532 secrets && sudo chmod 750 secrets && sudo chown 65532:65532 secrets/vapid.pem` in `deploy/`, then `sudo docker compose up -d`. |
+| The push relay keeps restarting (`audit-server.sh`: "can't enter secrets/", or "can't read secrets/fcm.json") | `sudo ./gen-keys.sh > /dev/null` in `deploy/` (it lets the relay into `secrets/` and gives it its keys, private), then `sudo docker compose up -d`. `docker compose logs pusher` names the file it couldn't read. |
 | No notifications on iPhone | `docker compose logs pusher` for `apns 403` (wrong key/team) or `400 DeviceTokenNotForTopic` (`APNS_TOPIC` must equal the bundle id). Debug builds from Xcode use the APNs sandbox automatically. |
-| No notifications on Android | The phone needs a UnifiedPush distributor app (e.g. ntfy) installed and chosen in Steady's settings. |
+| No notifications on Android | `docker compose logs pusher`: "FCM off" means no `secrets/fcm.json` (step 3a); `fcm 403` or `401` a key without the Firebase Cloud Messaging API Admin role, or from another Firebase project than the app's. On the phone, Steady's Settings says why notifications are off: not allowed in the phone's settings, or a copy of the app built without Firebase (a fork or a local build). |
+| "Key creation is disabled" when making the Firebase key | An organisation policy (`iam.disableServiceAccountKeyCreation`, on by default for Google Cloud organisations made since 2024). An organisation admin allows it for the Firebase project only: IAM & Admin > Organisation policies > Disable service account key creation > Manage policy > Override, Off. |
 | "Can't reach the server" in the app | The app was built with the wrong `STEADY_SERVER`, or DNS/TLS isn't ready. |
 | Psychologist can't sign in | `active` must be ticked and `role` set to clinician. |

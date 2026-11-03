@@ -18,10 +18,6 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   # practice staff unlock the phone app with its screen lock (fingerprint, face, PIN)
   local_auth: ^3.0.0
-  # Android push without Google services (Apache-2.0). iOS uses APNs via a small platform channel.
-  unifiedpush: ^6.0.2
-  # Shows UnifiedPush messages as notifications on Android (BSD-3)
-  flutter_local_notifications: ^22.0.0
   # Reads watch data from Health Connect / Apple Health (MIT)
   health: ^13.3.2
   # Invite QR codes: drawn for the psychologist (BSD-3), scanned by the patient with ZXing (MIT, no Google services)
@@ -37,9 +33,12 @@ dependencies:
   excel: ^4.0.6
   share_plus: ^13.3.1
   web: ^1.1.0
-  # iOS push bridge (in this repo)
+  # push bridges (in this repo): Apple's service on iOS; Firebase Cloud Messaging on Android
+  # (Android only, built on Google's Firebase SDK, Apache-2.0). Notifications say only "New notification".
   steady_apns:
     path: packages/steady_apns
+  steady_fcm:
+    path: packages/steady_fcm
 
 dev_dependencies:
   flutter_test:

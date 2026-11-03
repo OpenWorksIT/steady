@@ -397,7 +397,11 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   assert.equal(rt.pushes.length, 1);
   const pushText = JSON.stringify(rt.pushes[0]);
   assert.ok(!/Lerato|Rough|Mood/.test(pushText), "push payload carries no patient data: " + pushText);
+  // the relay is told which devices and nothing else: no words, no kind, no ids of what happened
+  assert.deepEqual(Object.keys(rt.pushes[0]), ["targets"], pushText);
+  assert.deepEqual(Object.keys(rt.pushes[0].targets[0]).sort(), ["id", "provider", "sandbox", "token"]);
   assert.equal(rt.pushes[0].targets[0].token, "abc123");
+  assert.ok(!/checkin|title|body|kind|data/.test(pushText), pushText);
 
   // a clinician can't check in, and a bad check-in is refused
   assert.equal(rt.create("checkins", doc, { patient: doc.id, mood: 3, anxiety: 3, sleep: 3, energy: 3 }).status, 403);
@@ -638,19 +642,40 @@ test("security: push registrations are validated and follow the phone", () => {
   const rt = makeRuntime({ env: ENV });
   const a = rt.makeUser({ name: "A", role: "patient", active: true, email: "a@example.org" });
   const b = rt.makeUser({ name: "B", role: "patient", active: true, email: "b@example.org" });
-  const sub = (endpoint) => JSON.stringify({ endpoint, p256dh: "B" + "A".repeat(86), auth: "A".repeat(22) });
-  for (const bad of ["http://ntfy.sh/x", "https://pocketbase:8090/api/", "https://10.0.0.5/x", "https://localhost/x"]) {
-    const r = rt.create("devices", a, { user: a.id, platform: "android", provider: "unifiedpush", token: sub(bad) });
-    assert.equal(r.status, 400, bad);
-  }
+  const fcm = "dGVzdC10b2tlbg:APA91b" + "x".repeat(140);
+  // UnifiedPush (ntfy) is gone: an older app's registration is refused, whatever its address
+  const sub = JSON.stringify({ endpoint: "https://ntfy.sh/upAbc", p256dh: "B" + "A".repeat(86), auth: "A".repeat(22) });
+  assert.equal(rt.create("devices", a, { user: a.id, platform: "android", provider: "unifiedpush", token: sub }).status, 400);
   assert.equal(rt.create("devices", a, { user: a.id, platform: "ios", provider: "apns", token: "not-hex" }).status, 400);
-  const ok = rt.create("devices", a, { user: a.id, platform: "android", provider: "unifiedpush", token: sub("https://ntfy.sh/upAbc") });
+  for (const bad of ["short", "has spaces in it, has spaces", "{\"endpoint\":\"https://ntfy.sh/x\"}", "x".repeat(2001)]) {
+    assert.equal(rt.create("devices", a, { user: a.id, platform: "android", provider: "fcm", token: bad }).status, 400, bad);
+  }
+  const ok = rt.create("devices", a, { user: a.id, platform: "android", provider: "fcm", token: fcm });
   assert.equal(ok.status, 200);
   // B signs in on the same phone: the registration moves to B
-  const moved = rt.create("devices", b, { user: a.id, platform: "android", provider: "unifiedpush", token: sub("https://ntfy.sh/upAbc") });
+  const moved = rt.create("devices", b, { user: a.id, platform: "android", provider: "fcm", token: fcm });
   assert.equal(moved.status, 200);
   assert.equal(rt.store.devices.length, 1);
   assert.equal(rt.store.devices[0].getString("user"), b.id);
+});
+
+test("UnifiedPush is gone: old registrations are deleted, never sent to, and config has no VAPID key", () => {
+  const rt = makeRuntime({ env: ENV });
+  // the migration deletes them on the real database and allows only Apple and Firebase from then on
+  assert.ok((rt.app.sql || []).some((q) => /DELETE FROM devices WHERE provider = 'unifiedpush'/.test(q)));
+  assert.equal(JSON.stringify(rt.app.findCollectionByNameOrId("devices").fields.getByName("provider").values), '["apns","fcm"]');
+  assert.equal("vapidPublicKey" in rt.call("GET", "/api/steady/config").data, false);
+  // one that's still there (here: put in by hand) is skipped by push()
+  const pat = rt.makeUser({ name: "P", role: "patient", active: true, email: "p@example.org" });
+  rt.makeRecord("devices", { user: pat.id, platform: "android", provider: "unifiedpush", token: "{}" });
+  const s = rt.sandbox.require(path.join(HOOKS, "lib", "server.js"));
+  rt.pushes.length = 0;
+  s.push(rt.app, pat.id);
+  assert.equal(rt.pushes.length, 0, "nothing to send to");
+  rt.makeRecord("devices", { user: pat.id, platform: "android", provider: "fcm", token: "f".repeat(40) });
+  s.push(rt.app, pat.id);
+  assert.equal(rt.pushes.length, 1);
+  assert.equal(JSON.stringify(rt.pushes[0].targets.map((t) => t.provider)), '["fcm"]');
 });
 
 test("security: clinician reads of watch data are audited", () => {
@@ -853,7 +878,7 @@ test("signing out ends the session on the server; the relay can only remove the 
   const mine = rt.makeRecord("devices", { user: pat.id, platform: "ios", provider: "apns", token: "b".repeat(64) });
   const s = rt.sandbox.require(path.join(HOOKS, "lib", "server.js"));
   rt.opts.invalidDevices = [theirs.id, mine.id];
-  s.push(rt.app, pat.id, "assignment");
+  s.push(rt.app, pat.id);
   const ids = (rt.store.devices || []).map((d) => d.id);
   assert.ok(ids.includes(theirs.id), "another account's device isn't touched");
   assert.ok(!ids.includes(mine.id), "this account's dead device is removed");

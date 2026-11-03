@@ -32,7 +32,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   startTrailErrorHooks();
   final api = await Api.create();
-  // Must run before runApp: UnifiedPush delivers background messages by starting main().
+  // before runApp, so the phone's answers (a token, a tap) have somewhere to go
   await PushService.instance.init(api);
   final state = AppState(api);
   // "confirm it's you" before sensitive actions: asked over whatever screen is open

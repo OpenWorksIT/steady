@@ -19,7 +19,7 @@ Who can see it
 - The practice's master psychologist and administrator see your name and whether you are using the app, not what you write. They can see the access log: who opened your record, and when.
 - [Practice: if you use an AI note-taking service such as Heidi, say so here: which service, where it keeps information, and that your psychologist may export a summary of your check-ins, answers and watch data to it. Otherwise remove this line.]
 - OpenWorks IT (Pty) Ltd runs the practice's server in South Africa on the practice's behalf. It can technically reach the server to keep it running, does not read your information, and is bound to keep it confidential.
-Notifications reach your phone through Apple (on an iPhone) or the notification service on your Android phone. They only say that there is something new, never what you wrote.
+Notifications reach Android phones through Google's Firebase Cloud Messaging and iPhones through Apple. They only ever say "New notification": never your name, what you wrote or what it is about.
 Your information is not sold or used for advertising.
 
 Why

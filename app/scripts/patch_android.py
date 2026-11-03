@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Applies the Android settings Steady needs to a freshly generated project.
 
-- core library desugaring (required by flutter_local_notifications 10+)
+- core library desugaring (newer Java APIs on older Android versions, for plugins that use them)
 - compileSdk 36 minimum
 - one copy of Google Tink (two plugins bring 'tink' and 'tink-android'; keep the Android one)
 - Health Connect: minSdk 26, FlutterFragmentActivity, read permissions, permission rationale
 - POST_NOTIFICATIONS permission (Android 13+)
+- notifications through Firebase Cloud Messaging (packages/steady_fcm): Steady's mark as their
+  status-bar icon, and no advertising ID (nothing in Steady uses one). There is no
+  google-services.json: the app is built with its Firebase settings (docs/APP.md)
 - the phone's screen lock for staff (local_auth): USE_BIOMETRIC, and an AppCompat launch theme
   (the fingerprint dialog crashes on Android 8 without one)
 - no cloud backup of app data
@@ -182,6 +185,17 @@ def patch_manifest(text):
                  '            </intent-filter>\n'
                  '        </activity-alias>')
         text = text[:end] + rationale + "</activity>" + alias + text[end + len("</activity>"):]
+    # Firebase shows background notifications with this icon (its outline, in the status bar)
+    if "default_notification_icon" not in text:
+        icon = ('    <meta-data android:name="com.google.firebase.messaging.default_notification_icon"\n'
+                '            android:resource="@mipmap/ic_launcher_foreground" />\n    ')
+        new, n = re.subn(r"</application>", icon + "</application>", text, count=1)
+        if n != 1:
+            fail("couldn't find </application> in AndroidManifest.xml")
+        text = new
+    # Google Play services libraries may declare the advertising ID; Steady never reads it
+    if "permission.AD_ID" not in text:
+        text = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove"/>', text, count=1)
     if "android:allowBackup" not in text:
         # keep health data out of cloud backups
         text = re.sub(r"<application", '<application\n        android:allowBackup="false"', text, count=1)
