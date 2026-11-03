@@ -62,6 +62,8 @@ function makeRuntime(opts = {}) {
       else if (v !== null && typeof v === "object") v = JSON.stringify(v);
       this.data[k] = v;
     }
+    // as PocketBase: no field checks (the demo data sets "created" itself)
+    setRaw(k, v) { this.set(k, v); }
     get(k) { return this.data[k]; }
     getString(k) { const v = this.data[k]; return v === undefined || v === null ? "" : String(v); }
     getInt(k) { return parseInt(this.data[k] || 0, 10) || 0; }
@@ -2186,4 +2188,44 @@ test("config: the community link is passed on only as an https address", () => {
     assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "", bad);
   }
   assert.equal(makeRuntime({ env: ENV }).call("GET", "/api/steady/config").data.communityUrl, "");
+});
+
+test("demo patients on a test server: a new day every night, only with STEADY_DEMO_DAILY=on, only demo users", () => {
+  const G = require(path.join(HOOKS, "lib", "research_demo.js"));
+  const start = Date.UTC(2026, 10, 1, 12);
+  const setup = (env) => {
+    const rt = makeRuntime({ env: Object.assign({}, ENV, env), now: start });
+    const doc = rt.makeUser({ name: "Dr Test", role: "clinician", active: true, email: "dr@example.org" });
+    const b = rt.makeUser({ name: "Demo B", role: "patient", clinician: doc.id, active: true, demo: true, tzOffset: 120, email: "demo-b@demo.steady.invalid" });
+    const real = rt.makeUser({ name: "Demo C", role: "patient", clinician: doc.id, active: true, tzOffset: 120, email: "someone@example.org" });
+    const p = G.generate(rt.now(), 120).find((x) => x.key === "decline");
+    p.days.forEach((d) => { rt.makeRecord("biometrics", { patient: b.id, day: d.day, values: d.values }); rt.makeRecord("biometrics", { patient: real.id, day: d.day, values: d.values }); });
+    return { rt, b, real, lastDay: p.days[p.days.length - 1].day };
+  };
+  const count = (rt, name, id) => rt.store[name].filter((r) => r.getString("patient") === id).length;
+
+  // off unless .env says so
+  let { rt, b } = setup({});
+  const before = count(rt, "biometrics", b.id);
+  rt.tick(3 * 86400000);
+  rt.crons.steady_demo_daily();
+  assert.equal(count(rt, "biometrics", b.id), before, "nothing without STEADY_DEMO_DAILY=on");
+
+  // on: three nights later, the days since the last one are there, once
+  const t = setup({ STEADY_DEMO_DAILY: "on" });
+  const watch0 = count(t.rt, "biometrics", t.b.id), checks0 = count(t.rt, "checkins", t.b.id);
+  t.rt.tick(3 * 86400000 + 8 * 3600000); // 22:00 in Johannesburg, three days on
+  t.rt.crons.steady_demo_daily();
+  const watch1 = count(t.rt, "biometrics", t.b.id), checks1 = count(t.rt, "checkins", t.b.id);
+  assert.ok(watch1 >= watch0 + 3 && watch1 <= watch0 + 4, `watch days added: ${watch1 - watch0}`);
+  assert.ok(checks1 >= checks0 && checks1 <= checks0 + 4, `check-ins added: ${checks1 - checks0}`);
+  const days = t.rt.store.biometrics.filter((r) => r.getString("patient") === t.b.id).map((r) => r.getString("day"));
+  assert.equal(new Set(days).size, days.length, "one watch summary a day");
+  assert.ok(days.every((d) => d <= "2026-11-04"), "nothing for tomorrow");
+  t.rt.crons.steady_demo_daily();
+  assert.equal(count(t.rt, "biometrics", t.b.id), watch1, "running again adds nothing");
+  assert.equal(count(t.rt, "checkins", t.b.id), checks1);
+  // a patient who isn't marked demo is never touched, whatever their name
+  assert.equal(count(t.rt, "biometrics", t.real.id), watch0);
+  assert.equal(count(t.rt, "checkins", t.real.id), 0);
 });

@@ -64,10 +64,17 @@ var PROFILES = {
   }
 };
 
+/* Days into the profile's cycle. The first 56 days are the eight weeks above; after that a test
+ * server's demo patients go on (STEADY_DEMO_DAILY, lib/demo_daily.js): Demo B recovers over two
+ * weeks and slides again, Demo C over one week before the next episode. */
+var CYCLE = { decline: 70, disruption: 63, steady: DAYS };
+function cycleDay(key, i) { return i % (CYCLE[key] || DAYS); }
+
 /* How far into the change each day is, 0 (baseline) to 1. */
 function progress(key, i) {
-  if (key === "decline") return i < 28 ? 0 : (i - 27) / 28;
-  if (key === "disruption") return i < 42 ? 0 : Math.min(1, (i - 41) / 6);
+  var c = cycleDay(key, i);
+  if (key === "decline") return c < 28 ? 0 : c < 56 ? (c - 27) / 28 : Math.max(0, 1 - (c - 55) / 14);
+  if (key === "disruption") return c < 42 ? 0 : c < 56 ? Math.min(1, (c - 41) / 6) : Math.max(0, 1 - (c - 55) / 7);
   return 0;
 }
 
@@ -93,84 +100,109 @@ function generate(todayMs, tzOffset) {
     var days = [], checkins = [], questionnaires = [];
     for (var i = 0; i < DAYS; i++) {
       var dayStart = localToday - (DAYS - i) * DAY_MS; // local midnight of this day
-      var day = msToDay(dayStart);
-      var weekday = new Date(dayStart).getUTCDay(); // 0 Sunday
-      var weekend = weekday === 0 || weekday === 6;
-      var t = progress(key, i);
-
-      // ---- watch
-      var onset = -50 + (weekend ? 25 : 0) + 18 * gauss(r);   // minutes from midnight (negative = before)
-      var sleep = 445 + (weekend ? 25 : 0) + 22 * gauss(r);
-      var awake = 22 + 6 * gauss(r);
-      var steps = (weekend ? 7200 : 9300) + 1300 * gauss(r);
-      var rhr = 61 + 1.2 * gauss(r);
-      if (key === "decline") {
-        onset += 95 * t + 35 * t * gauss(r);
-        sleep += 55 * t + 45 * t * gauss(r);
-        awake += 18 * t;
-        steps *= 1 - 0.5 * t;
-        rhr += 5 * t;
-      } else if (key === "disruption" && t > 0) {
-        onset += 70 * t + 85 * t * gauss(r);
-        sleep -= 150 * t - 40 * t * gauss(r);
-        awake += 40 * t + 10 * gauss(r);
-        rhr += 8 * t + 1.5 * gauss(r);
-        // restless first, then flat
-        steps = i < 48 ? steps * (1 + 0.35 * t) + 2500 * gauss(r) : steps * 0.45;
-      }
-      sleep = clampRound(sleep, 180, 720);
-      awake = clampRound(awake, 5, 160);
-      onset = clampRound(onset, -300, 300);
-      var wake = onset + sleep + awake;
-      var v = {
-        sleep_min: sleep,
-        sleep_onset: onset,
-        sleep_wake: wake,
-        sleep_deep: Math.round(sleep * (0.16 - 0.04 * t + 0.02 * gauss(r))),
-        sleep_rem: Math.round(sleep * (0.22 - 0.03 * t + 0.02 * gauss(r))),
-        sleep_awake: awake,
-        rhr: clampRound(rhr, 40, 110),
-        rhr_method: "sleep",
-        hr_min: clampRound(rhr - 6 + gauss(r), 35, 100),
-        hr_avg: clampRound(rhr + 14 + 2 * gauss(r) + (key === "disruption" ? 6 * t : 0), 45, 130),
-        hr_max: clampRound(138 + 14 * gauss(r), 90, 190),
-        steps: clampRound(steps, 300, 30000),
-        spo2_avg: clampRound(96 + 0.8 * gauss(r), 90, 100)
-      };
-      v.sleep_light = Math.max(0, sleep - v.sleep_deep - v.sleep_rem);
-      if (r() > 0.05) days.push({ day: day, values: v }); // about 1 night in 20 not worn
-
-      // ---- check-in, most evenings
-      if (r() < 0.86) {
-        var mood = 3.9 + 0.5 * gauss(r), anxiety = 2.0 + 0.5 * gauss(r), sq = 3.9 + 0.5 * gauss(r), energy = 3.7 + 0.5 * gauss(r);
-        if (key === "decline") { mood -= 1.9 * t; energy -= 1.8 * t; sq -= 1.2 * t; anxiety += 0.8 * t; }
-        if (key === "disruption" && t > 0) { mood -= 1.3 * t + 0.6 * gauss(r); anxiety += 2.4 * t; sq -= 2.4 * t; energy -= 1.4 * t; }
-        var pool = key === "steady" ? NOTES.steady
-          : key === "decline" ? (t > 0.3 ? NOTES.declineLate : NOTES.declineEarly)
-            : (t > 0 ? NOTES.disruptionLate : NOTES.disruptionEarly);
-        checkins.push({
-          at: dayStart - tz + (19 * 60 + Math.floor(r() * 150)) * 60000,
-          mood: scale(mood), anxiety: scale(anxiety), sleep: scale(sq), energy: scale(energy),
-          note: r() < 0.55 ? pool[Math.floor(r() * pool.length)] : ""
-        });
-      }
-
-      // ---- weekly PHQ-9 and GAD-7, on Sundays
-      if (weekday === 0) {
-        var phq = 4, gad = 3, item9 = 0;
-        if (key === "steady") { phq = 3 + Math.round(2 * r()); gad = 2 + Math.round(2 * r()); }
-        if (key === "decline") { phq = Math.round(4 + 13 * t); gad = Math.round(3 + 5 * t); }
-        if (key === "disruption") {
-          phq = Math.round(5 + 11 * t); gad = Math.round(3 + 12 * t);
-          if (t >= 1) item9 = 1;
-        }
-        var at = dayStart - tz + (10 * 60 + Math.floor(r() * 120)) * 60000;
-        questionnaires.push({ at: at, key: "phq9", answers: spread("phq9", 9, phq, item9, r) });
-        questionnaires.push({ at: at + 4 * 60000, key: "gad7", answers: spread("gad7", 7, gad, null, r) });
-      }
+      var one = oneDay(key, i, dayStart, tz, r);
+      if (one.watch) days.push(one.watch);
+      if (one.checkin) checkins.push(one.checkin);
+      one.questionnaires.forEach(function (q) { questionnaires.push(q); });
     }
     return { key: key, label: p.label, selfName: p.selfName, summary: p.summary, days: days, checkins: checkins, questionnaires: questionnaires };
   });
+}
+
+/* One day of a profile: day i of its cycle (0 = the first of the eight weeks), dayStart its local
+ * midnight (as a UTC instant plus tz), r the random numbers. Returns { watch, checkin,
+ * questionnaires }; watch and checkin are null on the days there are none. */
+function oneDay(key, i, dayStart, tz, r) {
+  var out = { watch: null, checkin: null, questionnaires: [] };
+  var day = msToDay(dayStart);
+  var weekday = new Date(dayStart).getUTCDay(); // 0 Sunday
+  var weekend = weekday === 0 || weekday === 6;
+  var t = progress(key, i);
+
+  // ---- watch
+  var onset = -50 + (weekend ? 25 : 0) + 18 * gauss(r);   // minutes from midnight (negative = before)
+  var sleep = 445 + (weekend ? 25 : 0) + 22 * gauss(r);
+  var awake = 22 + 6 * gauss(r);
+  var steps = (weekend ? 7200 : 9300) + 1300 * gauss(r);
+  var rhr = 61 + 1.2 * gauss(r);
+  if (key === "decline") {
+    onset += 95 * t + 35 * t * gauss(r);
+    sleep += 55 * t + 45 * t * gauss(r);
+    awake += 18 * t;
+    steps *= 1 - 0.5 * t;
+    rhr += 5 * t;
+  } else if (key === "disruption" && t > 0) {
+    onset += 70 * t + 85 * t * gauss(r);
+    sleep -= 150 * t - 40 * t * gauss(r);
+    awake += 40 * t + 10 * gauss(r);
+    rhr += 8 * t + 1.5 * gauss(r);
+    // restless first, then flat
+    steps = cycleDay(key, i) < 48 ? steps * (1 + 0.35 * t) + 2500 * gauss(r) : steps * 0.45;
+  }
+  sleep = clampRound(sleep, 180, 720);
+  awake = clampRound(awake, 5, 160);
+  onset = clampRound(onset, -300, 300);
+  var wake = onset + sleep + awake;
+  var v = {
+    sleep_min: sleep,
+    sleep_onset: onset,
+    sleep_wake: wake,
+    sleep_deep: Math.round(sleep * (0.16 - 0.04 * t + 0.02 * gauss(r))),
+    sleep_rem: Math.round(sleep * (0.22 - 0.03 * t + 0.02 * gauss(r))),
+    sleep_awake: awake,
+    rhr: clampRound(rhr, 40, 110),
+    rhr_method: "sleep",
+    hr_min: clampRound(rhr - 6 + gauss(r), 35, 100),
+    hr_avg: clampRound(rhr + 14 + 2 * gauss(r) + (key === "disruption" ? 6 * t : 0), 45, 130),
+    hr_max: clampRound(138 + 14 * gauss(r), 90, 190),
+    steps: clampRound(steps, 300, 30000),
+    spo2_avg: clampRound(96 + 0.8 * gauss(r), 90, 100)
+  };
+  v.sleep_light = Math.max(0, sleep - v.sleep_deep - v.sleep_rem);
+  if (r() > 0.05) out.watch = { day: day, values: v }; // about 1 night in 20 not worn
+
+  // ---- check-in, most evenings
+  if (r() < 0.86) {
+    var mood = 3.9 + 0.5 * gauss(r), anxiety = 2.0 + 0.5 * gauss(r), sq = 3.9 + 0.5 * gauss(r), energy = 3.7 + 0.5 * gauss(r);
+    if (key === "decline") { mood -= 1.9 * t; energy -= 1.8 * t; sq -= 1.2 * t; anxiety += 0.8 * t; }
+    if (key === "disruption" && t > 0) { mood -= 1.3 * t + 0.6 * gauss(r); anxiety += 2.4 * t; sq -= 2.4 * t; energy -= 1.4 * t; }
+    var pool = key === "steady" ? NOTES.steady
+      : key === "decline" ? (t > 0.3 ? NOTES.declineLate : NOTES.declineEarly)
+        : (t > 0 ? NOTES.disruptionLate : NOTES.disruptionEarly);
+    out.checkin = {
+      at: dayStart - tz + (19 * 60 + Math.floor(r() * 150)) * 60000,
+      mood: scale(mood), anxiety: scale(anxiety), sleep: scale(sq), energy: scale(energy),
+      note: r() < 0.55 ? pool[Math.floor(r() * pool.length)] : ""
+    };
+  }
+
+  // ---- weekly PHQ-9 and GAD-7, on Sundays
+  if (weekday === 0) {
+    var phq = 4, gad = 3, item9 = 0;
+    if (key === "steady") { phq = 3 + Math.round(2 * r()); gad = 2 + Math.round(2 * r()); }
+    if (key === "decline") { phq = Math.round(4 + 13 * t); gad = Math.round(3 + 5 * t); }
+    if (key === "disruption") {
+      phq = Math.round(5 + 11 * t); gad = Math.round(3 + 12 * t);
+      if (t >= 1) item9 = 1;
+    }
+    var at = dayStart - tz + (10 * 60 + Math.floor(r() * 120)) * 60000;
+    out.questionnaires.push({ at: at, key: "phq9", answers: spread("phq9", 9, phq, item9, r) });
+    out.questionnaires.push({ at: at + 4 * 60000, key: "gad7", answers: spread("gad7", 7, gad, null, r) });
+  }
+  return out;
+}
+
+/* Day i on its own, with random numbers of its own: the same day always comes out the same. */
+function dayAt(key, i, dayStart, tzOffset) {
+  var tz = (typeof tzOffset === "number" ? tzOffset : 120) * 60000;
+  return oneDay(key, i, dayStart, tz, rng((PROFILES[key] ? PROFILES[key].seed : 1) * 100003 + i));
+}
+
+/* Which profile a demo patient is, by the name it was given. */
+function profileOf(name) {
+  var keys = Object.keys(PROFILES);
+  for (var k = 0; k < keys.length; k++) if (PROFILES[keys[k]].selfName === name) return keys[k];
+  return "";
 }
 
 /* Answers (0 to 3 each) adding up to total; fixedLast pins the last item (PHQ-9 item 9). */
@@ -194,4 +226,4 @@ function spread(prefix, n, total, fixedLast, r) {
   return a;
 }
 
-module.exports = { PROFILES: PROFILES, DAYS: DAYS, generate: generate };
+module.exports = { PROFILES: PROFILES, DAYS: DAYS, DAY_MS: DAY_MS, generate: generate, dayAt: dayAt, profileOf: profileOf, progress: progress };

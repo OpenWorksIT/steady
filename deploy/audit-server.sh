@@ -134,6 +134,10 @@ if [ -f .env ]; then
   [ "$(envv STEADY_REQUIRE_2FA)" = off ] && fail "STEADY_REQUIRE_2FA=off: staff sign in without two-step" || ok "two-step sign-in is required for staff"
   [ -n "$(envv STEADY_SMTP_HOST)" ] && ok "email is set up: staff link their devices" || warn "no STEADY_SMTP_HOST: staff devices aren't linked (docs/DEPLOY.md 5a)"
   [ "$(envv STEADY_DEVICE_LINK)" = off ] && warn "STEADY_DEVICE_LINK=off: device linking is switched off" || true
+  if [ "$(envv STEADY_DEMO_DAILY)" = on ]; then
+    [ "$TEST_SERVER" = yes ] && ok "the demo patients get a new day every night (a test server)" \
+      || warn "STEADY_DEMO_DAILY=on, but this isn't marked as a test server: the demo patients get new data every night"
+  fi
   if [ -s secrets/allowed_signers ]; then
     ok "updates install only releases signed by OpenWorks (secrets/allowed_signers)"
   elif [ "$TEST_SERVER" = yes ]; then

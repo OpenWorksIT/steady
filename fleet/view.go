@@ -375,3 +375,100 @@ func makeAudit(d map[string]any, now time.Time) Audit {
 	}
 	return a
 }
+
+// FeedItem is one finding on the checks page, with the server it's on.
+type FeedItem struct {
+	Index                                 int
+	Server, Level, Section, Text, Checked string
+}
+
+// ServerChecks is one server's line on the checks page: its counts and a bar of them.
+type ServerChecks struct {
+	Index                 int
+	Name, Checked         string
+	Fix, Look, Passed     int
+	FixW, LookX, LookW    string // the bar's parts, in % of its width (SVG attributes, not styles)
+	Summary, SummaryClass string
+}
+
+// ChecksPage is every server's security and privacy checks, by severity: what to fix on any
+// server first, then what to look at. The privacy numbers each server counts become findings
+// too, and so do a server the fleet view can't reach and a check that has stopped running.
+type ChecksPage struct {
+	Servers   []ServerChecks
+	Fix, Look []FeedItem
+	Passed    int
+}
+
+func makeChecks(sts []*Status, now time.Time) ChecksPage {
+	var p ChecksPage
+	for i, st := range sts {
+		row := makeRow(i, st, now)
+		sc := ServerChecks{Index: i, Name: row.Name}
+		add := func(level, section, text, checked string) {
+			it := FeedItem{Index: i, Server: row.Name, Level: level, Section: section, Text: text, Checked: checked}
+			if level == "fail" {
+				p.Fix = append(p.Fix, it)
+				sc.Fix++
+			} else {
+				p.Look = append(p.Look, it)
+				sc.Look++
+			}
+		}
+		if row.Err != "" {
+			add("fail", "Reaching it", row.Err, row.Checked)
+			sc.Checked, sc.Summary, sc.SummaryClass = row.Checked, "can't be reached", "bad"
+			p.Servers = append(p.Servers, sc.withBar())
+			continue
+		}
+		a := row.Audit
+		sc.Checked = a.Checked
+		if !a.Have {
+			add("warn", "The check", "no security and privacy check from this server yet: it comes with Steady 1.0.6 and sudo ./ctl/install.sh", "")
+			sc.Checked = "never"
+		} else if a.Stale {
+			add("warn", "The check", "the check last ran "+a.Checked+": the steady-audit service on this server has stopped (systemctl status steady-audit.timer)", a.Checked)
+		}
+		privacy := []struct {
+			key, level, text string
+		}{
+			{"deletionOverdue", "fail", "%d deletion request(s) past 25 days: the practice has 30 days to carry them out"},
+			{"olderConsent", "warn", "%d patient(s) haven't yet agreed to the current consent statement (asked the next time they open Steady)"},
+			{"staffWithoutTwoStep", "warn", "%d staff member(s) without two-step sign-in (accounts.sh list)"},
+		}
+		for _, x := range privacy {
+			if n, ok := num(get(st.Data, "counts", x.key)); ok && n > 0 {
+				add(x.level, "Privacy", fmt.Sprintf(x.text, int(n)), row.Checked)
+			}
+		}
+		for _, c := range a.Problems {
+			add(c.Level, c.Section, c.Text, a.Checked)
+		}
+		sc.Passed = a.Oks
+		p.Passed += a.Oks
+		switch {
+		case sc.Fix > 0:
+			sc.Summary, sc.SummaryClass = fmt.Sprintf("%d to fix, %d to look at", sc.Fix, sc.Look), "bad"
+		case sc.Look > 0:
+			sc.Summary, sc.SummaryClass = fmt.Sprintf("%d to look at", sc.Look), "warn"
+		default:
+			sc.Summary, sc.SummaryClass = "all clear", "good"
+		}
+		p.Servers = append(p.Servers, sc.withBar())
+	}
+	return p
+}
+
+// withBar works out the bar: to fix, then to look at, then passed, in proportion.
+func (sc ServerChecks) withBar() ServerChecks {
+	total := sc.Fix + sc.Look + sc.Passed
+	if total == 0 {
+		sc.FixW, sc.LookX, sc.LookW = "0", "0", "0"
+		return sc
+	}
+	pct := func(n int) float64 { return float64(n) * 100 / float64(total) }
+	sc.FixW = fmt.Sprintf("%.2f", pct(sc.Fix))
+	sc.LookX = sc.FixW
+	sc.LookW = fmt.Sprintf("%.2f", pct(sc.Look))
+	return sc
+}

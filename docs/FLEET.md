@@ -7,8 +7,9 @@ buttons: **Check for updates**, **Update** and **Restart Steady**.
 
 It also shows each server's **security and privacy checks**, live: the server runs
 `deploy/audit-server.sh` every 6 hours and hands the results over with its status, so the
-overview says "all clear", "N to look at" or "N to fix" per server, and the server's page lists
-each one. With them come the privacy numbers the server counts itself: patients on an older
+overview says "all clear", "N to look at" or "N to fix" per server, the server's page lists
+each one, and **Checks** (in the bar at the top) lists every server's findings by severity:
+what to fix first, then what to look at, with a bar per server. With them come the privacy numbers the server counts itself: patients on an older
 consent statement, deletion requests past 25 days, staff without two-step sign-in. This is the
 standing picture of what the November 2026 security review found and fixed; a check that stops
 running shows as such.
