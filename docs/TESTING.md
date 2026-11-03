@@ -21,7 +21,8 @@ change isn't released until they pass.
   app versions and watch permissions, exports (flag reviews, notes, methods, the Heidi series),
   and staff sign-in: device links with emailed codes (wrong, reused and expired codes), "confirm
   it's you", locking your own account, password resets unlinking devices, PocketBase's own email
-  routes closed.
+  routes closed; the operator agreement (only the master clinician signs, only the version shown,
+  every field checked, signed copies never change) and its text, version and docs copy agreeing.
 
 **Push relay** (`cd pusher && go test ./...`): Web Push encryption against an independent
 decryption, ES256 signatures and key formats, APNs requests against a local HTTP/2 server, the
@@ -35,14 +36,18 @@ mail catcher):
   dashboard, superuser routes), the reset and lock-down rules, OpenWorks seeing no patients,
   two-step sign-in (replayed codes, recovery codes), linked devices (codes, tickets, tries,
   removal, keys never returned), "confirm it's you" on every sensitive route, locking your own
-  account, closed PocketBase email routes, and no patient names in any email sent.
-- `deploy/test/smoke.py`, the whole clinician and patient flow, ending with the rate limits.
+  account, closed PocketBase email routes, no patient names in any email sent, and the operator
+  agreement (who reads, signs and opens it; signed copies can't be changed or deleted, not even by a
+  superuser).
+- `deploy/test/smoke.py`, the whole clinician and patient flow (starting with the master clinician
+  signing the operator agreement), ending with the rate limits.
 - Moving the test stack's data to a vps1-style production setup and signing in there.
 
 **The app** (`flutter analyze` and `flutter test` in `app/`, and an Android build): data parsing,
 server addresses and invite links, the watch summaries, chart periods, the patient words and
-calm transitions, the feedback trail, layout rules, and the exports (PDF report, Excel workbook,
-Heidi PDF for a full export, a part of a series and chosen dates).
+calm transitions, the feedback trail, layout rules, the exports (PDF report, Excel workbook,
+Heidi PDF for a full export, a part of a series and chosen dates), and the operator agreement's
+text, Schedule and PDF.
 
 ## Tested by people
 
@@ -61,5 +66,7 @@ Heidi PDF for a full export, a part of a series and chosen dates).
    9 above 0: the notification shows no name or scores; the flag appears; mark it as reviewed.
 4. Export for Heidi twice: the second offers "since the last export" and says part 2.
 5. As the practice admin: the patient list shows status only. As OpenWorks support: no patients.
+   On a fresh test server, the master clinician is asked to sign the operator agreement first;
+   Settings > The practice > Operator agreement then shows it and downloads the PDF.
 6. "Lost your phone? Lock your account" on the sign-in screen, then restore it as OpenWorks.
 7. `./backup.sh` and a restore to a scratch machine.

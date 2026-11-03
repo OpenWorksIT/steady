@@ -9,7 +9,7 @@
 # updates, disk encryption, file permissions of .env and secrets, containers (user, privileges,
 # published ports), backups (age, recent, key not on the server), the site's TLS certificate and
 # security headers, the PocketBase dashboard and superuser API from outside, email for staff
-# sign-in, and accounts.sh's own checks.
+# sign-in, accounts.sh's own checks, and the practice's signed operator agreement.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -uo pipefail
 cd "$(dirname "$0")" || exit 1
@@ -220,6 +220,9 @@ if [ -x ./accounts.sh ] && out="$(./accounts.sh check 2>&1)"; then
   sed 's/^/        /' <<<"$out"
   grep -q 'rate limits: on' <<<"$out" && ok "rate limits are on" || fail "rate limits are off"
   grep -q 'dashboard: closed' <<<"$out" && ok "the dashboard is closed inside the container too" || fail "the dashboard answers inside the container"
+  grep -q 'operator agreement: signed' <<<"$out" && ok "the practice has signed the current operator agreement" \
+    || fail "the practice hasn't signed the current operator agreement: its master clinician signs it when they next open Steady (docs/OPERATOR-AGREEMENT.md)"
+  grep -q 'operator agreement text: HAS BLANKS' <<<"$out" && warn "the operator agreement still has blanks for OpenWorks' details (server/pb_hooks/content/operator-agreement.md)" || true
   list="$(./accounts.sh list 2>/dev/null)"
   grep -q 'no two-step sign-in yet' <<<"$list" && warn "some staff haven't set up two-step sign-in (accounts.sh list)" || ok "every staff account uses two-step sign-in"
 else

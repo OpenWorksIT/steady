@@ -39,13 +39,15 @@ BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:" + ENV.get("LOC
 passed = 0
 
 
-def call(method, path, token=None, body=None, query=None):
+def call(method, path, token=None, body=None, query=None, headers=None):
     url = BASE + path + ("?" + urllib.parse.urlencode(query) if query else "")
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", token)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status, json.loads(r.read() or b"{}")
@@ -101,6 +103,42 @@ def staff_sign_in(email, password, secret_key):
     return a
 
 
+def sign_operator_agreement(doc, cfg):
+    """The test clinician is the master clinician: the app asks them to sign the operator
+    agreement before anything else. Signs it once, after confirming it's them. On a server that
+    isn't the local test stack, only when it isn't signed yet (signatures can't be removed)."""
+    OA = "/api/steady/operator-agreement"
+    s, oa = call("GET", OA, doc)
+    check(s == 200 and oa.get("canSign") is True and oa.get("version") and "Operator agreement" in oa.get("text", ""),
+          "the master clinician is shown the operator agreement", {k: v for k, v in oa.items() if k != "text"})
+    local = BASE.startswith(("http://localhost", "http://127.0.0.1"))
+    if oa.get("signed") and not local:
+        print("ok    (the operator agreement is already signed on this server; not signed again)")
+        return
+    pre = (oa.get("prefill") or {}).get("practice") or {}
+    body = {"version": oa["version"], "sha256": oa["sha256"], "authorised": True, "signature": "Smoke Test Signer",
+            "fields": {"practiceName": pre.get("name") or "Smoke Test Practice", "registration": pre.get("registration") or "PR 0000000",
+                       "address": pre.get("address") or "1 Test Street, Gqeberha", "email": pre.get("email") or "practice@steady.test",
+                       "phone": pre.get("phone") or "041 000 0000", "informationOfficer": {"master": True}}}
+    dev = devicelink.saved_device(ENV, "CLINICIAN_DEVICE_KEY")
+    here = {"X-Steady-Device": dev["key"]}
+    s, r = call("POST", OA + "/sign", doc, body, headers=here)
+    if s == 403 and "confirm_needed" in json.dumps(r):
+        # a linked phone confirms with its screen lock; without linked devices, a fresh code
+        s2, r2 = call("POST", "/api/steady/me/confirm", doc, {"device": dev}, headers=here)
+        if s2 != 200 and cfg.get("twoStep") == "off":
+            s2, r2 = call("POST", "/api/steady/me/confirm", doc, {"password": ENV["CLINICIAN_PASSWORD"]}, headers=here)
+        elif s2 != 200 and ENV.get("CLINICIAN_TOTP_SECRET"):
+            time.sleep(31 - time.time() % 30)
+            s2, r2 = call("POST", "/api/steady/me/confirm", doc, {"code": totp(ENV["CLINICIAN_TOTP_SECRET"])}, headers=here)
+        check(s2 == 200, "signing asks the master clinician to confirm it's them first", r2)
+        s, r = call("POST", OA + "/sign", doc, body, headers=here)
+    check(s == 200 and r.get("version") == oa["version"] and r.get("sha256") == oa["sha256"], "the master clinician signs the operator agreement",
+          {k: v for k, v in r.items() if k != "text"} if isinstance(r, dict) else r)
+    s, oa2 = call("GET", OA, doc)
+    check(s == 200 and oa2.get("signed") is True, "the operator agreement shows as signed", {k: v for k, v in oa2.items() if k != "text"})
+
+
 def check(cond, what, detail=None):
     global passed
     if not cond:
@@ -127,6 +165,7 @@ def main():
     a = staff_sign_in(ENV["CLINICIAN_EMAIL"], ENV["CLINICIAN_PASSWORD"], "CLINICIAN_TOTP_SECRET")
     check(bool(a.get("token")), "clinician signs in", a)
     doc, doc_id = a["token"], a["record"]["id"]
+    sign_operator_agreement(doc, cfg)
 
     s, inv = call("POST", "/api/steady/invites", doc, {"label": "Smoke Patient (clinic)"})
     check(s == 200 and len(inv["code"]) == 9, "clinician creates an invite code", inv)
