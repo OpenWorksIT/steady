@@ -105,6 +105,10 @@ main() {
 
   for _ in $(seq 1 30); do
     if docker compose exec -T pocketbase wget -qO- http://127.0.0.1:8090/api/health >/dev/null 2>&1; then
+      # what this server now runs: Settings > Server and updates compares the newest version
+      # with this, not with the code on disk, so an update whose build failed is offered again
+      local running="${STEADY_RUNNING_FILE:-/var/lib/steady/running}"
+      { mkdir -p "$(dirname "$running")" && git -C .. rev-parse HEAD > "$running"; } 2>/dev/null || true
       echo "Steady is running."
       exit 0
     fi
