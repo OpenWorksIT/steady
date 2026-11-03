@@ -576,6 +576,79 @@ class CategoriesTest(unittest.TestCase):
         self.assertEqual(forum.cats[4][2], {"clinicians": 1})
 
 
+class Groups:
+    """Discourse's groups, found by name and made through the admin API."""
+
+    def __init__(self):
+        self.groups = {}
+        self.lock = threading.Lock()
+
+    def handle(self, method, path, body, ctype):
+        route = urlparse(path).path
+        m = re.fullmatch(r"/groups/([a-z-]+)\.json", route)
+        if m and method == "GET":
+            return {"group": self.groups[m.group(1)]} if m.group(1) in self.groups else 404
+        if route == "/admin/groups.json" and method == "POST":
+            g = dict(json.loads(body)["group"], id=len(self.groups) + 41)
+            self.groups[g["name"]] = g
+            return {"basic_group": g}
+        return 404
+
+
+class PracticeAdminsTest(unittest.TestCase):
+    """Practice administrators: a group of their own, the Steady manual and nothing else."""
+
+    def test_their_group_is_made_and_seen_by_its_members_only(self):
+        forum = Groups()
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            with redirect_stdout(io.StringIO()):
+                ids = setup.ensure_groups(api, setup.GROUPS)
+            self.assertIn("practice-admins", ids)
+            g = forum.groups["practice-admins"]
+            self.assertEqual(g["full_name"], "Practice administrators")
+            self.assertEqual((g["visibility_level"], g["members_visibility_level"]), (setup.VIS_MEMBERS, setup.VIS_MEMBERS))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_the_steady_manual_is_their_only_category(self):
+        for c in setup.CATEGORIES + setup.practice_categories([("vr", "VR Clinical Psychology")]):
+            want = setup.CREATE_POST if c["slug"] == "manual" else None   # reply and see: they ask in the replies
+            self.assertEqual(c["permissions"].get("practice-admins"), want, c["slug"])
+
+    def test_no_personal_messages_for_them(self):
+        ids = {"clinicians": 41, "practice-admins": 42, "openworks": 43}
+        # not even through trust level 1 (group 11), Discourse's default
+        self.assertEqual(setup._pm_groups("1|2|11", ids), "1|2|41|43")
+
+    def test_no_practice_takes_their_group_name(self):
+        with self.assertRaises(setup.argparse.ArgumentTypeError):
+            setup.parse_practice("admins=Front desk")
+
+    def test_the_manual_opens_to_them_and_every_other_category_closes(self):
+        forum = Categories()
+        # before: the manual without them, and a category someone opened to them by hand
+        forum.cats[6] = ("Steady manual", "manual", {"clinicians": 2, "openworks": 1})
+        forum.cats[7] = ("Front desk", "front-desk", {"clinicians": 1, "practice-admins": 2})
+        srv = serve(forum)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            manual = next(c for c in setup.CATEGORIES if c["slug"] == "manual")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                setup.ensure_categories(api, [manual], {"clinicians", "practice-admins", "openworks"})
+                problems = setup.lock_other_categories(api, {"announcements", "manual"})
+            self.assertEqual(problems, [], out.getvalue())
+            self.assertEqual(forum.cats[6][2], {"clinicians": 2, "practice-admins": 2, "openworks": 1})
+            self.assertEqual(forum.cats[7][2], {"clinicians": 1})
+            self.assertEqual(forum.cats[4][2], {"clinicians": 1})   # General: as before
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
 class KeyTest(unittest.TestCase):
     def test_revoke_removes_the_one_off_keys_this_one_last(self):
         forum = Forum()

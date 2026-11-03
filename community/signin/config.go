@@ -23,13 +23,14 @@ type Practice struct {
 	URL string `json:"url"`
 	// Key is STEADY_COMMUNITY_KEY on that server: it signs the notes the bridge trusts.
 	Key string `json:"key"`
-	// Groups: more forum groups for its psychologists (a practice's private group).
+	// Groups: more forum groups for its psychologists (a practice's private group), never for
+	// its administrators.
 	Groups []string `json:"groups,omitempty"`
-	// Emails: the addresses its psychologists use, each an address or "@domain" (the practice's
-	// own domain, never a public mail service's). Only these sign in through this practice, and
-	// the forum takes them as they are: an account already on the forum with the address carries
-	// on. No address or domain may be on two practices' lists, so no practice can sign someone
-	// in as another practice's psychologist.
+	// Emails: the addresses its psychologists and practice administrators use, each an address
+	// or "@domain" (the practice's own domain, never a public mail service's). Only these sign in
+	// through this practice, and the forum takes them as they are: an account already on the
+	// forum with the address carries on. No address or domain may be on two practices' lists, so
+	// no practice can sign someone in as another practice's psychologist.
 	Emails []string `json:"emails"`
 	// Support: OpenWorks support accounts may come in through this practice's server (with an
 	// address on the OpenWorks list). Only on a server OpenWorks alone runs: anyone who can make
@@ -108,13 +109,13 @@ func (c *Config) validate() error {
 		}
 		for j, g := range p.Groups {
 			g = strings.ToLower(strings.TrimSpace(g))
-			if !reGroup.MatchString(g) || g == "clinicians" || g == "openworks" {
-				return fmt.Errorf(`%s: group %q isn't a group name the bridge may add (clinicians and openworks come from the role)`, label, p.Groups[j])
+			if !reGroup.MatchString(g) || g == "clinicians" || g == "practice-admins" || g == "openworks" {
+				return fmt.Errorf(`%s: group %q isn't a group name the bridge may add (clinicians, practice-admins and openworks come from the role)`, label, p.Groups[j])
 			}
 			p.Groups[j] = g
 		}
 		if len(p.Emails) == 0 {
-			return fmt.Errorf(`%s: "emails" must list the addresses (or "@domain") its psychologists use`, label)
+			return fmt.Errorf(`%s: "emails" must list the addresses (or "@domain") its psychologists and administrators use`, label)
 		}
 		if err := tidyList(p.Emails, label); err != nil {
 			return err

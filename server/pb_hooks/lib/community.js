@@ -30,11 +30,14 @@ function config() {
   return { url: url, forum: forum, key: key };
 }
 
-/** Why this account may not open the community, or "" when it may: psychologists and OpenWorks
- *  support, with two-step sign-in on (whatever the server's own setting), and an email. */
+/** Why this account may not open the community, or "" when it may: psychologists, practice
+ *  admins (the forum shows them the Steady manual only) and OpenWorks support, with two-step
+ *  sign-in on (whatever the server's own setting), and an email. */
 function refusal(user, s) {
   var role = user.getString("role");
-  if (role !== "clinician" && role !== "support") return "The community is for psychologists.";
+  if (role !== "clinician" && role !== "admin" && role !== "support") {
+    return "The community is for psychologists, practice administrators and OpenWorks IT.";
+  }
   if (!s.twoStepOn(user)) return "Set up two-step sign-in in Steady first (Settings > Two-step sign-in).";
   if (!user.email()) return "This account has no email address. Ask the practice to add one.";
   return "";
