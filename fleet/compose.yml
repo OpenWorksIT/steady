@@ -14,7 +14,8 @@ x-logging: &logging
 services:
   fleet:
     logging: *logging
-    build: .
+    # from the top of the repository: the build takes VERSION and the sign-in bridge's code too
+    build: {context: .., dockerfile: fleet/Dockerfile}
     restart: unless-stopped
     environment:
       FLEET_ADDR: ":8080"

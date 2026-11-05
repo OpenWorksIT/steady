@@ -1,0 +1,7 @@
+# The build's context is the top of the repository (compose.yml); send only what it uses.
+*
+!VERSION
+!deploy/code-of.sh
+!community/signin/go.mod
+!community/signin/*.go
+!community/signin/web

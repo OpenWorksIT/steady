@@ -16,7 +16,8 @@ x-logging: &logging
 services:
   signin:
     logging: *logging
-    build: .
+    # from the top of the repository: the build takes VERSION, for GET /version
+    build: {context: ../.., dockerfile: community/signin/Dockerfile}
     restart: unless-stopped
     environment:
       SIGNIN_ADDR: ":8080"

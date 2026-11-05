@@ -140,10 +140,12 @@ gets a Docker network of its own (`fleet-edge`) that only it and Shap's Caddy ar
 6. Once the community forum is up (docs/COMMUNITY.md), its numbers can show on the overview too.
    `/var/lib/steady-fleet/community.json`, same owner and mode as servers.json:
    ```json
-   {"url": "https://community.steadyapp.co.za", "statsKey": "<the openworks-stats key>"}
+   {"url": "https://community.steadyapp.co.za", "statsKey": "<the openworks-stats key>",
+    "signin": "https://signin.steadyapp.co.za"}
    ```
    The fleet view asks the forum every 10 minutes and keeps only the counts (members, active
-   this week, topics, posts), never titles, names or text.
+   this week, topics, posts), never titles, names or text. With `signin`, it also asks the
+   sign-in bridge which code it runs (below).
 
 Other commands, the same way (in `/opt/steady-ops`): `passwd <name>`, `resettotp <name>` (a lost phone),
 `deluser <name>` (signs that person out at once).
@@ -173,13 +175,41 @@ is only what people add and change. A copy of `/var/lib/steady-fleet` keeps it w
 
 ## Updating the fleet view
 
-To a newer signed release only, its signature checked (here `v1.0.6`):
+To a newer signed release only, its signature checked (here `v1.1.1`). The sign-in bridge runs
+from the same folder, so rebuild it with the fleet view:
 
 ```bash
 cd /opt/steady-ops && sudo git fetch -q --tags
-sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-signers verify-tag v1.0.6 \
-  && sudo git checkout -q --detach v1.0.6 && sudo docker compose -f fleet/compose.yml up -d --build
+sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-signers verify-tag v1.1.1 \
+  && sudo git checkout -q --detach v1.1.1 && sudo docker compose -f fleet/compose.yml up -d --build \
+  && sudo docker compose -f community/signin/compose.yml up -d --build
 ```
+
+## Which code runs where
+
+**Practice servers** report their version; one behind the newest signed release is counted at
+the top of the overview ("not on the newest release") and listed on Checks under "To look at",
+until it's updated from its page. A server that follows a branch (the test server) is left out.
+
+**OpenWorks' own services** (the overview's last table, and Checks): each is built from a signed
+release in `/opt/steady-ops`, and its Docker build stamps it with that release's `VERSION` and a
+fingerprint of its code (`deploy/code-of.sh`, 12 characters). The fleet view's build also stamps
+the sign-in bridge's fingerprint for the same release, and asks the bridge for its own
+(`GET https://signin.steadyapp.co.za/version`, which says only the version and the code):
+
+| The fleet view says | What it means |
+|---|---|
+| Fleet view: the newest signed release | It runs what the practice servers report as the newest release |
+| Fleet view: 1.1.2 is out | A newer signed release is out: update it (above) |
+| Fleet view: a build without a release number | Built without the Docker build's stamps, not from a release |
+| Sign-in bridge: the same code as the fleet view's release | All well |
+| Sign-in bridge: not the code of release 1.1.1 | Red. Built from another checkout (vps1's test folder), or not rebuilt after the update: `cd /opt/steady-ops && sudo docker compose -f community/signin/compose.yml up -d --build` |
+| Sign-in bridge: an older build that doesn't say which code it runs | Red. The same, from before 1.1.1 |
+| Sign-in bridge: not checked | `community.json` has no `signin` (step 6) |
+
+Both builds now take the top of the repository as their context (`build.context` in each
+`compose.yml`), with a `Dockerfile.dockerignore` beside each Dockerfile that sends only what it
+uses.
 
 ## Security notes
 
