@@ -1,0 +1,44 @@
+# Steady Community sign-in bridge (signin.steadyapp.co.za): the community opens inside Steady's
+# Community tab, signed in as whoever is signed in to Steady. Behind Caddy, on the forum's network
+# (community-edge), which only Caddy, the forum and this are on. See docs/COMMUNITY.md, "Signing
+# in through Steady".
+#   sudo install -d -m 700 -o 65532 -g 65532 /var/lib/steady-signin
+#   sudo docker compose -f community/signin/compose.yml up -d --build
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: signin
+# its log (docker compose logs) is kept to 5 files of 10 MB, not without end
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  signin:
+    logging: *logging
+    build: .
+    restart: unless-stopped
+    environment:
+      SIGNIN_ADDR: ":8080"
+      SIGNIN_CONFIG: /data/config.json
+      # only Caddy's X-Forwarded-For is believed (its service name on community-edge)
+      SIGNIN_TRUSTED_PROXY: caddy
+    volumes:
+      # config.json holds the forum's secret and each practice's key: readable by this alone
+      - /var/lib/steady-signin:/data:ro
+    read_only: true
+    mem_limit: 64m
+    pids_limit: 64
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "/signin", "healthz"]
+      interval: 1m
+      timeout: 5s
+
+networks:
+  edge:
+    name: community-edge
+    external: true

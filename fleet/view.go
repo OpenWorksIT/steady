@@ -48,6 +48,7 @@ type Row struct {
 	BackupWarn                bool
 	Patients, Staff, Checkins string
 	Busy                      string // a request waiting, an update or restart under way
+	Audit                     Audit  // the latest security and privacy check
 	Err                       string
 	Checked                   string
 	CanAct                    bool
@@ -117,12 +118,8 @@ func makeRow(i int, st *Status, now time.Time) Row {
 		}
 		r.Health += ": " + strings.Join(rs, ", ")
 	}
-	// version: the code it runs, and whether a newer signed release is waiting
-	code := str(get(d, "version", "code"))
-	if code == "" {
-		code = "?"
-	}
-	r.Version = code
+	// version: what it runs, as people read it, and whether a newer signed release is waiting
+	r.Version = versionText(d)
 	// the buttons need the server's in-app updates (deploy/ctl/install.sh)
 	r.CanAct = get(d, "version", "managed") == true
 	if b, ok := num(get(d, "version", "behind")); ok && b > 0 {
@@ -160,6 +157,7 @@ func makeRow(i int, st *Status, now time.Time) Row {
 	} else {
 		r.Backup, r.BackupWarn = "none found", true
 	}
+	r.Audit = makeAudit(d, now)
 	r.Patients = intText(get(d, "counts", "patients"))
 	r.Staff = intText(get(d, "counts", "staff"))
 	r.Checkins = intText(get(d, "counts", "checkins7d"))
@@ -175,6 +173,42 @@ func makeRow(i int, st *Status, now time.Time) Row {
 // Facts are the detail page's label/value pairs.
 type Fact struct{ Label, Value string }
 
+// versionText: the version a server runs as people read it ("1.0.5", "1.1.0 test 23"; see
+// deploy/version.sh). A server from before versions were reported shows its release's number
+// when it runs the latest signed release, and its code otherwise.
+func versionText(d map[string]any) string {
+	if v := str(get(d, "version", "current", "version")); v != "" {
+		return v
+	}
+	code := str(get(d, "version", "code"))
+	latest, rel := str(get(d, "version", "latest", "sha")), str(get(d, "version", "latest", "release"))
+	if code != "" && rel != "" && strings.HasPrefix(latest, code) {
+		return strings.TrimPrefix(rel, "v")
+	}
+	if code == "" {
+		return "?"
+	}
+	return code
+}
+
+// releaseText: the newest signed release ("1.0.5"), or "none" for a server that follows a branch.
+func releaseText(d map[string]any) string {
+	rel := strings.TrimPrefix(str(get(d, "version", "latest", "release")), "v")
+	if rel == "" {
+		return "none (follows a branch)"
+	}
+	return rel
+}
+
+func firstOf(s ...string) string {
+	for _, x := range s {
+		if x != "" {
+			return x
+		}
+	}
+	return ""
+}
+
 func facts(st *Status, now time.Time) []Fact {
 	d := st.Data
 	if d == nil {
@@ -184,10 +218,11 @@ func facts(st *Status, now time.Time) []Fact {
 		{"Practice", str(d["practice"])},
 		{"Address", st.Server.URL},
 		{"Running for", durationText(get(d, "uptimeSeconds"))},
+		{"Version", versionText(d)},
 		{"Code", str(get(d, "version", "code"))},
-		{"Latest signed release", str(get(d, "version", "latest", "release")) + " " + str(get(d, "version", "latest", "sha"))},
+		{"Latest signed release", releaseText(d)},
 		{"Last update check", ago(parseTime(get(d, "version", "checkedAt")), now)},
-		{"Android app on the server", str(get(d, "version", "app", "current"))},
+		{"Android app on the server", firstOf(str(get(d, "version", "app", "currentVersion")), str(get(d, "version", "app", "current")))},
 		{"Requests, last hour", intText(get(d, "lastHour", "requests")) + " (typical " + msText(get(d, "lastHour", "p50")) + ", slowest 5% " + msText(get(d, "lastHour", "p95")) + ")"},
 		{"Server errors, last 24 h", intText(get(d, "last24h", "errors"))},
 		{"Database", bytesOrQ(get(d, "database", "bytes"))},
@@ -195,6 +230,7 @@ func facts(st *Status, now time.Time) []Fact {
 		{"Backups", intText(get(d, "host", "backups", "count")) + " files, " + bytesOrQ(get(d, "host", "backups", "bytes"))},
 		{"Staff sign-in by email code", yesNo(get(d, "signIn", "linkedDevices"))},
 		{"Deletion requests waiting", intText(get(d, "counts", "deletionRequests"))},
+		{"Operator agreement", agreementText(get(d, "operatorAgreement"))},
 	}
 	if lu, ok := d["lastUpdate"].(map[string]any); ok {
 		res := "worked"
@@ -225,6 +261,25 @@ func bytesOrQ(v any) string {
 		return bytesText(f)
 	}
 	return "?"
+}
+
+// agreementText: whether the practice signed the current operator agreement (Steady 1.0.5 on).
+func agreementText(v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return "?"
+	}
+	if m["signed"] == true {
+		at := parseTime(m["signedAt"])
+		if at.IsZero() {
+			return "signed, version " + str(m["version"])
+		}
+		return "signed, version " + str(m["version"]) + ", on " + at.Format("2 Jan 2006")
+	}
+	if last := str(m["lastSignedVersion"]); last != "" {
+		return "NOT SIGNED: version " + str(m["version"]) + " waits for the master clinician (version " + last + " was signed)"
+	}
+	return "NOT SIGNED: version " + str(m["version"]) + " waits for the master clinician"
 }
 
 func yesNo(v any) string {
@@ -261,4 +316,192 @@ func durationText(v any) string {
 		return fmt.Sprintf("%d days", int(d.Hours()/24))
 	}
 	return fmt.Sprintf("%d h %d min", int(d.Hours()), int(d.Minutes())%60)
+}
+
+// Check is one line of a server's security and privacy check (deploy/audit-server.sh).
+type Check struct{ Level, Section, Text string }
+
+// Audit is a server's latest security and privacy check, run on the server every 6 hours by the
+// steady-audit service and handed over with its status (docs/FLEET.md), plus the privacy numbers
+// the server counts itself.
+type Audit struct {
+	Have                  bool
+	Checked, Code         string
+	Stale                 bool
+	Fails, Warns, Oks     int
+	Problems, Passed      []Check
+	OlderConsent          string
+	DeletionOverdue       string
+	StaffWithoutTwoStep   string
+	PrivacyWarn           bool
+	Summary, SummaryClass string // for the overview: "2 to fix, 3 to look at" and good, warn or bad
+	PrivacyNote           string // for the overview: the privacy numbers that aren't zero
+}
+
+// auditStale: the check runs every 6 hours; much older means the service stopped.
+const auditStale = 13 * time.Hour
+
+func makeAudit(d map[string]any, now time.Time) Audit {
+	a := Audit{}
+	// privacy numbers (Steady 1.0.6 on): what isn't zero is worth a look
+	var notes []string
+	for _, p := range []struct {
+		key  string
+		dst  *string
+		note string
+	}{
+		{"olderConsent", &a.OlderConsent, "on an older consent statement"},
+		{"deletionOverdue", &a.DeletionOverdue, "deletion past 25 days"},
+		{"staffWithoutTwoStep", &a.StaffWithoutTwoStep, "staff without two-step sign-in"},
+	} {
+		v := get(d, "counts", p.key)
+		*p.dst = intText(v)
+		if n, ok := num(v); ok && n > 0 {
+			a.PrivacyWarn = true
+			notes = append(notes, fmt.Sprintf("%d %s", int(n), p.note))
+		}
+	}
+	a.PrivacyNote = strings.Join(notes, ", ")
+	m, ok := d["audit"].(map[string]any)
+	if !ok {
+		a.Summary, a.SummaryClass = "no check yet", "muted"
+		return a
+	}
+	a.Have = true
+	at := parseTime(m["at"])
+	a.Checked = ago(at, now)
+	a.Stale = at.IsZero() || now.Sub(at) > auditStale
+	a.Code = str(m["code"])
+	if items, ok := m["items"].([]any); ok {
+		var fails, warns []Check
+		for _, x := range items {
+			it, ok := x.(map[string]any)
+			if !ok {
+				continue
+			}
+			c := Check{Level: str(it["level"]), Section: str(it["section"]), Text: str(it["text"])}
+			switch c.Level {
+			case "fail":
+				fails = append(fails, c)
+			case "warn":
+				warns = append(warns, c)
+			case "ok":
+				a.Passed = append(a.Passed, c)
+			}
+		}
+		a.Fails, a.Warns, a.Oks = len(fails), len(warns), len(a.Passed)
+		a.Problems = append(fails, warns...)
+	}
+	switch {
+	case a.Fails > 0:
+		a.Summary, a.SummaryClass = fmt.Sprintf("%d to fix, %d to look at", a.Fails, a.Warns), "bad"
+	case a.Warns > 0:
+		a.Summary, a.SummaryClass = fmt.Sprintf("%d to look at", a.Warns), "warn"
+	default:
+		a.Summary, a.SummaryClass = "all clear", "good"
+	}
+	if a.Stale {
+		a.Summary += " (" + a.Checked + ": the check has stopped running)"
+		if a.SummaryClass == "good" {
+			a.SummaryClass = "warn"
+		}
+	}
+	return a
+}
+
+// FeedItem is one finding on the checks page, with the server it's on.
+type FeedItem struct {
+	Index                                 int
+	Server, Level, Section, Text, Checked string
+}
+
+// ServerChecks is one server's line on the checks page: its counts and a bar of them.
+type ServerChecks struct {
+	Index                 int
+	Name, Checked         string
+	Fix, Look, Passed     int
+	FixW, LookX, LookW    string // the bar's parts, in % of its width (SVG attributes, not styles)
+	Summary, SummaryClass string
+}
+
+// ChecksPage is every server's security and privacy checks, by severity: what to fix on any
+// server first, then what to look at. The privacy numbers each server counts become findings
+// too, and so do a server the fleet view can't reach and a check that has stopped running.
+type ChecksPage struct {
+	Servers   []ServerChecks
+	Fix, Look []FeedItem
+	Passed    int
+}
+
+func makeChecks(sts []*Status, now time.Time) ChecksPage {
+	var p ChecksPage
+	for i, st := range sts {
+		row := makeRow(i, st, now)
+		sc := ServerChecks{Index: i, Name: row.Name}
+		add := func(level, section, text, checked string) {
+			it := FeedItem{Index: i, Server: row.Name, Level: level, Section: section, Text: text, Checked: checked}
+			if level == "fail" {
+				p.Fix = append(p.Fix, it)
+				sc.Fix++
+			} else {
+				p.Look = append(p.Look, it)
+				sc.Look++
+			}
+		}
+		if row.Err != "" {
+			add("fail", "Reaching it", row.Err, row.Checked)
+			sc.Checked, sc.Summary, sc.SummaryClass = row.Checked, "can't be reached", "bad"
+			p.Servers = append(p.Servers, sc.withBar())
+			continue
+		}
+		a := row.Audit
+		sc.Checked = a.Checked
+		if !a.Have {
+			add("warn", "The check", "no security and privacy check from this server yet: it comes with Steady 1.0.6 and sudo ./ctl/install.sh", "")
+			sc.Checked = "never"
+		} else if a.Stale {
+			add("warn", "The check", "the check last ran "+a.Checked+": the steady-audit service on this server has stopped (systemctl status steady-audit.timer)", a.Checked)
+		}
+		privacy := []struct {
+			key, level, text string
+		}{
+			{"deletionOverdue", "fail", "%d deletion request(s) past 25 days: the practice has 30 days to carry them out"},
+			{"olderConsent", "warn", "%d patient(s) haven't yet agreed to the current consent statement (asked the next time they open Steady)"},
+			{"staffWithoutTwoStep", "warn", "%d staff member(s) without two-step sign-in (accounts.sh list)"},
+		}
+		for _, x := range privacy {
+			if n, ok := num(get(st.Data, "counts", x.key)); ok && n > 0 {
+				add(x.level, "Privacy", fmt.Sprintf(x.text, int(n)), row.Checked)
+			}
+		}
+		for _, c := range a.Problems {
+			add(c.Level, c.Section, c.Text, a.Checked)
+		}
+		sc.Passed = a.Oks
+		p.Passed += a.Oks
+		switch {
+		case sc.Fix > 0:
+			sc.Summary, sc.SummaryClass = fmt.Sprintf("%d to fix, %d to look at", sc.Fix, sc.Look), "bad"
+		case sc.Look > 0:
+			sc.Summary, sc.SummaryClass = fmt.Sprintf("%d to look at", sc.Look), "warn"
+		default:
+			sc.Summary, sc.SummaryClass = "all clear", "good"
+		}
+		p.Servers = append(p.Servers, sc.withBar())
+	}
+	return p
+}
+
+// withBar works out the bar: to fix, then to look at, then passed, in proportion.
+func (sc ServerChecks) withBar() ServerChecks {
+	total := sc.Fix + sc.Look + sc.Passed
+	if total == 0 {
+		sc.FixW, sc.LookX, sc.LookW = "0", "0", "0"
+		return sc
+	}
+	pct := func(n int) float64 { return float64(n) * 100 / float64(total) }
+	sc.FixW = fmt.Sprintf("%.2f", pct(sc.Fix))
+	sc.LookX = sc.FixW
+	sc.LookW = fmt.Sprintf("%.2f", pct(sc.Look))
+	return sc
 }

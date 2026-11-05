@@ -1,0 +1,14 @@
+/* Steady Community sign-in: the look of steadyapp.co.za. SPDX-License-Identifier: AGPL-3.0-or-later */
+:root{--paper:#f5f8f7;--card:#fff;--ink:#17282a;--ink2:#4a5c5e;--line:#d5dedc;--link:#236a70;--tide:#2c5f7c;--on-tide:#fff;--sun:#d9894a}
+@media (prefers-color-scheme:dark){:root{--paper:#0f2a2d;--card:#143438;--ink:#dfeae9;--ink2:#a9bdbc;--line:#2a4a4e;--link:#7fc2c8;--tide:#9cc3d9;--on-tide:#0f2a2d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.6 "Atkinson Hyperlegible Next","Segoe UI",system-ui,-apple-system,Roboto,sans-serif}
+main{max-width:32rem;margin:0 auto;padding:12vh 20px 40px}
+.brand{display:flex;align-items:center;gap:.6rem;margin:0 0 2.2rem;font:500 1.35rem/1 Barlow,"DIN Alternate","Segoe UI",system-ui,sans-serif;letter-spacing:.01em;color:var(--ink)}
+.brand svg{flex:none}
+h1{font:400 1.75rem/1.2 Barlow,"DIN Alternate","Segoe UI",system-ui,sans-serif;letter-spacing:-.005em;margin:0 0 .6em}
+p{margin:0 0 1em;color:var(--ink2)}
+a{color:var(--link);text-underline-offset:.18em}
+a:focus-visible,.button:focus-visible{outline:3px solid var(--sun);outline-offset:3px;border-radius:6px}
+.muted{color:var(--ink2);font-size:.9em}
+.button{display:inline-flex;align-items:center;min-height:2.75rem;padding:.55rem 1.3rem;border-radius:999px;background:var(--tide);color:var(--on-tide);font-weight:600;text-decoration:none}

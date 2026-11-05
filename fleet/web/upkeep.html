@@ -1,0 +1,22 @@
+{{template "top" "Monthly upkeep"}}
+{{template "bar" .}}
+<main>
+<nav class="tabs" aria-label="To do"><a href="/todo">List</a><a class="on" aria-current="page" href="/upkeep">Monthly upkeep</a></nav>
+{{with .Page}}
+<h1>Upkeep for {{.MonthName}}</h1>
+<p class="muted">Once a month, in the first working week: every practice server, vps1 and the shared pieces. The commands for each are in docs/UPKEEP.md. Confirming an item keeps your name and the time. Anything left open goes on <a href="/todo#add">the list</a>.</p>
+{{if $.Msg}}<p class="note">{{$.Msg}}</p>{{end}}
+<p class="progress"><svg class="bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true"><rect class="b-track" x="0" y="0" width="100" height="10"/><rect class="b-done" x="0" y="0" width="{{.DoneW}}" height="10"/></svg>
+<span><strong>{{.Done}} of {{.N}}</strong> confirmed</span></p>
+<p class="muted">{{if .Prev}}<a href="/upkeep?month={{.Prev}}">← {{.PrevName}}</a>{{end}}{{if .Next}}{{if .Prev}} · {{end}}<a href="/upkeep?month={{.Next}}">{{.NextName}} →</a>{{end}}</p>
+{{range .Sections}}
+<h2>{{.Name}}</h2>
+<ul class="feed upkeep">
+{{range .Lines}}<li id="u-{{.Key}}"{{if .By}} class="ok"{{end}}><div class="what">{{.Text}}{{if .By}}<div class="muted"><span class="pill done">confirmed</span> {{.By}}</div>{{end}}</div>
+<form method="post" action="/upkeep"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="month" value="{{$.Page.Month}}"><input type="hidden" name="key" value="{{.Key}}">
+{{if .By}}<button name="op" value="undo" class="link">Take back</button>{{else}}<button name="op" value="confirm" class="secondary small">Confirm</button>{{end}}</form></li>
+{{end}}</ul>
+{{end}}
+{{end}}
+</main>
+{{template "end"}}

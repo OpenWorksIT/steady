@@ -80,41 +80,114 @@ dependencies {
 
 and in `android/app/src/main/AndroidManifest.xml` add `<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>` and `android:allowBackup="false"` on `<application>`.
 
-For the staff screen lock (`local_auth`), the script also adds `USE_BIOMETRIC`, the
+For notifications it gives Firebase Steady's mark as the status-bar icon
+(`com.google.firebase.messaging.default_notification_icon`, `@mipmap/ic_launcher_foreground`)
+and removes the advertising ID permission (`com.google.android.gms.permission.AD_ID`), which a
+Google library could otherwise bring in. Steady doesn't use one.
+
+For the screen lock (`local_auth`), the script also adds `USE_BIOMETRIC`, the
 `androidx.appcompat` library, and makes `LaunchTheme` in `res/values*/styles.xml` inherit from
 `Theme.AppCompat.DayNight.NoActionBar` (the fingerprint dialog crashes on Android 8 without an
-AppCompat theme). `MainActivity` must be a `FlutterFragmentActivity`. On iPhones,
-`scripts/patch_ios.py` adds the Face ID reason (`NSFaceIDUsageDescription`).
+AppCompat theme). `MainActivity` must be a `FlutterFragmentActivity`; the script writes Steady's
+own (the app-switcher picture and `FLAG_SECURE`, below). On iPhones, `scripts/patch_ios.py` adds
+the Face ID reason (`NSFaceIDUsageDescription`).
 
-## Staff sign-in on phones
+## Locks and sessions
 
-Practice staff link each phone with a code emailed to them (when the server has email set up),
-and the app locks when it opens and after two minutes in the background; it unlocks with the
-phone's own screen lock (fingerprint, face, PIN or pattern). A phone without a screen lock can't
-be used for the practice: the app says so. The device's key is kept in secure storage and stays
-when signing out, so the phone stays linked. Patients aren't locked. The web app has no screen
-lock; it asks for an authenticator code before sensitive actions instead.
+**Staff on phones.** Practice staff link each phone with a code emailed to them (when the server
+has email set up), and the app locks when it opens and after two minutes away; it unlocks with
+the phone's own screen lock (fingerprint, face, PIN or pattern). A phone without a screen lock
+can't be used for the practice: the app says so. The device's key is kept in secure storage and
+stays when signing out, so the phone stays linked.
+
+**Patients on phones: Lock Steady.** A switch in Settings, off unless the patient turns it on,
+and kept on the phone only (secure storage), never on the server. When it's on, Steady asks for
+the phone's screen lock when it opens and after two minutes away, as for staff, but not straight
+after signing in with the password. Turning it on asks for the screen lock once; on a phone
+without one, Settings says so and the switch stays off. The lock screen keeps the crisis numbers
+and a way to try again, so nobody is locked away from help. If the phone's screen lock is removed
+later, the lock screen says so and lets the patient in, with Lock Steady turned off. The web app
+doesn't offer it.
+
+**The app switcher** shows a blank picture of Steady, for everyone. Android 13 and later:
+`setRecentsScreenshotEnabled(false)` in `MainActivity`, so patients can still take screenshots.
+Android 8 to 12 have no setting for that alone, so Steady uses `FLAG_SECURE` there, which also
+stops screenshots and screen recording of Steady (and of the patient's own screens). Staff screens
+have `FLAG_SECURE` on every version. The Feedback button's screenshot is drawn by the app itself,
+so `FLAG_SECURE` doesn't affect it. iPhones: the app covers itself while it isn't in front
+(`ui/auth/screen_lock.dart`), except while it asks for Face ID or the passcode.
+
+**Staff in a web browser.** No screen lock and no idle sign-out: staff confirm it's them with an
+authenticator code before sensitive actions instead. The session belongs to the browser tab. It's
+kept in the tab's session storage, so closing the tab ends it there, and a reload keeps it. The
+server gives a tab's session tokens that last an hour (`STEADY_TAB_SESSION_MINUTES`,
+`server/pb_hooks/lib/sessions.js`), and the app renews the token in the background a third of the
+way through (`services/tab_session.dart`). So an open tab is never signed out in the middle of a
+session, and a token copied out of a closed tab stops working within the hour. Nothing is done
+when the tab closes: a sign-out on `beforeunload` or `pagehide` would also fire on every reload.
+A computer that sleeps longer than the token has left (40 to 60 minutes) comes back to the
+sign-in screen. A browser that reopens a closed tab (Ctrl+Shift+T, or "continue where you left
+off") brings its storage back too: within the hour that reopens the session, later it doesn't.
+
+**Everyone else** (patients anywhere, staff on phones) keeps PocketBase's own token length for
+the users collection: five days, renewed each time the app opens.
+
+Signing out ends every session the account has, on every device (`/api/steady/me/sign-out`), and
+so do a password change, removing a device, a reset, stopping or locking the account, and
+`accounts.sh rotate-sessions`.
 
 ## Notifications
 
-- **iOS**: Apple Push Notification service through the small `packages/steady_apns` plugin in this repo. No Firebase.
-- **Android**: [UnifiedPush](https://unifiedpush.org). The user installs a distributor app such as ntfy (F-Droid or Play Store) once; Steady finds it automatically, or the user picks it under Settings in the app. Messages are end-to-end encrypted to the device (RFC 8291) and shown as a local notification. If no distributor is installed, everything still works when the app is opened; there's just no alert.
+Every notification is titled "Steady" and says "New notification", on every phone. Nothing else
+leaves the server: no names, scores or text, not even what kind of thing is new. Opening the app
+loads what's new over its own connection (and a tap while it's open refreshes the screen).
 
-If the practice later prefers zero-setup Android notifications, the relay already supports Firebase (FCM); the app would need the `firebase_messaging` package added.
+- **iOS**: Apple Push Notification service through the small `packages/steady_apns` plugin in this repo. No Firebase.
+- **Android**: Firebase Cloud Messaging (Google) through the small `packages/steady_fcm` plugin in
+  this repo, built on Google's Firebase Android SDK (messaging only: no Analytics). It's an
+  Android-only plugin, so Firebase isn't in the iPhone or web app. The phone needs Google Play
+  services (every phone with the Play Store has them). In the background Firebase shows the
+  notification; while the app is open the plugin shows the same words itself.
+- **Web**: none. New items appear while the page is open.
+
+The Android app has no `google-services.json` and doesn't use the Google services Gradle plugin.
+It's built with the Firebase project's four settings instead, which CI passes in from
+**repository variables** (not secrets: they identify the app to Firebase and are in every copy
+of it):
+
+| Variable | From the Firebase project (Project settings, or the `google-services.json` it offers) |
+|---|---|
+| `FIREBASE_API_KEY` | `client[0].api_key[0].current_key` |
+| `FIREBASE_APP_ID` | the Android app's App ID, `1:…:android:…` (`mobilesdk_app_id`) |
+| `FIREBASE_SENDER_ID` | the project number (`project_number`) |
+| `FIREBASE_PROJECT_ID` | the project ID (`project_id`) |
+
+Set them in the steady repository > **Settings > Secrets and variables > Actions > Variables**.
+The Test builds, Store builds and CI workflows pass them to `flutter build` as
+`--dart-define=FIREBASE_API_KEY=...` and so on; Store builds stop without them. A build without
+them (a fork, `flutter run` on your own machine) works the same but has no notifications on
+Android, and Settings says so. To try notifications locally, pass the four `--dart-define`s.
+
+The Firebase project belongs to OpenWorks IT. Its Android app's package name is
+`za.co.openworks.steady` (the `--org za.co.openworks --project-name steady` that
+`setup_platforms.sh` and CI give `flutter create`). The servers send with a service-account key
+of the same project (docs/DEPLOY.md, step 3a).
 
 ## Structure
 
 ```
 lib/
-  main.dart               start-up, push set-up before runApp (UnifiedPush needs this)
+  main.dart               start-up, push set-up before runApp
   app_state.dart          who is signed in, server config
   models.dart             data classes, mirrors the server's JSON
   services/api.dart       every server call, error messages
-  services/push.dart      APNs (iOS) and UnifiedPush (Android)
-  ui/auth/                sign in, join with invite code + consent
+  services/push.dart      APNs (iOS) and Firebase Cloud Messaging (Android)
+  services/tab_session.dart  staff in a browser: renews the tab's session in the background
+  ui/auth/                sign in, join with invite code + consent, the screen lock
   ui/patient/             home, check-in, questionnaire, breathing, steps, history
   ui/clinician/           patients, patient detail, send, results, alerts, library, builder, import
 packages/steady_apns/     iOS push bridge (Swift)
+packages/steady_fcm/      Android push bridge (Java, Firebase Cloud Messaging)
 ```
 
 ## Signing key (test builds)

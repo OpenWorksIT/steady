@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// RADR, the Research Amon Dîn Rating: a research view of how far a patient's watch data and
-// check-ins are from their own normal, by domain, and whether the two move together. It is not
-// a risk score, prediction or diagnosis. The server works it out (server/pb_hooks/lib/radr.js);
+// RADR, the Research Amon Dîn Rating: how far a patient's watch data and check-ins are from
+// their own normal, by domain, and whether the two move together, to improve care. It is not a
+// risk score, prediction or diagnosis, and it orders the psychologist's list without raising
+// alerts. Every number opens its reasoning and the data behind it, and each flag can be marked
+// as reviewed (radr_explain.dart). The server works it out (server/pb_hooks/lib/radr.js);
 // docs/RADR.md explains the method and the research behind it.
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
-import '../../models.dart' show Severity, asList, asMap;
+import '../../models.dart' show RadrFlag, Severity, asList, asMap;
 import '../theme.dart';
 import '../widgets.dart';
+import 'radr_explain.dart';
 
 const _domains = ['sleep', 'circadian', 'activity', 'cardiac'];
 const _domainNames = {'sleep': 'Sleep', 'circadian': 'Body clock', 'activity': 'Activity', 'cardiac': 'Heart'};
@@ -49,8 +52,10 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
         final days = asList(r['days']).map(asMap).toList();
         final rated = days.where((d) => d['watch'] != null).toList();
         final latest = asMap(r['latest']);
+        final flags = asList(r['flags']).map((f) => RadrFlag.fromJson(asMap(f))).toList();
+        void explain({String? day, String? focus}) => showRadrExplain(context, widget.patientId, day: day, focus: focus, onChanged: reload);
         return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 28), children: [
-          _ResearchBanner(demo: r['demo'] == true),
+          _AboutBanner(demo: r['demo'] == true),
           const SizedBox(height: 10),
           SegmentedButton<int>(
             segments: const [
@@ -83,7 +88,21 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
               _Exclusions(asList(r['exclusions']).map(asMap).toList()),
               const SizedBox(height: 12),
             ],
-            _Latest(latest),
+            _Latest(latest, onTap: (focus) => explain(day: '${latest['day'] ?? ''}', focus: focus)),
+            if (flags.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    SectionHeader('Away from usual', trailing: radrDay('${latest['day'] ?? ''}')),
+                    for (final f in flags) RadrFlagTile(patientId: widget.patientId, flag: f, onChanged: reload),
+                    Text('Tap one to see why, and to mark it as reviewed. Reviewed ones stop moving them up your list until something new '
+                        'shows.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+                  ]),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Card(
               child: Padding(
@@ -95,7 +114,7 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
                     child: _RadrChart(
                       days: days,
                       questionnaires: asList(r['questionnaires']).map(asMap).toList(),
-                      onDay: (i) => showRadrDay(context, days[i], r),
+                      onDay: (i) => explain(day: '${days[i]['day']}'),
                     ),
                   ),
                   Text('Tap a day to see what\'s behind it.', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
@@ -103,8 +122,8 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
                   Wrap(spacing: 14, runSpacing: 4, children: [
                     _Key(color: context.cs.primary, label: 'Watch index'),
                     _Key(color: context.sc.warn, label: 'Check-ins', dashed: true),
-                    _Key(color: context.sc.alert, label: 'PHQ-9 (right axis)', dot: true),
-                    _Key(color: context.sc.alertSoft, label: '2+ domains at once', block: true),
+                    _Key(color: context.sc.ink2, label: 'PHQ-9 (right axis)', dot: true),
+                    _Key(color: context.sc.accentSoft, label: '2+ domains at once', block: true),
                   ]),
                 ]),
               ),
@@ -118,7 +137,7 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
                   Text('Each square is a day. Darker means further from this person\'s own normal.',
                       style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
                   const SizedBox(height: 8),
-                  _Heatmap(days: days, onDay: (i) => showRadrDay(context, days[i], r)),
+                  _Heatmap(days: days, onDay: (i) => explain(day: '${days[i]['day']}')),
                 ]),
               ),
             ),
@@ -135,9 +154,9 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
   }
 }
 
-class _ResearchBanner extends StatelessWidget {
+class _AboutBanner extends StatelessWidget {
   final bool demo;
-  const _ResearchBanner({required this.demo});
+  const _AboutBanner({required this.demo});
   @override
   Widget build(BuildContext context) => Card(
         color: context.sc.accentSoft,
@@ -145,15 +164,15 @@ class _ResearchBanner extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Icon(Icons.science_outlined, color: context.cs.primary),
+              Icon(Icons.insights_outlined, color: context.cs.primary),
               const SizedBox(width: 8),
               Expanded(child: Text('RADR · Research Amon Dîn Rating', style: context.tt.titleMedium)),
             ]),
             const SizedBox(height: 6),
             Text(
-              'For research only. Not a risk score, prediction or diagnosis, and not checked around the clock. '
-              'It shows how far this person\'s watch data and check-ins are from their own normal, to study how '
-              'Amon Dîn should work.',
+              'It shows how far this person\'s watch data and check-ins are from their own normal, to improve care. '
+              'Not a risk score, prediction or diagnosis, and not watched around the clock. It orders your list; it doesn\'t '
+              'raise alerts. Tap any number to see why.',
               style: context.tt.bodySmall,
             ),
             if (demo) ...[
@@ -167,7 +186,10 @@ class _ResearchBanner extends StatelessWidget {
 
 class _Latest extends StatelessWidget {
   final Map<String, dynamic> d;
-  const _Latest(this.d);
+
+  /// Opens the reasoning: null for the whole day, or one area.
+  final void Function(String? focus) onTap;
+  const _Latest(this.d, {required this.onTap});
   @override
   Widget build(BuildContext context) {
     final dom = asMap(d['domains']);
@@ -180,16 +202,27 @@ class _Latest extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SectionHeader('Latest', trailing: '${d['day'] ?? ''}'),
-          Row(children: [
-            _Big(label: 'Watch index', value: f(watch)),
-            _Big(label: 'Domains away from usual', value: '$conv of 4'),
-            _Big(label: 'Check-ins', value: f(self)),
-            _Big(label: 'Combined', value: f(combined)),
-          ]),
+          SectionHeader('Latest', trailing: radrDay('${d['day'] ?? ''}')),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => onTap(null),
+            child: Row(children: [
+              _Big(label: 'Watch index', value: f(watch)),
+              _Big(label: 'Domains away from usual', value: '$conv of 4'),
+              _Big(label: 'Check-ins', value: f(self), onTap: () => onTap('checkins')),
+              _Big(label: 'Combined', value: f(combined)),
+            ]),
+          ),
           const SizedBox(height: 12),
-          for (final k in _domains) _DomainBar(name: _domainNames[k]!, what: _domainWhat[k]!, value: _d(dom[k]),
-              extra: k == 'circadian' && d['shift'] != null && (_d(dom[k]) ?? 0) >= 1 ? 'sleeping ${d['shift']} than usual' : null),
+          for (final k in _domains)
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => onTap(k),
+              child: _DomainBar(name: _domainNames[k]!, what: _domainWhat[k]!, value: _d(dom[k]),
+                  extra: k == 'circadian' && d['shift'] != null && (_d(dom[k]) ?? 0) >= 1 ? 'sleeping ${d['shift']} than usual' : null),
+            ),
+          Text('Tap a number or an area to see how it was worked out, with the data behind it.',
+              style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
         ]),
       ),
     );
@@ -198,14 +231,16 @@ class _Latest extends StatelessWidget {
 
 class _Big extends StatelessWidget {
   final String label, value;
-  const _Big({required this.label, required this.value});
+  final VoidCallback? onTap;
+  const _Big({required this.label, required this.value, this.onTap});
   @override
-  Widget build(BuildContext context) => Expanded(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(value, style: context.tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
-          Text(label, style: context.tt.bodySmall?.copyWith(color: context.sc.ink2), maxLines: 2),
-        ]),
-      );
+  Widget build(BuildContext context) {
+    final body = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(value, style: context.tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+      Text(label, style: context.tt.bodySmall?.copyWith(color: context.sc.ink2), maxLines: 2),
+    ]);
+    return Expanded(child: onTap == null ? body : InkWell(borderRadius: BorderRadius.circular(8), onTap: onTap, child: body));
+  }
 }
 
 class _DomainBar extends StatelessWidget {
@@ -216,14 +251,15 @@ class _DomainBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = (value ?? 0).clamp(0, 4) / 4;
+    // away from usual: stronger, never in alarm colours (an ordering of data, not an alert)
     final strong = (value ?? 0) >= 1.5;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(child: Text(name, style: context.tt.titleSmall)),
-          Text(value == null ? 'no data' : value!.toStringAsFixed(1),
-              style: TextStyle(color: strong ? context.sc.alert : context.sc.ink2, fontWeight: strong ? FontWeight.w700 : null)),
+          Text(value == null ? 'no data' : '${value!.toStringAsFixed(1)}${strong ? ' · away from usual' : ''}',
+              style: TextStyle(color: strong ? context.cs.primary : context.sc.ink2, fontWeight: strong ? FontWeight.w700 : null)),
         ]),
         const SizedBox(height: 4),
         ClipRRect(
@@ -232,7 +268,7 @@ class _DomainBar extends StatelessWidget {
             value: v.toDouble(),
             minHeight: 8,
             backgroundColor: context.sc.line,
-            color: strong ? context.sc.alert : context.cs.primary,
+            color: strong ? context.cs.primary : context.cs.primary.withValues(alpha: 0.5),
           ),
         ),
         const SizedBox(height: 2),
@@ -291,8 +327,8 @@ class _RadrChart extends StatelessWidget {
           phq: questionnaires.where((q) => q['key'] == 'phq9').toList(),
           line: context.cs.primary,
           self: context.sc.warn,
-          dot: context.sc.alert,
-          band: context.sc.alertSoft,
+          dot: context.sc.ink2,
+          band: context.sc.accentSoft,
           grid: context.sc.line,
           text: context.sc.ink3,
         ),
@@ -396,8 +432,8 @@ class _Heatmap extends StatelessWidget {
   const _Heatmap({required this.days, required this.onDay});
   @override
   Widget build(BuildContext context) {
+    // one calm colour, darker further from usual
     final base = context.cs.primary;
-    final hot = context.sc.alert;
     return LayoutBuilder(builder: (context, c) {
       const labelW = 74.0;
       final cell = math.max(2.0, (c.maxWidth - labelW) / math.max(1, days.length));
@@ -413,7 +449,7 @@ class _Heatmap extends StatelessWidget {
                   final color = v == null
                       ? context.sc.line.withValues(alpha: 0.4)
                       : v >= 1.5
-                          ? Color.lerp(hot.withValues(alpha: 0.45), hot, ((v - 1.5) / 2.5).clamp(0, 1))!
+                          ? base.withValues(alpha: 0.55 + 0.45 * ((v - 1.5) / 2.5).clamp(0, 1))
                           : base.withValues(alpha: 0.08 + 0.3 * (v / 1.5));
                   return GestureDetector(
                     onTap: () => onDay(i),
@@ -444,7 +480,7 @@ class _Concordance extends StatelessWidget {
           Text(
             'Rank correlation between the watch index and the check-in score, with the watch a few days ahead. '
             'Near 1: they rise together. Near 0: no relation. A stronger value 1 to 3 days ahead would mean the watch '
-            'moved before the person reported feeling worse, which is the question Amon Dîn needs answered.',
+            'moved before the person reported feeling worse.',
             style: context.tt.bodySmall?.copyWith(color: context.sc.ink2),
           ),
           const SizedBox(height: 8),
@@ -503,8 +539,10 @@ class _Method extends StatelessWidget {
             'single measures predict poorly and that change across several domains together, and alongside what '
             'the person reports, is what carries signal.\n'
             '4. Check-ins (lower mood and energy, more anxiety, worse sleep) are scored the same way and shown '
-            'beside the watch, not mixed into it, so the practice can see whether watch data adds anything.\n\n'
-            'Sources and limitations: docs/RADR.md in the Steady repository.',
+            'beside the watch, not mixed into it, so you can see whether watch data adds anything.\n'
+            '5. In your list, RADR only orders patients, after answers waiting for review. A flag marked as reviewed stops moving '
+            'them up until something new shows.\n\n'
+            'Tap any number for how it was worked out. Sources and limitations: docs/RADR.md in the Steady repository.',
             style: context.tt.bodySmall?.copyWith(color: context.sc.ink2, height: 1.4),
           ),
         ],
@@ -531,173 +569,3 @@ class _Exclusions extends StatelessWidget {
         ),
       );
 }
-
-/* ---------------- one day, explained ---------------- */
-
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-String radrDayLabel(String day) {
-  final d = DateTime.tryParse(day);
-  if (d == null) return day;
-  return '${_weekdays[d.weekday - 1]} ${d.day} ${_months[d.month - 1]}';
-}
-
-String _hm(double min) {
-  final m = min.round();
-  return '${m ~/ 60} h ${(m % 60).toString().padLeft(2, '0')}';
-}
-
-String _clock(double min) {
-  final m = ((min.round() % 1440) + 1440) % 1440;
-  return '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
-}
-
-/// One measure on one day: its 3-day average, the person's usual and how far from it.
-class _Measure {
-  final String name;
-  final String Function(double) fmt;
-  final double? value, usual, z;
-  _Measure(this.name, this.fmt, Map<String, dynamic> f)
-      : value = _d(f['value']),
-        usual = _d(f['usual']),
-        z = _d(f['z']);
-  bool get has => value != null;
-  String get valueText => value == null ? 'no data' : fmt(value!);
-  String get usualText => usual == null ? 'not enough history' : fmt(usual!);
-  String get zText => z == null ? '-' : '${z! >= 0 ? '+' : ''}${z!.toStringAsFixed(1)}';
-}
-
-/// Plain words for what happened in each domain on a day, then the numbers.
-List<String> radrDayWords(Map<String, dynamic> day, Map<String, dynamic> r) {
-  final f = asMap(day['features']);
-  final dom = asMap(day['domains']);
-  final excluded = {for (final x in asList(r['exclusions']).map(asMap)) '${x['domain']}': x};
-  _Measure m(String k, String name, String Function(double) fmt) => _Measure(name, fmt, asMap(f[k]));
-  String dir(double? z, String up, String down) => z == null ? '' : (z >= 0 ? up : down);
-  final out = <String>[];
-  final conv = (day['convergent'] as num?)?.toInt() ?? 0;
-  final watch = _d(day['watch']);
-  if (watch == null) {
-    out.add('Not rated: RADR needs about three weeks of earlier nights to compare with, and at least two areas with data.');
-  } else {
-    final strong = _domains.where((k) => (_d(dom[k]) ?? 0) >= 1.5).map((k) => _domainNames[k]!.toLowerCase()).toList();
-    out.add('$conv of 4 areas were away from this person\'s usual (1.5 or more)${strong.isEmpty ? '' : ': ${strong.join(', ')}'}. '
-        'The watch index, the average of the areas, was ${watch.toStringAsFixed(1)} out of 4.');
-  }
-  for (final k in _domains) {
-    final score = _d(dom[k]);
-    final name = _domainNames[k]!;
-    if (excluded[k] != null) {
-      out.add('$name: not counted for this patient (${excluded[k]!['reason'] ?? 'switched off'}).');
-      continue;
-    }
-    switch (k) {
-      case 'sleep':
-        final a = m('sleep_min', 'Sleep', _hm), v = m('sleep_var', 'Variability', (x) => '${x.round()} min');
-        if (!a.has && !v.has) {
-          out.add('Sleep: no data.');
-          break;
-        }
-        final parts = <String>[];
-        if (a.has) parts.add('averaged ${a.valueText} over the last 3 nights (usually ${a.usualText})');
-        if (v.has) parts.add('falling asleep and waking varied by ${v.valueText} night to night (usually ${v.usualText})');
-        out.add('Sleep ${parts.join(', and ')}. Score ${score?.toStringAsFixed(1) ?? '-'}: the larger of how far '
-            'sleep length was from usual, either way, and how much more irregular it was.');
-      case 'circadian':
-        final mp = m('midpoint', 'Middle of sleep', _clock);
-        if (!mp.has) {
-          out.add('Body clock: no data.');
-          break;
-        }
-        final shift = mp.usual == null ? '' : ' (${_hm((mp.value! - mp.usual!).abs())} ${dir(mp.value! - mp.usual!, 'later', 'earlier')})';
-        out.add('Body clock: the middle of the night\'s sleep was at ${mp.valueText}, usually ${mp.usualText}$shift. '
-            'Score ${score?.toStringAsFixed(1) ?? '-'}: how far it moved, either way.');
-      case 'activity':
-        final st = m('steps', 'Steps', (x) => '${x.round()} steps');
-        if (!st.has) {
-          out.add('Activity: no data.');
-          break;
-        }
-        out.add('Activity: ${st.valueText} a day over the last 3 days, usually ${st.usualText}. '
-            'Score ${score?.toStringAsFixed(1) ?? '-'}: only fewer steps than usual count.');
-      case 'cardiac':
-        final h = m('rhr', 'Resting heart rate', (x) => '${x.toStringAsFixed(0)} bpm');
-        if (!h.has) {
-          out.add('Heart: no data.');
-          break;
-        }
-        out.add('Heart: resting heart rate ${h.valueText} over the last 3 days, usually ${h.usualText}. '
-            'Score ${score?.toStringAsFixed(1) ?? '-'}: only a higher resting heart rate than usual counts.');
-    }
-  }
-  final self = _d(day['self']);
-  final moods = [
-    m('mood', 'Mood', (x) => x.toStringAsFixed(1)),
-    m('anxiety', 'Anxiety', (x) => x.toStringAsFixed(1)),
-    m('energy', 'Energy', (x) => x.toStringAsFixed(1)),
-    m('sleepq', 'Sleep (their rating)', (x) => x.toStringAsFixed(1)),
-  ].where((x) => x.has).toList();
-  if (moods.isEmpty) {
-    out.add('Check-ins: none in the last 3 days.');
-  } else {
-    out.add('Check-ins (1 to 5, last 3 days): ${moods.map((x) => '${x.name.toLowerCase()} ${x.valueText} (usually ${x.usualText})').join(', ')}. '
-        'Check-in score ${self?.toStringAsFixed(1) ?? '-'}: lower mood, energy and sleep, and more anxiety than usual.');
-  }
-  return out;
-}
-
-Future<void> showRadrDay(BuildContext context, Map<String, dynamic> day, Map<String, dynamic> r) => showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (c) {
-        final f = asMap(day['features']);
-        final rows = [
-          _Measure('Sleep length', _hm, asMap(f['sleep_min'])),
-          _Measure('Sleep irregularity', (x) => '${x.round()} min', asMap(f['sleep_var'])),
-          _Measure('Middle of sleep', _clock, asMap(f['midpoint'])),
-          _Measure('Steps', (x) => '${x.round()}', asMap(f['steps'])),
-          _Measure('Resting heart rate', (x) => '${x.toStringAsFixed(0)} bpm', asMap(f['rhr'])),
-          _Measure('Mood', (x) => x.toStringAsFixed(1), asMap(f['mood'])),
-          _Measure('Anxiety', (x) => x.toStringAsFixed(1), asMap(f['anxiety'])),
-          _Measure('Energy', (x) => x.toStringAsFixed(1), asMap(f['energy'])),
-          _Measure('Sleep (rating)', (x) => x.toStringAsFixed(1), asMap(f['sleepq'])),
-        ].where((x) => x.has).toList();
-        return SafeArea(
-          child: DraggableScrollableSheet(
-            expand: false,
-            initialChildSize: 0.75,
-            maxChildSize: 0.95,
-            builder: (c, scroll) => ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(20, 0, 20, 24), children: [
-              Text(radrDayLabel('${day['day']}'), style: c.tt.titleLarge),
-              Text('RADR ${r['version'] ?? ''} · research view, not a risk score', style: c.tt.bodySmall?.copyWith(color: c.sc.ink3)),
-              const SizedBox(height: 12),
-              for (final line in radrDayWords(day, r))
-                Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(line)),
-              const SizedBox(height: 8),
-              const SectionHeader('The numbers'),
-              Text('Each value is a 3-day average. "Usual" is the middle of this person\'s 4 weeks ending a week earlier. '
-                  'Distance is how many usual-sized steps away (a robust z-score); each area counts it in one direction only, up to 4.',
-                  style: c.tt.bodySmall?.copyWith(color: c.sc.ink3)),
-              const SizedBox(height: 8),
-              Table(
-                columnWidths: const {0: FlexColumnWidth(1.6), 1: FlexColumnWidth(1.2), 2: FlexColumnWidth(1.2), 3: FlexColumnWidth(0.8)},
-                children: [
-                  TableRow(children: [
-                    for (final h in ['Measure', 'This day', 'Usual', 'Distance']) Text(h, style: c.tt.labelMedium),
-                  ]),
-                  for (final x in rows)
-                    TableRow(children: [
-                      Padding(padding: const EdgeInsets.only(top: 6), child: Text(x.name)),
-                      Padding(padding: const EdgeInsets.only(top: 6), child: Text(x.valueText)),
-                      Padding(padding: const EdgeInsets.only(top: 6), child: Text(x.usualText)),
-                      Padding(padding: const EdgeInsets.only(top: 6), child: Text(x.zText)),
-                    ]),
-                ],
-              ),
-            ]),
-          ),
-        );
-      },
-    );

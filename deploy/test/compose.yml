@@ -4,7 +4,7 @@
 # Use ./start.sh rather than running this directly; it creates keys and accounts.
 #
 #   phone ──https──> Cloudflare ──tunnel──> caddy:80 ──> pocketbase:8090 (+ web app)
-#                                                         pusher ──> ntfy / Apple
+#                                                         pusher ──> Google / Apple
 #
 # PocketBase's own dashboard is closed. Accounts: ../accounts.sh --test (see docs/DEPLOY.md).
 
@@ -17,10 +17,8 @@ services:
     pids_limit: 512   # as on practice servers
     environment:
       STEADY_PRACTICE_NAME: ${STEADY_PRACTICE_NAME:-VR Clinical Psychology}
-      STEADY_CONSENT_VERSION: test-1
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
-      STEADY_VAPID_PUBLIC_KEY: ${STEADY_VAPID_PUBLIC_KEY}
       # the Cloudflare tunnel passes the visitor's address in this header
       STEADY_TRUSTED_PROXY_HEADER: Cf-Connecting-Ip
       STEADY_REQUIRE_2FA: ${STEADY_REQUIRE_2FA:-staff}
@@ -30,6 +28,10 @@ services:
       STEADY_SMTP_PORT: ${STEADY_SMTP_PORT:-1025}
       STEADY_MAIL_FROM: noreply@steady.test
       STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
+      # the community and its sign-in bridge (docs/COMMUNITY.md): security.py checks the note
+      STEADY_COMMUNITY_URL: ${STEADY_COMMUNITY_URL:-https://community.steady.test}
+      STEADY_COMMUNITY_SIGNIN: ${STEADY_COMMUNITY_SIGNIN:-https://signin.steady.test}
+      STEADY_COMMUNITY_KEY: ${STEADY_COMMUNITY_KEY:-}
       # this PC's own scripts (start.sh, smoke.py) use the superuser API through the local port;
       # the tunnel and Caddy still block it, and the dashboard stays closed
       STEADY_SUPERUSER_API: open
@@ -62,8 +64,8 @@ services:
     restart: unless-stopped
     environment:
       PUSHER_SECRET: ${PUSHER_SECRET}
-      VAPID_PRIVATE_KEY_FILE: /secrets/vapid.pem
-      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:test@example.com}
+      # Android: put the Firebase service-account key here as secrets/fcm.json to try it
+      FCM_CREDENTIALS_FILE: /secrets/fcm.json
       APNS_KEY_FILE: ${APNS_KEY_FILE:-}
       APNS_KEY_ID: ${APNS_KEY_ID:-}
       APNS_TEAM_ID: ${APNS_TEAM_ID:-}

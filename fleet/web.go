@@ -1,5 +1,6 @@
 // The fleet view's pages: sign-in (name, password, authenticator code), the overview of every
-// practice server, one server's detail with Check / Update / Restart, and the audit log.
+// practice server, one server's detail with Check / Update / Restart, the checks, the audit log,
+// and OpenWorks' to-do list (todo_web.go).
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
@@ -52,27 +53,46 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /app.css", a.css)
 	mux.HandleFunc("GET /login", a.loginPage)
+	mux.HandleFunc("GET /alive", a.alive)
 	mux.HandleFunc("POST /login", a.login)
 	mux.HandleFunc("POST /logout", a.signedIn(a.logout))
 	mux.HandleFunc("GET /{$}", a.signedIn(a.overview))
 	mux.HandleFunc("GET /s/{n}", a.signedIn(a.detail))
 	mux.HandleFunc("POST /s/{n}/action", a.signedIn(a.action))
 	mux.HandleFunc("GET /audit", a.signedIn(a.audit))
+	mux.HandleFunc("GET /checks", a.signedIn(a.checks))
+	mux.HandleFunc("GET /todo", a.signedIn(a.todo))
+	mux.HandleFunc("POST /todo", a.signedIn(a.todoAdd))
+	mux.HandleFunc("GET /todo/{id}", a.signedIn(a.todoItem))
+	mux.HandleFunc("POST /todo/{id}", a.signedIn(a.todoChange))
+	mux.HandleFunc("GET /upkeep", a.signedIn(a.upkeep))
+	mux.HandleFunc("POST /upkeep", a.signedIn(a.upkeepChange))
 	return headers(mux)
 }
 
-// headers: nothing from elsewhere, no framing, no caching, no referrer; forms are small.
+// headers: nothing from elsewhere, no framing, no caching, no referrer; forms are small (the
+// to-do list's a little less so: a few paragraphs).
 func headers(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hd := w.Header()
-		hd.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		// frames: only the /alive frame, from this site, inside this site's pages
+		if r.URL.Path == "/alive" {
+			hd.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'; base-uri 'none'")
+			hd.Set("X-Frame-Options", "SAMEORIGIN")
+		} else {
+			hd.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self'; frame-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+			hd.Set("X-Frame-Options", "DENY")
+		}
 		hd.Set("X-Content-Type-Options", "nosniff")
-		hd.Set("X-Frame-Options", "DENY")
 		hd.Set("Referrer-Policy", "no-referrer")
 		hd.Set("Cache-Control", "no-store")
 		hd.Set("Strict-Transport-Security", "max-age=31536000")
 		if r.Method == "POST" {
-			r.Body = http.MaxBytesReader(w, r.Body, 4096)
+			limit := int64(4096)
+			if r.URL.Path == "/todo" || strings.HasPrefix(r.URL.Path, "/todo/") {
+				limit = 32 << 10
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		h.ServeHTTP(w, r)
 	})
@@ -142,8 +162,7 @@ func (a *App) signedIn(h handler) http.HandlerFunc {
 		c, err := r.Cookie(cookieName)
 		var s *Session
 		if err == nil {
-			// the pages' own refresh (?auto=1) doesn't count as activity
-			s = a.sessions.Get(c.Value, a.now(), r.URL.Query().Get("auto") != "1")
+			s = a.sessions.Get(c.Value, a.now())
 		}
 		if s != nil {
 			// someone removed from users.json is signed out at once
@@ -171,6 +190,23 @@ func (a *App) signedIn(h handler) http.HandlerFunc {
 		}
 		h(w, r, s)
 	}
+}
+
+// alive keeps an open tab's session going: every signed-in page holds a hidden frame of this,
+// which reloads itself every minute. No scripts. Signed out, it stops reloading.
+func (a *App) alive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if c, err := r.Cookie(cookieName); err == nil {
+		if s := a.sessions.Get(c.Value, a.now()); s != nil {
+			if u, err := a.store.User(s.User); err == nil && u != nil {
+				w.Header().Set("Refresh", strconv.Itoa(aliveEvery))
+				w.Write([]byte("<!doctype html><title>alive</title>"))
+				return
+			}
+			a.sessions.End(c.Value)
+		}
+	}
+	w.Write([]byte("<!doctype html><title>signed out</title>"))
 }
 
 func (a *App) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -244,7 +280,8 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	}
 	a.limiter.Give(ipKey, now)
 	id, _ := a.sessions.New(u.Name, now)
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: id, Path: "/", HttpOnly: true, Secure: !a.insecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: int(sessionMax.Seconds())})
+	// for this browser session only: closing the browser ends it (no MaxAge)
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: id, Path: "/", HttpOnly: true, Secure: !a.insecureCookie, SameSite: http.SameSiteStrictMode})
 	a.store.Audit(u.Name, ip, "signed in", "")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -292,6 +329,14 @@ func (a *App) detail(w http.ResponseWriter, r *http.Request, s *Session) {
 	msg := a.sessions.TakeFlash(s)
 	w.Header().Set("Refresh", "60; url=/s/"+strconv.Itoa(n)+"?auto=1")
 	a.render(w, "detail.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Row": makeRow(n, st, now), "Facts": facts(st, now), "Msg": msg})
+}
+
+// checks: every server's security and privacy checks, by severity (makeChecks).
+func (a *App) checks(w http.ResponseWriter, r *http.Request, s *Session) {
+	sts, _ := a.poller.Snapshot()
+	now := a.now()
+	w.Header().Set("Refresh", "60; url=/checks?auto=1")
+	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, now)})
 }
 
 var actions = map[string]string{"check": "check for updates", "update": "install the latest signed release", "restart": "restart Steady"}

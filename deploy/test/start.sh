@@ -33,18 +33,14 @@ mkdir -p web && chmod 755 web   # the server container reads it as another user
 umask 077
 mkdir -p secrets
 chmod 755 secrets   # readable by the relay container
-if [ ! -f secrets/vapid.pem ]; then
-  openssl ecparam -name prime256v1 -genkey -noout -out secrets/vapid.pem
-fi
-chmod 644 secrets/vapid.pem   # the relay runs as a different user inside its container
+# the relay runs as a different user inside its container: on this test PC it may read its keys
+# (Apple's .p8, Firebase's fcm.json) as anyone can; a real server keeps them private (gen-keys.sh)
+for f in secrets/*.p8 secrets/fcm.json; do if [ -f "$f" ]; then chmod 644 "$f"; fi; done
 if [ ! -f .env ]; then
-  VAPID_PUB=$(openssl ec -in secrets/vapid.pem -pubout -outform DER 2>/dev/null | tail -c 65 | base64 | tr '+/' '-_' | tr -d '=\n')
   cat > .env <<EOF
 # Steady test stack settings (created by start.sh). Keep this file private.
 STEADY_PRACTICE_NAME="VR Clinical Psychology"
 PUSHER_SECRET=$(rand 36)
-STEADY_VAPID_PUBLIC_KEY=$VAPID_PUB
-VAPID_SUBJECT=mailto:test@example.com
 
 # Named tunnel (recommended): paste the token from Cloudflare and set the address you gave it.
 # Leave empty to use a quick tunnel with a random trycloudflare.com address.
@@ -60,9 +56,14 @@ CLINICIAN_NAME="Test Clinician"
 
 # The Sorted feed (docs/SORTED.md): give Sorted's test stack this key to see live data
 STEADY_INTEGRATION_KEY=$(rand 32)
+
+# The community forum's sign-in bridge (docs/COMMUNITY.md): the key this test server shares with it
+STEADY_COMMUNITY_KEY=$(rand 36)
 EOF
   echo "Created deploy/test/.env"
 fi
+# added to test stacks set up before the Community tab
+grep -q '^STEADY_COMMUNITY_KEY=' .env || printf '\n# The community sign-in bridge (docs/COMMUNITY.md)\nSTEADY_COMMUNITY_KEY=%s\n' "$(rand 36)" >> .env
 umask 022
 set -a; . ./.env; set +a
 

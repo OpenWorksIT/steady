@@ -7,11 +7,14 @@
 #                                           to the signing environment (once vps1 follows test)
 #
 # What it sets:
+#   (repository)      merged branches are kept: GitHub no longer deletes working or test after
+#                     a merge
 #   Main, Test        only through a pull request with CI green; never deleted or force-pushed
 #   Working           never deleted or force-pushed
-#   CI-built branches web-dist, web-dist-*, previews: written only by GitHub Actions, so not even
-#                     an owner's token can swap a web build (deploy/release.sh relies on this)
 #   signing           the environment holding the store and test-build keys: main and test only
+# No ruleset for the branches CI publishes (web-dist, web-dist-*, previews): GitHub doesn't let
+# a repository ruleset name GitHub Actions as the one allowed past it. deploy/release.sh checks
+# instead that CI itself pushed the web build after a successful run for that very commit.
 # The release tags' ruleset (v*, web-v*: admins only, never moved or deleted) is left as it is.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
@@ -22,8 +25,7 @@ RETIRE_V1=no
 command -v gh >/dev/null || { echo "Install the GitHub CLI first (gh), then: gh auth login" >&2; exit 1; }
 [ "$(gh api "repos/$REPO" --jq .permissions.admin)" = true ] || { echo "Your GitHub account isn't an admin of $REPO." >&2; exit 1; }
 
-# GitHub Actions, as an actor in rulesets and status checks
-ACTIONS=15368
+# GitHub Actions reports the status checks (integration 15368)
 CHECKS='[{"context":"server","integration_id":15368},{"context":"server-live","integration_id":15368},{"context":"e2e","integration_id":15368},{"context":"pusher","integration_id":15368},{"context":"app","integration_id":15368},{"context":"android","integration_id":15368}]'
 PR_RULE='{"type":"pull_request","parameters":{"required_approving_review_count":0,"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_review_thread_resolution":false,"allowed_merge_methods":["merge","squash","rebase"]}}'
 CHECKS_RULE="{\"type\":\"required_status_checks\",\"parameters\":{\"strict_required_status_checks_policy\":false,\"do_not_enforce_on_create\":false,\"required_status_checks\":$CHECKS}}"
@@ -44,13 +46,13 @@ branch_ruleset() {
   upsert "$1" "{\"name\":\"$1\",\"target\":\"branch\",\"enforcement\":\"active\",\"conditions\":{\"ref_name\":{\"include\":$2,\"exclude\":[]}},\"rules\":$3,\"bypass_actors\":${4:-[]}}"
 }
 
+# merging working into test, or test into main, must never delete the branch it came from
+gh api -X PATCH "repos/$REPO" -F delete_branch_on_merge=false --jq '"Branches stay after a merge: \(.delete_branch_on_merge | not)"'
+
 echo "Rulesets on $REPO:"
 branch_ruleset "Main" '["~DEFAULT_BRANCH"]' "[{\"type\":\"deletion\"},{\"type\":\"non_fast_forward\"},$PR_RULE,$CHECKS_RULE]"
 branch_ruleset "Test" '["refs/heads/test"]' "[{\"type\":\"deletion\"},{\"type\":\"non_fast_forward\"},$PR_RULE,$CHECKS_RULE]"
 branch_ruleset "Working" '["refs/heads/working"]' '[{"type":"deletion"},{"type":"non_fast_forward"}]'
-branch_ruleset "CI-built branches" '["refs/heads/web-dist","refs/heads/web-dist-*","refs/heads/previews"]' \
-  '[{"type":"creation"},{"type":"update"},{"type":"deletion"},{"type":"non_fast_forward"}]' \
-  "[{\"actor_id\":$ACTIONS,\"actor_type\":\"Integration\",\"bypass_mode\":\"always\"}]"
 
 echo "The signing environment:"
 env_url="repos/$REPO/environments/signing"
@@ -84,8 +86,6 @@ fi
 
 cat <<EOF
 
-Done. Check: the next "Test builds" run must still update web-dist (Actions tab, green, and
-web-dist's newest commit reads "Web app built from <that commit>"). If it fails at "publish the
-web app", GitHub Actions isn't allowed past the "CI-built branches" ruleset: Settings > Rules >
-Rulesets > CI-built branches > Bypass list, add GitHub Actions; until then release.sh refuses.
+Done. A "Test builds" run that failed with "not allowed to deploy to signing" can be re-run now
+(Actions > Test builds > the run > Re-run jobs).
 EOF

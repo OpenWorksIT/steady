@@ -41,6 +41,8 @@ function appInfo(publicDir) {
   try { size = $os.stat(publicDir + "/download/steady.apk").size(); } catch (e) { return null; }
   return {
     build: String(v.build).slice(0, 40),
+    // Steady's version, as people read it ("1.1.0", "1.1.0 test 23"); builds before 1.1 had none
+    version: String(v.version || "").replace(/[^0-9A-Za-z. -]/g, "").slice(0, 40),
     date: String(v.date || "").slice(0, 40),
     apk: "/download/steady.apk",
     sizeMB: Math.round(size / 1048576 * 10) / 10,
@@ -81,7 +83,7 @@ function joinPage(opts) {
   var app = opts.app;
   var steps = opts.ios ? iosSteps(opts.ios, code) : app
     ? '<a class="btn" href="' + app.apk + '">Download Steady for Android</a>' +
-      '<p class="small">' + app.sizeMB + ' MB &middot; version ' + esc(app.build) + '</p>' +
+      '<p class="small">' + app.sizeMB + ' MB &middot; version ' + esc(app.version || app.build) + '</p>' +
       '<ol>' +
       '<li>Tap the button above and open the file when it has downloaded.</li>' +
       '<li>If your phone asks, allow your browser to <b>install unknown apps</b>, then tap <b>Install</b>.</li>' +
@@ -124,6 +126,25 @@ function ctlStatus(ctlDir) {
   return readJsonFile(ctlOut(ctlDir) + "/status.json");
 }
 
+/**
+ * The latest security and privacy check (deploy/audit-server.sh, run by the steady-audit service
+ * every 6 hours into out/audit.json), for the fleet view, or null. Only its own fields, cut to
+ * size: the file is written by root, but nothing in it should be trusted beyond its shape.
+ */
+function ctlAudit(ctlDir) {
+  var a = readJsonFile(ctlOut(ctlDir) + "/audit.json");
+  if (!a || typeof a !== "object" || !Array.isArray(a.items)) return null;
+  var str = function (v, n) { return typeof v === "string" ? v.slice(0, n) : ""; };
+  var items = [];
+  for (var i = 0; i < a.items.length && items.length < 300; i++) {
+    var it = a.items[i] || {};
+    if (["ok", "warn", "fail"].indexOf(it.level) < 0) continue;
+    items.push({ level: it.level, section: str(it.section, 60), text: str(it.text, 300) });
+  }
+  var count = function (level) { return items.filter(function (x) { return x.level === level; }).length; };
+  return { at: str(a.at, 30), code: str(a.code, 40), release: str(a.release, 40), fails: count("fail"), warns: count("warn"), oks: count("ok"), items: items };
+}
+
 function ctlPending(ctlDir) {
   var t = readText(ctlSub(ctlDir, "in") + "/request");
   return t === null ? null : (t.replace(/[^a-z-]/g, "") || null);
@@ -144,6 +165,7 @@ module.exports = {
   iosUrl: iosUrl,
   joinPage: joinPage,
   ctlStatus: ctlStatus,
+  ctlAudit: ctlAudit,
   ctlPending: ctlPending,
   ctlRequest: ctlRequest
 };

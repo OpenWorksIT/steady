@@ -61,6 +61,12 @@ String? normaliseServerUrl(String input) {
 String inviteLink(String serverUrl, String code) =>
     '${serverUrl.replaceAll(RegExp(r'/+$'), '')}/join?invite=${code.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '')}';
 
+/// Where the community's sign-in may go: an https address, nothing else.
+bool isForumAddress(String url) {
+  final u = Uri.tryParse(url);
+  return u != null && u.scheme == 'https' && u.host.isNotEmpty && u.userInfo.isEmpty;
+}
+
 /// Turns any error into a sentence a person can act on.
 String errorText(Object error) {
   if (error is FormatException) return error.message;
@@ -718,6 +724,15 @@ class Api {
     return '${res['serverBuild'] ?? ''}';
   }
 
+  /// Opening the community: the address of its sign-in bridge, with a short note from this server
+  /// saying who is signed in (psychologists and OpenWorks support; server/pb_hooks/steady_community.pb.js).
+  Future<String> communitySignIn() async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/community/sign-in', method: 'POST');
+    final url = '${res['url'] ?? ''}';
+    if (!isForumAddress(url)) throw const FormatException("The community's sign-in isn't set up right. Please tell OpenWorks IT.");
+    return url;
+  }
+
   /// Asks a patient to reconnect their watch (their psychologist, the master clinician, reception).
   Future<void> remindWatch(String patientId) => pb.send('/api/steady/patients/$patientId/remind-watch', method: 'POST');
 
@@ -827,9 +842,17 @@ class Api {
   Future<void> reviewFlag(String patientId, Flag flag, String note) => pb.send('/api/steady/patients/$patientId/flags/review',
       method: 'POST', body: {'key': flag.key, 'label': flag.label, 'note': note});
 
-  /// RADR, the research view: daily domain scores against the patient's own normal (radr_tab.dart).
+  /// RADR: daily domain scores against the patient's own normal, to improve care (radr_tab.dart).
   Future<Map<String, dynamic>> radr(String patientId, {int days = 56}) =>
       pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/radr', query: {'days': '$days'});
+
+  /// One RADR day explained, with the data behind it (default: the latest rated day).
+  Future<Map<String, dynamic>> radrExplain(String patientId, {String? day}) =>
+      pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/radr/explain', query: {'day': ?day});
+
+  /// Marks a RADR flag on the latest day as reviewed: who and when, with an optional note.
+  Future<void> reviewRadr(String patientId, String key, String note) =>
+      pb.send('/api/steady/patients/$patientId/radr/review', method: 'POST', body: {'key': key, 'note': note});
 
   /* ---------------- daily start ---------------- */
 

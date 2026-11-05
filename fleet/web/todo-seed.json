@@ -1,0 +1,207 @@
+[
+  {
+    "title": "Community sign-in on vps1: the bridge, its keys, the forum's rules",
+    "detail": "DNS for signin.steadyapp.co.za, then the bridge from /opt/steady with the test server as its one practice, the three .env lines on the test server, the Caddy sites, the pinned block in community.yml and a rebuild, and setup.py.\nSteps: docs/COMMUNITY.md, \"The sign-in bridge\".",
+    "area": "Community",
+    "priority": "now",
+    "status": "todo"
+  },
+  {
+    "title": "Try the Community tab as the test psychologist, on the web and on a phone",
+    "detail": "https://test.steadyapp.co.za in a browser (the web tab appears only under steadyapp.co.za), and the newest test APK. Opened straight in a browser, the forum should say it opens inside Steady. The test server's audit report should list each sign-in.",
+    "area": "Community",
+    "priority": "now",
+    "status": "todo"
+  },
+  {
+    "title": "Move the sign-in bridge to /opt/steady-ops, from a signed release",
+    "detail": "It runs from vps1's test checkout until a signed release has it. Move it before the community goes live (docs/COMMUNITY.md, step 2).",
+    "area": "Community",
+    "priority": "soon",
+    "status": "todo"
+  },
+  {
+    "title": "Take the test psychologist out of the community before it goes live",
+    "detail": "Remove the address from the test practice's \"emails\" in /var/lib/steady-signin/config.json, then in the forum: Admin > Users > the test account > Log out (and Suspend).",
+    "area": "Community",
+    "priority": "later",
+    "status": "todo"
+  },
+  {
+    "title": "Decide: should forum sessions end by themselves when a Steady account is stopped?",
+    "detail": "Today Kempie logs people out (Admin > Users > Log out); without Steady they can't come back. The bridge could do it with a forum admin key: one thing less to remember, one more key to guard.",
+    "area": "Community",
+    "priority": "later",
+    "status": "look"
+  },
+  {
+    "title": "Release 1.1.0",
+    "detail": "On Tiaan's say-so: a pull request from test into main, then deploy/release.sh on his own computer, then the practice servers update. It brings the version numbers, the Community tab and this list to the fleet view.",
+    "area": "Releases",
+    "priority": "soon",
+    "status": "look"
+  },
+  {
+    "title": "Firebase for Android notifications, before 1.1 reaches a practice",
+    "detail": "1.1 removes the old Android push service, so until Firebase (Google's push) is set up, Android phones get no notifications at all. Set up the Firebase project and one service-account key per practice server, or hold 1.1 on practice servers until it's done. Decided on 3 November: every push says only \"New notification\".",
+    "area": "Apps and stores",
+    "priority": "now",
+    "status": "todo"
+  },
+  {
+    "title": "Store review of the apps (1.0.2)",
+    "detail": "In review since 1 November. When each store approves, update app/stores.json, so every server shows the store's version.",
+    "area": "Apps and stores",
+    "priority": "soon",
+    "status": "waiting",
+    "waiting": "Google Play and Apple"
+  },
+  {
+    "title": "Store reviewers' notes: point them at test.steadyapp.co.za",
+    "detail": "The review notes and demo accounts should use test.steadyapp.co.za. Both addresses open vps1's test server until steady.openworks.co.za is retired.",
+    "area": "Apps and stores",
+    "priority": "later",
+    "status": "todo"
+  },
+  {
+    "title": "Get the lawyer's answers to \"Steady: for a lawyer to confirm\"",
+    "detail": "Send the doc, then keep it current: answers go in it, and new questions are added as they come up.",
+    "area": "Paperwork",
+    "priority": "soon",
+    "status": "todo",
+    "link": "https://claude.ai/artifact/3uxjZFBuz2rXNBRFcGSE4N"
+  },
+  {
+    "title": "Send Kempie \"Steady: for Kempie\"",
+    "detail": "What he looks at and what he remembers: the operator agreement, the consent statement, the questionnaires, retention, the community's first day, and logging people out of the forum when they leave a practice.",
+    "area": "Paperwork",
+    "priority": "soon",
+    "status": "todo",
+    "link": "https://claude.ai/artifact/HCHKyxo8UARoqmkFGHRawe"
+  },
+  {
+    "title": "Where does domains.co.za keep the mailbox that sends sign-in codes?",
+    "detail": "Where the mail host is matters for the list of sub-operators and the lawyer's questions.",
+    "area": "Mail and domains",
+    "priority": "later",
+    "status": "look"
+  },
+  {
+    "title": "The security review's morning list: confirm each one is done",
+    "detail": "- vps2 installs only signed releases (audit-server.sh says so)\n- the corrected privacy policy is published\n- steadyapp.co.za: the extra A record gone, HTTPS enforced\n- SPF, DKIM, DMARC and CAA records for steadyapp.co.za\n- GitHub: the web-dist ruleset; steadyapp's alerts and its main ruleset\n- Play Console: the Data safety deletion link",
+    "area": "OpenWorks",
+    "priority": "soon",
+    "status": "look",
+    "link": "https://claude.ai/artifact/LEHovKyyrdqxh6BWLJxtck"
+  },
+  {
+    "title": "Split CI into a build job and a publish job",
+    "detail": "Left open in the security review (F2, F12): a build job without write rights, and a release-time rebuild of the web app to compare with what CI published.",
+    "area": "GitHub",
+    "priority": "later",
+    "status": "look"
+  },
+  {
+    "title": "Try PocketBase with a read-only file system on vps1",
+    "detail": "Decided in the security review: read-only after a trial on vps1. Then through test to the practice servers.",
+    "area": "Test server (vps1)",
+    "priority": "later",
+    "status": "todo"
+  },
+  {
+    "title": "Kempie reads the Science section before the community opens",
+    "detail": "15 topics in community/topics/science/, posted to the test forum. His checks: the design-history wording and the ethics sentence (RADR basis), the WHO-5 \"Very low wellbeing (28 or less)\" band, the PCL-5 10-point note and item 16, the low-mood rule, the 14-day window, the breathing cautions, and RADR's open questions. Then he posts his own welcome (community/drafts/kempie-welcome.md).",
+    "area": "Community",
+    "priority": "soon",
+    "status": "waiting",
+    "waiting": "Kempie"
+  },
+  {
+    "title": "Out of hours: notifications go out at any hour",
+    "detail": "There are no quiet hours in the server or the push relay. Each practice needs a policy for an item 9 answer that arrives at night or over a weekend; the Science and flags topics say so. Decide with Kempie whether Steady should offer quiet hours.",
+    "area": "Community",
+    "priority": "soon",
+    "status": "look"
+  },
+  {
+    "title": "A check-in made while the server can't be reached is lost",
+    "detail": "The plan is that the apps keep working when the server is offline and send once it's back. Today only watch data waits on the phone; a check-in or questionnaire answer shows \"Couldn't send that, try again\" and isn't kept.",
+    "area": "OpenWorks",
+    "priority": "soon",
+    "status": "todo"
+  },
+  {
+    "title": "HRV: the RADR tab says it's used, the app never reads it",
+    "detail": "app/lib/ui/clinician/radr_tab.dart and docs/RADR.md say the heart domain uses HRV when the watch provides it. The app doesn't read HRV and the server drops it (lib/wearable.js METRICS). Fix the wording, or add HRV.",
+    "area": "OpenWorks",
+    "priority": "soon",
+    "status": "todo"
+  },
+  {
+    "title": "Low-mood rule: the list and the notification count differently",
+    "detail": "The patient list's flag uses check-ins from the last 15 days; the note on a check-in's notification uses the last three, however old (lib/server.js summaryOf and the checkins hook in steady.pb.js). Agree one rule with Kempie.",
+    "area": "OpenWorks",
+    "priority": "later",
+    "status": "look"
+  },
+  {
+    "title": "Imported questionnaires: can't be edited, and copies skip the licence check",
+    "detail": "library_screen.dart doesn't let an imported instrument be edited (the server would), so an imported PHQ-8 has no bands or flags. \"Use as a starting point\" saves a copy as the practice's own, which skips the licence confirmation.",
+    "area": "OpenWorks",
+    "priority": "soon",
+    "status": "look"
+  },
+  {
+    "title": "WHO-5: the \"Very low wellbeing (28 or less)\" band",
+    "detail": "In the literature, 28 or less is a stricter depression screen, not a wellbeing level; the 2024 WHO guidance only suggests below 50. Kempie to confirm the label and its red flag.",
+    "area": "Community",
+    "priority": "later",
+    "status": "look"
+  },
+  {
+    "title": "A patient on UTC is read as South African time",
+    "detail": "getInt(\"tzOffset\") || 120 treats an offset of 0 as missing. Small: affects only patients whose phone is set to UTC.",
+    "area": "OpenWorks",
+    "priority": "later",
+    "status": "todo"
+  },
+  {
+    "title": "The website's science and community pages are out of date",
+    "detail": "steadyapp.co.za/science says check-ins aren't scored (RADR scores them, and there's a low-mood flag), that Steady doesn't alert anyone outside office hours (pushes go out at any hour), and doesn't mention RADR. /community still says invitation only and authenticator-app sign-in.",
+    "area": "OpenWorks",
+    "priority": "soon",
+    "status": "todo",
+    "link": "https://steadyapp.co.za/science/"
+  },
+  {
+    "title": "docs/RADR.md names the AI note-taking product",
+    "detail": "The paperwork names no product; the app says \"Export for AI note-taking\". Reword docs/RADR.md the same way.",
+    "area": "Paperwork",
+    "priority": "later",
+    "status": "todo"
+  },
+  {
+    "title": "The RADR method note (radr-1) is out of date",
+    "detail": "It still says research-only, that RADR isn't stored, that the iPhone app isn't built and that sign-off is pending. Update it from docs/RADR.md and the Science topics.",
+    "area": "Paperwork",
+    "priority": "later",
+    "status": "todo",
+    "link": "https://claude.ai/artifact/4Jd7TTaC43AJpWZc1UkMw5"
+  },
+  {
+    "title": "Lawyer: the forum's terms of service and privacy page",
+    "detail": "Discourse's terms now name OpenWorks IT (Pty) Ltd, South African law and Gqeberha for disputes; its privacy page is still Discourse's generic text. Both to be checked, with a short Steady Community privacy notice to replace the generic one.",
+    "area": "Paperwork",
+    "priority": "soon",
+    "status": "waiting",
+    "waiting": "the lawyer",
+    "link": "https://claude.ai/artifact/3uxjZFBuz2rXNBRFcGSE4N"
+  },
+  {
+    "title": "App polish from the manual's walk-through",
+    "detail": "Found while screenshotting every screen for the training manual:\n- the floating Feedback button covers content on phones (the two-step key, Steps, a RADR switch, the version line) and sits over dialogs' dimmed background\n- \"Questionnaire\" breaks as \"Questionn/aire\" in the builder at phone width; RADR's \"3 of 4 domains away from usual\" is cut off\n- wording: \"You asked on just now.\", \"On just now.\", \"1 days with data\", \"1 more in your library need a licence check\", \"This phone: …\" on the web\n- dates written four ways (2026-11-03, 3/11/2026 21:18, 10/11/2026, 3 Nov)\n- the audit report shows raw action names (ops.account.create, feedback.sent, instrument.create, invite.create, live.notifications)\n- avatar initials count the title (\"D(\", \"DE\" for Dr ... Example)\n- \"Tap a flag to see why\" only offers Mark as reviewed; the why is behind the (i) on the list\n- DEMO C's flags show twice on a computer, without dates\n- Stable and Archive take effect on one tap with no confirmation; archived patients aren't marked in People\n- feedback tickets can't be opened\n- Reset password is offered for a stopped account (it doesn't restore access)\n- the web Community tab shows the browser's raw error if the forum can't be reached\n- the invite dialog always says iPhones open Steady in the browser; the Android join page offers only the APK (a Play Store link once it's live)\n- an exercise finished early counts as completed; the week's screen-reader label says \"No check-in\" after today's; the administrator's invite dialog says \"your patient\"; the consent statement shows as plain text",
+    "area": "OpenWorks",
+    "priority": "soon",
+    "status": "todo"
+  }
+]

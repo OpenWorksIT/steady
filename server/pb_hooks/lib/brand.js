@@ -50,10 +50,17 @@ function load(dir, envName) {
 var MAX_CONSENT = 20000;
 
 /**
- * The consent statement patients agree to when they join: the practice's own (consent.md in
- * the brand folder, installed with brand.sh, so updates never touch it), or Steady's draft.
- * version: brand.json's "consentVersion", or else a fingerprint of the text, so any change to
- * the statement asks patients to agree again. draft: still Steady's draft, or placeholders left.
+ * The consent statement patients agree to when they join: Steady's own (content/consent.md, the
+ * statement signed off with Steady's science, the same for every practice) or, where a practice
+ * has one, its own (consent.md in the brand folder, installed with brand.sh; updates never touch
+ * it). version: brand.json's "consentVersion", or else a fingerprint of the text, so any change
+ * to the statement asks patients to agree again. draft: a text still marked as a draft, or with
+ * placeholders left.
+ *
+ * In Steady's own statement, {contact} becomes the practice's contact details and Information
+ * Officer from the operator agreement its master clinician signed (lib/operator.js), or, before
+ * that, a line pointing to the practice. The fingerprint is of the text before that, so new
+ * contact details don't ask patients to agree again.
  */
 function consent() {
   var dir = $os.getenv("STEADY_BRAND_DIR") || "/pb/brand";
@@ -66,11 +73,36 @@ function consent() {
     version = j && typeof j.consentVersion === "string" && /^[A-Za-z0-9._-]{1,40}$/.test(j.consentVersion) ? j.consentVersion : "";
     if (!version) version = "practice-" + $security.sha256(own).slice(0, 12);
   } else {
-    text = readText(__hooks + "/content/consent.md") || "";
-    version = $os.getenv("STEADY_CONSENT_VERSION") || "draft-1";
+    var tpl = readText(__hooks + "/content/consent.md") || "";
+    version = "steady-" + $security.sha256(tpl).slice(0, 12);
+    text = tpl.split("{contact}").join(contactLine());
   }
   var draft = /^\s*DRAFT/i.test(text) || text.indexOf("[Practice name") >= 0 || /^draft/i.test(version);
   return { text: text, version: version, draft: draft };
+}
+
+/** The practice's contact details for Steady's own statement (see consent()). Never throws. */
+function contactLine() {
+  var fallback = "Your practice. Its Information Officer is its master psychologist unless the practice names someone else; your psychologist can give you their details.";
+  try {
+    var O = require(__hooks + "/lib/operator.js");
+    var last = O.signatures($app, 1)[0];
+    if (!last) return fallback;
+    var f = JSON.parse(last.getString("fields") || "{}");
+    var p = f.practice || {}, io = f.informationOfficer || {};
+    var line = function (v) { return clean(typeof v === "string" ? v : "", 200); };
+    var parts = [];
+    var place = [line(p.name), line(p.address)].filter(function (x) { return x; }).join(", ");
+    if (place) parts.push(place + ".");
+    var reach = [];
+    if (line(p.email)) reach.push("Email " + line(p.email));
+    if (line(p.phone)) reach.push("phone " + line(p.phone));
+    if (reach.length) parts.push(reach.join(", ") + ".");
+    if (line(io.name)) parts.push("Information Officer: " + line(io.name) + (line(io.email) ? ", " + line(io.email) : "") + ".");
+    return parts.length ? parts.join(" ") : fallback;
+  } catch (e) {
+    return fallback;
+  }
 }
 
 /** The brand for this server (reads the folder each time: it is small and changes rarely). */

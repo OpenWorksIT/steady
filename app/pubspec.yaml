@@ -1,7 +1,8 @@
 name: steady
 description: "Steady: between-session check-ins, questionnaires and exercises for a psychology practice."
 publish_to: "none"
-version: 1.0.2+102
+# Steady's version: the same as VERSION at the top of the repository (CI checks; docs/VERSIONS.md)
+version: 1.1.0+110
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -18,10 +19,6 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   # practice staff unlock the phone app with its screen lock (fingerprint, face, PIN)
   local_auth: ^3.0.0
-  # Android push without Google services (Apache-2.0). iOS uses APNs via a small platform channel.
-  unifiedpush: ^6.0.2
-  # Shows UnifiedPush messages as notifications on Android (BSD-3)
-  flutter_local_notifications: ^22.0.0
   # Reads watch data from Health Connect / Apple Health (MIT)
   health: ^13.3.2
   # Invite QR codes: drawn for the psychologist (BSD-3), scanned by the patient with ZXing (MIT, no Google services)
@@ -29,6 +26,8 @@ dependencies:
   flutter_zxing: ^3.1.0
   # Opens the app download in the browser (BSD-3)
   url_launcher: ^6.3.0
+  # The Community tab on phones: the Steady community in a web view of its own (BSD-3)
+  webview_flutter: ^4.13.0
   # Clinicians upload questionnaire files (MIT)
   file_picker: ^13.1.0
   # Exports: PDF reports with charts (Apache-2.0), Excel workbooks (MIT), saving or sharing the
@@ -37,9 +36,12 @@ dependencies:
   excel: ^4.0.6
   share_plus: ^13.3.1
   web: ^1.1.0
-  # iOS push bridge (in this repo)
+  # push bridges (in this repo): Apple's service on iOS; Firebase Cloud Messaging on Android
+  # (Android only, built on Google's Firebase SDK, Apache-2.0). Notifications say only "New notification".
   steady_apns:
     path: packages/steady_apns
+  steady_fcm:
+    path: packages/steady_fcm
 
 dev_dependencies:
   flutter_test:

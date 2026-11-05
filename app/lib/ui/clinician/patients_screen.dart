@@ -5,12 +5,13 @@ import '../../app_state.dart';
 import '../../export/export_actions.dart';
 import '../../models.dart';
 import '../../services/api.dart';
-import '../settings_sheet.dart';
+import '../settings_screen.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'clinician_shell.dart';
 import 'invite_dialog.dart';
 import 'patient_detail_screen.dart';
+import 'radr_explain.dart';
 import '../brand.dart';
 
 class PatientsScreen extends StatefulWidget {
@@ -86,7 +87,7 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
               PopupMenuItem(value: 'all', child: ListTile(leading: Icon(Icons.table_chart_outlined), title: Text('Export all my patients to Excel'), subtitle: Text('The last 12 months'))),
             ],
           ),
-          IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: () => showSettingsSheet(context)),
+          const SettingsButton(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -114,6 +115,7 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _PatientRow(
                     p,
+                    onChanged: reload,
                     onTap: () async {
                       await Navigator.of(context).push(MaterialPageRoute(
                           builder: (_) => PatientDetailScreen(patientId: p.id, name: p.name, shared: p.shared, owner: p.owner)));
@@ -122,9 +124,13 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
                   ),
                 ),
               const SizedBox(height: 6),
-              Text('Patients needing attention come first: unreviewed flags and RADR, then the most recent. Flags and RADR '
-                  'are review aids, not a diagnosis or a risk score.',
-                  style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+              InkWell(
+                onTap: () => showListOrder(context),
+                child: Text('Answers waiting for review come first, then RADR (watch data away from the person\'s usual), then the '
+                    'rest. An ordering of data, not alerts. Tap a patient\'s flags to see why they\'re where they are, or here for how '
+                    'the list is ordered.',
+                    style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+              ),
             ],
           );
         },
@@ -136,7 +142,10 @@ class _PatientsScreenState extends State<PatientsScreen> with BusReload {
 class _PatientRow extends StatelessWidget {
   final PatientSummary p;
   final VoidCallback onTap;
-  const _PatientRow(this.p, {required this.onTap});
+
+  /// After a RADR flag was marked as reviewed from the "why here" sheet.
+  final VoidCallback onChanged;
+  const _PatientRow(this.p, {required this.onTap, required this.onChanged});
   @override
   Widget build(BuildContext context) {
     final last = p.lastCheckinAt == null ? 'No check-ins yet' : 'Last check-in ${relTime(p.lastCheckinAt)} · mood ${p.lastMood}/5';
@@ -188,20 +197,35 @@ class _PatientRow extends StatelessWidget {
             ]),
             if (open.isNotEmpty || reviewed > 0 || showRadr || p.watchLapsedSince != null) ...[
               const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(left: 52),
-                child: Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  if (showRadr) FlagChip('RADR: ${radr.convergent} of 4 away from usual', severityOf(radr.level)),
-                  if (p.watchLapsedSince != null) const FlagChip('Watch permissions lapsed', Severity.info),
-                  // a stable patient's flags are still listed, but not highlighted
-                  for (final f in open.take(3)) FlagChip(f.label, p.stable ? Severity.none : f.severity),
-                  if (reviewed > 0)
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.check_circle_outline, size: 14, color: context.sc.calm),
-                      const SizedBox(width: 3),
-                      Text('$reviewed reviewed', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
-                    ]),
-                ]),
+              // tap: why they're here in the list, and the RADR flags to open
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => showWhyHere(context, p, onChanged: onChanged),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 52),
+                  child: Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    // the answers first: RADR never comes before them
+                    // a stable patient's flags are still listed, but not highlighted
+                    for (final f in open.take(3)) FlagChip(f.label, p.stable ? Severity.none : f.severity),
+                    // RADR is an ordering of data, never shown as an alert
+                    if (showRadr)
+                      radr.level == 'reviewed'
+                          ? Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.check_circle_outline, size: 14, color: context.sc.calm),
+                              const SizedBox(width: 3),
+                              const FlagChip('RADR reviewed', Severity.none),
+                            ])
+                          : FlagChip('RADR: ${radr.convergent} of 4 away from usual', Severity.info),
+                    if (p.watchLapsedSince != null) const FlagChip('Watch permissions lapsed', Severity.info),
+                    if (reviewed > 0)
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.check_circle_outline, size: 14, color: context.sc.calm),
+                        const SizedBox(width: 3),
+                        Text('$reviewed reviewed', style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+                      ]),
+                    Icon(Icons.info_outline, size: 14, color: context.sc.ink3),
+                  ]),
+                ),
               ),
             ],
           ]),

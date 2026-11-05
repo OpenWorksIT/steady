@@ -6,7 +6,8 @@ One small Linux server is enough for a practice: 1 vCPU, 1 GB RAM, 20 GB disk. H
 
 - A domain name pointing at the server, e.g. `steady.yourpractice.co.za`
 - Docker with the Compose plugin
-- An Apple Developer account (for iOS notifications)
+- An Apple Developer account (for iPhone notifications)
+- A service-account key of OpenWorks IT's Firebase project (for Android notifications, step 3a)
 - `openssl` and, for backups, [`age`](https://age-encryption.org)
 
 ## 2. Configure
@@ -15,7 +16,7 @@ One small Linux server is enough for a practice: 1 vCPU, 1 GB RAM, 20 GB disk. H
 git clone https://github.com/openworksIT/steady.git /opt/steady
 cd /opt/steady/deploy
 sudo install -m 600 .env.example .env   # root only: it will hold the server's keys and passwords
-sudo ./gen-keys.sh        # creates secrets/vapid.pem and prints PUSHER_SECRET and STEADY_VAPID_PUBLIC_KEY
+sudo ./gen-keys.sh        # prints PUSHER_SECRET and the monitor and fleet keys
 ```
 
 Edit `.env`:
@@ -24,14 +25,14 @@ Edit `.env`:
 |---|---|
 | `STEADY_DOMAIN`, `ACME_EMAIL` | Your domain and an email for Let's Encrypt |
 | `STEADY_PRACTICE_NAME` | Only for servers without an installed brand (below); the practice's name now comes from `./brand.sh` |
-| `PUSHER_SECRET`, `STEADY_VAPID_PUBLIC_KEY` | From `gen-keys.sh` |
-| `VAPID_SUBJECT` | `mailto:` your IT contact |
+| `PUSHER_SECRET` | From `gen-keys.sh` |
 | `APNS_*` | See step 3 |
 
-The consent statement patients agree to is the practice's own, installed with its branding as
-`consent.md` (step 4a, [BRAND.md](BRAND.md)). Until then patients see Steady's draft
-(`server/pb_hooks/content/consent.md`), and the fleet view and `audit-server.sh` say so. A
-changed statement is a new version: patients who agreed to an earlier one are asked to read and
+The consent statement patients agree to is Steady's own (`server/pb_hooks/content/consent.md`):
+one statement for every practice, signed off with Steady's science. Its contact line is filled in
+from the operator agreement the master clinician signs (the practice's details and its
+Information Officer). A practice that needs its own statement instead has it installed with its
+branding as `consent.md` ([BRAND.md](BRAND.md)). A changed statement is a new version: patients who agreed to an earlier one are asked to read and
 agree to it the next time they open the app (from Steady 1.0.4; older copies of the app don't
 ask). The practice's People screen shows who still has an older consent.
 
@@ -40,6 +41,40 @@ ask). The practice's People screen shows who still has an older consent.
 1. developer.apple.com > Certificates, Identifiers & Profiles > **Keys** > create a key with **Apple Push Notifications service** enabled. Download the `.p8` (you can only download it once).
 2. Copy it to `deploy/secrets/` and `sudo chown 65532:65532 deploy/secrets/*.p8`.
 3. In `.env`: `APNS_KEY_FILE=/secrets/AuthKey_XXXX.p8`, `APNS_KEY_ID` (shown with the key), `APNS_TEAM_ID` (top right of the developer portal), `APNS_TOPIC` = the app's bundle identifier.
+
+## 3a. Firebase push (Android)
+
+Android phones get their notifications through Firebase Cloud Messaging, with OpenWorks IT's
+Firebase project (the one the Android app is built with, docs/APP.md). Each server sends with a
+key of a service account that may only send messages:
+
+1. console.cloud.google.com, with the Firebase project selected > **IAM & Admin > Service
+   accounts > Create service account**. Name it `steady-relay`; give it the role **Firebase Cloud
+   Messaging API Admin** and nothing else.
+2. Open it > **Keys > Add key > Create new key > JSON**. Make one key per server, so a server's
+   key can be deleted on its own if the server is lost.
+3. Copy the file to the server and install it as `deploy/secrets/fcm.json`, readable only by the
+   relay:
+
+   ```bash
+   scp steady-relay-*.json <server>:/tmp/fcm.json                 # from your own computer
+   sudo install -o 65532 -g 65532 -m 600 /tmp/fcm.json /opt/steady/deploy/secrets/fcm.json
+   rm /tmp/fcm.json
+   cd /opt/steady/deploy && sudo docker compose restart pusher
+   sudo docker compose logs pusher | tail -3                     # "FCM enabled"
+   ```
+
+   Delete the downloaded copy from your computer once every server has its key.
+
+The relay reads `/secrets/fcm.json` (`FCM_CREDENTIALS_FILE` in `docker-compose.yml`); there's no
+setting in `.env`. Without the file it still starts and iPhones still get their notifications;
+Android phones get none, and `audit-server.sh` says so. It's the service-account key, not the
+`google-services.json` the Firebase console offers for the app (the relay says so if it's given
+that one).
+
+What the relay sends Google is the phone's token and the words "Steady" and "New notification",
+nothing else: the server tells it only which devices to notify, never who or why (the same for
+Apple).
 
 ## 4. Start
 
@@ -96,7 +131,7 @@ sudo ./accounts.sh list                         # who has which role, and who st
 sudo ./accounts.sh reset <email> [--full]       # a temporary password (--full: also the authenticator)
 sudo ./accounts.sh set <email> master|server-admin|active on|off   # "active on" unlocks a locked account
 sudo ./accounts.sh audit --patient <id>         # who looked at a patient's data (POPIA access requests)
-sudo ./accounts.sh check                        # proxy header, rate limits, dashboard closed
+sudo ./accounts.sh check                        # proxy header, rate limits, dashboard closed, operator agreement
 sudo ./accounts.sh demo-patients <email> [--remove]   # three fictional patients for the RADR tab
 ```
 
@@ -105,11 +140,25 @@ container, and deletes it again. New accounts and resets print a **temporary pas
 by phone or in person. The person must choose their own password before they can do anything,
 then set up two-step sign-in.
 
+**The operator agreement.** OpenWorks runs the practice's server, so POPIA (section 21) needs a
+written agreement between them. It's signed in the app, not on paper: the first time the master
+clinician opens Steady (after choosing a password and setting up two-step sign-in), Steady shows
+the agreement ([OPERATOR-AGREEMENT.md](OPERATOR-AGREEMENT.md)). They fill in the practice's legal
+name, registration or practice number, address, email and phone, leave the Information Officer
+box ticked (they are the practice's Information Officer unless they untick it and name someone
+else), type their full name, tick that they're authorised to sign for the practice, and tap Sign.
+Nothing else in the app opens for them until it's signed; other staff aren't asked. A new version
+of the agreement is asked for the same way the next time they open Steady. The signed copy is
+under Settings > Practice > Operator agreement (master clinician, practice admin and
+OpenWorks support), with a PDF to download, and `accounts.sh check` says whether the current
+version is signed. Before the first practice signs, fill in OpenWorks' blanks in the text (see the
+notes in OPERATOR-AGREEMENT.md).
+
 **In the app**, by the people at the practice:
 
 | Who | Can | Can't |
 |---|---|---|
-| Psychologist | Invite patients, see and send to their own patients, keep notes, mark flags as reviewed, set a patient as stable or archived and switch RADR measures off for them, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records (PDF, Excel, Heidi) | See other psychologists' patients unless shared with them |
+| Psychologist | Invite patients, see and send to their own patients, keep notes, mark flags as reviewed (RADR flags also for a patient shared with them), set a patient as stable or archived and switch RADR measures off for them, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records (PDF, Excel, Heidi) | See other psychologists' patients unless shared with them |
 | Master clinician | All of the above, plus create psychologist and practice admin accounts, reset their passwords, stop their accounts, invite patients for and move patients to any psychologist, see every patient's connection status, read the audit report, and install server updates from Settings | Restore a stopped staff account, clear someone's authenticator, or reset their own password (OpenWorks support does these) |
 | Practice admin | Patients' names and whether each is set up and connected (no data); invite a patient for a chosen psychologist, reset patients' and psychologists' passwords, stop accounts, move patients, remind a patient to reconnect their watch, read the audit report and server health; feedback as tickets | See check-ins, scores, notes or watch data; create psychologist accounts; restore accounts; install updates |
 | OpenWorks support | The practice's staff (names, status, app versions), the server and its updates, feedback in full; reset any staff password, including a full reset after a lost phone; restore stopped or locked accounts | See anything about patients, including their names |
@@ -168,9 +217,11 @@ Do these on the VPS before real patient data arrives:
 - [ ] Docker's data on an encrypted volume (LUKS), or full-disk encryption if the provider supports it.
 - [ ] `chmod 600 deploy/.env` and keep `deploy/secrets/` readable only by root and the relay (uid 65532).
 - [ ] `sudo ./accounts.sh check` says the dashboard is closed; `accounts.sh list` shows two-step sign-in for every staff account.
+- [ ] The master clinician has signed the operator agreement in the app (`accounts.sh check`: "operator agreement: signed").
 - [ ] Email set up (step 5a): staff sign in only from linked devices.
 - [ ] `sudo ./audit-server.sh` shows nothing to fix (SSH, firewall, updates, disk encryption, file
-      permissions, containers, backups, TLS and headers from outside). Run it again now and then.
+      permissions, containers, backups, TLS and headers from outside, the signed operator
+      agreement). Run it again now and then.
 - [ ] Delete any permanent superuser left from before (`docker compose exec pocketbase /pb/pocketbase superuser delete <email> --dir=/pb/pb_data`).
 - [ ] Backups running and copied off the server (step 7), restore tested.
 - [ ] Uptime monitoring on `https://<domain>/api/health`.
@@ -224,6 +275,14 @@ From 1.0.5 the app's button builds, and Settings > Server and updates compares t
 with what the server runs (`/var/lib/steady/running`, written by `update.sh` once the new build is
 up), so an update whose build failed is offered again.
 
+**From UnifiedPush to Firebase (Android notifications).** Servers set up before Firebase used
+UnifiedPush (ntfy) for Android. The update deletes those registrations (a migration) and the
+relay no longer sends to them; the updated app registers the phone with Firebase the next time it
+opens, and older copies of the app go without notifications until they're updated. Install the
+Firebase key (step 3a). `VAPID_SUBJECT`, `STEADY_VAPID_PUBLIC_KEY` and `FCM_CREDENTIALS_FILE` in
+an older `.env` are ignored and can be deleted, as can `secrets/vapid.pem` (`audit-server.sh`
+points it out). Patients who installed ntfy only for Steady can uninstall it.
+
 ### Signed releases (live servers)
 
 A practice's server installs only releases OpenWorks has signed, so a push to GitHub, a stolen
@@ -238,8 +297,9 @@ token or a compromised build can't reach it:
    `STEADY_TRACK=test` in `.env` (vps1), the `test` branch and the web app CI built from it
    (`web-dist-test`), to try a release on a test server before it's signed.
 2. To release, on OpenWorks' own computer, once CI's "Test builds" has run for that commit:
-   `deploy/release.sh 1.0.0`. It checks the web app was built from the same commit, shows what
-   changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >
+   `deploy/release.sh`. The number comes from `VERSION` (a large update adds .1, a small one
+   .0.1: [VERSIONS.md](VERSIONS.md)). It checks the web app was built from the same commit and
+   carries that number, shows what changed, signs both tags with your SSH key and pushes them. Servers offer it under Settings >
    Server and updates and install it at the next "Update now" (or `update.sh`).
 
 What a server checks before installing (from 1.0.4): the tag's signature, that the signed tag
@@ -261,14 +321,18 @@ Three branches, and changes move one way:
 | `main` | production | a pull request from `test`, with CI green | practice servers, only as a signed release (`release.sh`) |
 
 So an update to Caddy, PocketBase, Go or any package (Dependabot opens those as pull requests
-into `working`) runs on vps1 before any practice gets it. Caddy and PocketBase are pinned to
-exact versions; nothing a practice server runs changes without a pull request.
+into `working`) runs on vps1 before any practice gets it, and reaches `main` only when OpenWorks
+says so. Caddy, PocketBase and the base images are pinned to exact versions, and `update.sh`
+pulls nothing fresh from Docker Hub: nothing a practice server runs changes without a pull
+request. The monthly round of these updates, and the rest of Steady's upkeep, is in
+[UPKEEP.md](UPKEEP.md).
 
 GitHub rulesets keep it that way: `main` and `test` change only through a pull request with CI
-green and can't be deleted or force-pushed; `working` can't be deleted or force-pushed; the
-branches CI publishes (`web-dist`, `web-dist-test`, `previews`) can be written only by GitHub
-Actions, so not even an owner's token can swap a web build; release tags (`v*`, `web-v*`) only
-by an admin, never moved or deleted. The `signing` environment (the store and test-build keys)
+green and can't be deleted or force-pushed; `working` can't be deleted or force-pushed; release
+tags (`v*`, `web-v*`) only by an admin, never moved or deleted. The branches CI publishes
+(`web-dist`, `web-dist-test`, `previews`) have no ruleset (GitHub doesn't let a repository
+ruleset make GitHub Actions the only writer): `release.sh` checks instead that CI itself pushed
+the web build after a successful run for that very commit. The `signing` environment (the store and test-build keys)
 is open to `main` and `test` only. `deploy/github-settings.sh` sets all of this from your own
 computer (GitHub CLI signed in as an admin; safe to run again), and `--retire-v1` drops the old
 `v1` branch's ruleset and signing access once vps1 follows `test`.
@@ -323,13 +387,14 @@ cd /opt/shap/deploy/vps && sudo docker compose exec caddy caddy reload --config 
 ```bash
 cd /opt/steady/deploy
 sudo install -m 600 .env.example .env
-sudo ./gen-keys.sh            # paste PUSHER_SECRET and STEADY_VAPID_PUBLIC_KEY into .env
-sudo nano .env                # STEADY_DOMAIN, practice name, VAPID_SUBJECT, and uncomment
+sudo ./gen-keys.sh            # paste PUSHER_SECRET and the other keys it prints into .env
+sudo nano .env                # STEADY_DOMAIN, practice name, and uncomment
                               # COMPOSE_FILE=docker-compose.yml:behind-proxy.yml
 sudo ./update.sh              # pulls, fetches the web app, builds and starts
 ```
 
-**5. Accounts.** With `sudo ./accounts.sh`, as in step 5 above: the master clinician first.
+**5. Accounts.** With `sudo ./accounts.sh`, as in step 5 above: the master clinician first. They
+sign the operator agreement the first time they open Steady.
 
 **Updating** is `sudo ./update.sh` in `/opt/steady/deploy`, or from the app (below).
 
@@ -355,8 +420,9 @@ these folders up (a server from before 1.0 is moved over by its next update).
 | Symptom | Check |
 |---|---|
 | "Update now" failed, the log ends in "read-only file system" | A server on 1.0.4 or older: update once from the shell (section 8). |
-| The push relay keeps restarting (`audit-server.sh`: "can't enter secrets/") | `sudo chown root:65532 secrets && sudo chmod 750 secrets && sudo chown 65532:65532 secrets/vapid.pem` in `deploy/`, then `sudo docker compose up -d`. |
+| The push relay keeps restarting (`audit-server.sh`: "can't enter secrets/", or "can't read secrets/fcm.json") | `sudo ./gen-keys.sh > /dev/null` in `deploy/` (it lets the relay into `secrets/` and gives it its keys, private), then `sudo docker compose up -d`. `docker compose logs pusher` names the file it couldn't read. |
 | No notifications on iPhone | `docker compose logs pusher` for `apns 403` (wrong key/team) or `400 DeviceTokenNotForTopic` (`APNS_TOPIC` must equal the bundle id). Debug builds from Xcode use the APNs sandbox automatically. |
-| No notifications on Android | The phone needs a UnifiedPush distributor app (e.g. ntfy) installed and chosen in Steady's settings. |
+| No notifications on Android | `docker compose logs pusher`: "FCM off" means no `secrets/fcm.json` (step 3a); `fcm 403` or `401` a key without the Firebase Cloud Messaging API Admin role, or from another Firebase project than the app's. On the phone, Steady's Settings says why notifications are off: not allowed in the phone's settings, or a copy of the app built without Firebase (a fork or a local build). |
+| "Key creation is disabled" when making the Firebase key | An organisation policy (`iam.disableServiceAccountKeyCreation`, on by default for Google Cloud organisations made since 2024). An organisation admin allows it for the Firebase project only: IAM & Admin > Organisation policies > Disable service account key creation > Manage policy > Override, Off. |
 | "Can't reach the server" in the app | The app was built with the wrong `STEADY_SERVER`, or DNS/TLS isn't ready. |
 | Psychologist can't sign in | `active` must be ticked and `role` set to clinician. |

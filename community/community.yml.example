@@ -1,4 +1,4 @@
-## Steady community forum: the discourse_docker container, behind the Caddy that owns ports
+## Steady Community (the forum): the discourse_docker container, behind the Caddy that owns ports
 ## 80/443 on OpenWorks' own server (vps3, ops/compose.yml), on the "community-edge" Docker
 ## network (only it and Caddy: the fleet view is on a network of its own).
 ##
@@ -6,7 +6,9 @@
 ## "community"; keep it, Caddy looks for that name), fill in the values marked
 ## CHANGE, then:   cd /var/discourse && sudo ./launcher rebuild community
 ## Caddy serves https://community.steadyapp.co.za and passes it on (community/community.caddy).
-## Full steps: docs/COMMUNITY.md in the Steady repository.
+## It opens only inside Steady, in the Community tab, signed in as whoever is signed in to Steady,
+## through the sign-in bridge at https://signin.steadyapp.co.za (community/signin/).
+## Full steps: docs/COMMUNITY.md.
 ##
 ## On a server of its own instead: add templates/web.ssl.template.yml and
 ## templates/web.letsencrypt.ssl.template.yml, replace docker_args with
@@ -45,14 +47,13 @@ env:
   ## The forum's address. Discourse will not work on a bare IP address.
   DISCOURSE_HOSTNAME: "community.steadyapp.co.za"
 
-  ## The community lead's address. An account with this email is made admin (and
-  ## "developer") when it is confirmed. OpenWorks IT's address does NOT go here: OpenWorks
-  ## makes its install-time admin with `rake admin:create` and hands over (docs/COMMUNITY.md).
+  ## The community lead's address. The account with this email is made admin (and
+  ## "developer") when it signs in. OpenWorks IT's address does NOT go here: OpenWorks sets the
+  ## forum up with a one-off API key and holds no admin account (docs/COMMUNITY.md).
   DISCOURSE_DEVELOPER_EMAILS: "kempie@vrpsych.co.za"
 
   ## Mail: the same mailbox that sends Steady's sign-in codes (domains.co.za cPanel host).
-  ## The forum sends invitations, password resets and notifications from it. (Sign-in codes on
-  ## the forum come from each person's authenticator app, not email.)
+  ## The forum sends its notifications from it (their links open the forum only inside Steady).
   ## Port 465 (SSL from the start) is set below. For 587 with STARTTLS instead, set
   ## DISCOURSE_SMTP_PORT: 587, DISCOURSE_SMTP_ENABLE_START_TLS: true and remove
   ## DISCOURSE_SMTP_FORCE_TLS.
@@ -77,16 +78,39 @@ env:
   ## site and hides it from the admin pages, so nobody can switch it off by accident from
   ## the browser. Changing one needs this file and a rebuild. See docs/COMMUNITY.md.
   ## ------------------------------------------------------------------------------------
-  ## Sign in to see anything; join by invitation only.
+  ## Sign in to see anything. Who joins is decided by Steady and the sign-in bridge (its address
+  ## lists), so there are no invitations, and no sign-up on the forum itself.
   DISCOURSE_LOGIN_REQUIRED: true
-  DISCOURSE_INVITE_ONLY: true
-  ## Two-step sign-in (authenticator app code) for every account, staff or not.
-  DISCOURSE_ENFORCE_SECOND_FACTOR: all
-  ## Sign-in is username or email + password + authenticator code, nothing else:
-  ## no emailed one-click login links, no passkey-only login, no single sign-on.
+  DISCOURSE_INVITE_ONLY: false
+  ## The only way in: Steady's Community tab, as whoever is signed in to Steady there (password,
+  ## authenticator code, linked device), through the sign-in bridge, which lets in psychologists
+  ## and OpenWorks support only. The forum's own two-step sign-in is off: Steady asks for the
+  ## code, and Discourse doesn't allow both. See docs/COMMUNITY.md, "Signing in through Steady".
+  DISCOURSE_ENABLE_DISCOURSE_CONNECT: true
+  DISCOURSE_DISCOURSE_CONNECT_CSRF_PROTECTION: true
+  DISCOURSE_DISCOURSE_CONNECT_URL: "https://signin.steadyapp.co.za/discourse"
+  ## CHANGE: the same as "forumSecret" in the bridge's /var/lib/steady-signin/config.json
+  ## (make one with: sudo docker compose -f community/signin/compose.yml run --rm signin newkey).
+  ## Keep the quotes.
+  DISCOURSE_DISCOURSE_CONNECT_SECRET: "CHANGE-ME-forum-secret"
+  DISCOURSE_ENFORCE_SECOND_FACTOR: "no"
+  ## Name and email address always as Steady has them; nobody changes them on the forum.
+  DISCOURSE_AUTH_OVERRIDES_EMAIL: true
+  DISCOURSE_AUTH_OVERRIDES_NAME: true
+  DISCOURSE_EMAIL_EDITABLE: false
+  ## After signing out: a page that says so, rather than straight back to signing in.
+  DISCOURSE_LOGOUT_REDIRECT: "https://signin.steadyapp.co.za/signed-out"
+  ## Every visit to the Community tab signs in again, as whoever is in Steady then; a session
+  ## nobody uses ends after 12 hours (one still in use doesn't: Admin > Users > Log out).
+  DISCOURSE_MAXIMUM_SESSION_AGE: 12
+  ## Shown in a frame of Steady's web app: Caddy says which pages may frame it
+  ## (community/community.caddy, frame-ancestors), so Discourse adds no frame rule of its own.
+  DISCOURSE_ALLOW_EMBEDDING_SITE_IN_AN_IFRAME: true
+  DISCOURSE_CONTENT_SECURITY_POLICY_FRAME_ANCESTORS: false
+  ## Nothing else: no forum passwords, no emailed one-click login links, no passkeys.
+  DISCOURSE_ENABLE_LOCAL_LOGINS: false
   DISCOURSE_ENABLE_LOCAL_LOGINS_VIA_EMAIL: false
   DISCOURSE_ENABLE_PASSKEYS: false
-  DISCOURSE_ENABLE_DISCOURSE_CONNECT: false
   DISCOURSE_ENABLE_DISCOURSE_ID: false
   ## No social or third-party logins (core and bundled plugins).
   DISCOURSE_ENABLE_GOOGLE_OAUTH2_LOGINS: false

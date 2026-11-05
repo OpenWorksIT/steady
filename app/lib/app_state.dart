@@ -10,6 +10,7 @@ import 'content/privacy_notice.dart';
 import 'models.dart';
 import 'services/api.dart';
 import 'services/push.dart';
+import 'ui/community/community_frame.dart' show forgetCommunity;
 
 /// App-wide state: the API client, server configuration and who is signed in.
 class AppState extends ChangeNotifier {
@@ -120,7 +121,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> enablePush() async {
     try {
-      pushEnabled = await PushService.instance.enable(vapidPublicKey: config.vapidPublicKey);
+      pushEnabled = await PushService.instance.enable();
     } catch (_) {
       pushEnabled = false;
     }
@@ -158,6 +159,9 @@ class AppState extends ChangeNotifier {
       await PushService.instance.disable();
     } catch (_) {}
     await api.endSessionsOnServer();
+    try {
+      await forgetCommunity();
+    } catch (_) {}
     api.signOut();
     notifyListeners();
   }

@@ -130,6 +130,10 @@ class _ServerUpdatesScreenState extends State<ServerUpdatesScreen> {
 
   String _short(Object? sha) => '${sha ?? ''}'.length > 7 ? '$sha'.substring(0, 7) : '${sha ?? ''}';
 
+  /// A commit the server reported, as people read it: its version ("1.0.5", "1.1.0 test 23"),
+  /// or for a server from before versions, the commit.
+  String _version(Map<String, dynamic> m) => '${m['version'] ?? ''}'.isNotEmpty ? '${m['version']}' : _short(m['sha']);
+
   @override
   Widget build(BuildContext context) {
     final info = _info;
@@ -140,6 +144,13 @@ class _ServerUpdatesScreenState extends State<ServerUpdatesScreen> {
     final behind = (check['behind'] as num?)?.toInt() ?? 0;
     final appCheck = _map(check['app']);
     final appNewer = '${appCheck['latest'] ?? ''}'.isNotEmpty && appCheck['latest'] != appCheck['current'];
+    final releases = _map(check['releases']);
+    final stores = _map(releases['stores']);
+    final appNow = versionLabel('${appCheck['currentVersion'] ?? ''}', '${appCheck['current'] ?? ''}');
+    final appNext = versionLabel('${appCheck['latestVersion'] ?? ''}', '${appCheck['latest'] ?? ''}');
+    final appOnServer = '${appCheck['current'] ?? ''}'.isEmpty
+        ? 'none${appNewer ? ' (the next update adds one)' : ''}'
+        : '$appNow${appNewer ? ' ($appNext comes with the next update)' : ''}';
     final changes = (check['changes'] is List ? check['changes'] as List : const []).map(_map).toList();
 
     return Scaffold(
@@ -186,8 +197,8 @@ class _ServerUpdatesScreenState extends State<ServerUpdatesScreen> {
                 behind == 0 ? 'Up to date' : '$behind update${behind == 1 ? '' : 's'} available',
                 style: context.tt.titleLarge?.copyWith(color: behind == 0 ? context.sc.calm : context.cs.primary),
               ),
-              Text('Running ${_short(_map(check['current'])['sha'])}'
-                  '${behind > 0 ? ', newest ${_short(_map(check['latest'])['sha'])}' : ''} · checked ${_when(check['at'])}',
+              Text('Running ${_version(_map(check['current']))}'
+                  '${behind > 0 ? ', newest ${_version(_map(check['latest']))}' : ''} · checked ${_when(check['at'])}',
                   style: TextStyle(color: context.sc.ink2)),
               if ('${check['error'] ?? ''}'.isNotEmpty)
                 Text('Couldn\'t reach GitHub: ${check['error']}', style: TextStyle(color: context.cs.error)),
@@ -202,15 +213,15 @@ class _ServerUpdatesScreenState extends State<ServerUpdatesScreen> {
               ],
             ],
             const SizedBox(height: 16),
-            Text('Android app on the server', style: context.tt.titleMedium),
+            Text('Steady versions', style: context.tt.titleMedium),
             const SizedBox(height: 4),
-            Text(
-              '${appCheck['current'] ?? ''}'.isEmpty
-                  ? 'No Android build on the server yet${appNewer ? '; the next update adds one' : ''}.'
-                  : 'Build ${appCheck['current']}${appNewer ? ' · build ${appCheck['latest']} comes with the next update' : ''}',
-              style: TextStyle(color: context.sc.ink2),
-            ),
-            Text('This phone: ${kAppBuild.isEmpty ? 'a development build' : 'build $kAppBuild'}', style: TextStyle(color: context.sc.ink3)),
+            _VersionRow('This server', check.isEmpty ? 'not checked yet' : _version(_map(check['current']))),
+            if ('${releases['newest'] ?? ''}'.isNotEmpty) _VersionRow('Newest release', '${releases['newest']}'),
+            if ('${releases['test'] ?? ''}'.isNotEmpty) _VersionRow('In testing', '${releases['test']}'),
+            _VersionRow('Android app on the server', appOnServer),
+            if (stores['android'] is Map) _VersionRow('Android app on Google Play', _store(_map(stores['android']))),
+            if (stores['ios'] is Map) _VersionRow('iPhone app on the App Store', _store(_map(stores['ios']))),
+            _VersionRow('This app', thisAppVersion),
             const SizedBox(height: 20),
             Row(children: [
               Expanded(
@@ -251,6 +262,27 @@ class _ServerUpdatesScreenState extends State<ServerUpdatesScreen> {
   }
 }
 
+/// A store app's line: "1.0.2, in review since 2026-11-01".
+String _store(Map<String, dynamic> s) {
+  final v = '${s['version'] ?? ''}', status = '${s['status'] ?? ''}', since = '${s['since'] ?? ''}';
+  return [v, if (status.isNotEmpty) '$status${since.isNotEmpty ? ' since $since' : ''}'].where((x) => x.isNotEmpty).join(', ');
+}
+
+/// One line of "Steady versions": what, and which version.
+class _VersionRow extends StatelessWidget {
+  final String label, value;
+  const _VersionRow(this.label, this.value);
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(flex: 5, child: Text(label, style: TextStyle(color: context.sc.ink2))),
+          const SizedBox(width: 12),
+          Expanded(flex: 6, child: Text(value)),
+        ]),
+      );
+}
+
 /// The version and the two update buttons, for Settings (master clinician and administrators).
 /// The full progress and history are on [ServerUpdatesScreen].
 class UpdateControls extends StatefulWidget {
@@ -280,18 +312,21 @@ class _UpdateControlsState extends State<UpdateControls> {
     }
   }
 
-  void _open(BuildContext context, {String? ask}) {
-    final nav = Navigator.of(context);
-    nav.pop();
-    nav.push(MaterialPageRoute(builder: (_) => ServerUpdatesScreen(ask: ask)));
-  }
+  // on top of Settings, so back comes back to it
+  void _open(BuildContext context, {String? ask}) =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => ServerUpdatesScreen(ask: ask)));
 
   @override
   Widget build(BuildContext context) {
     final st = _map(_info?['status']);
     final check = _map(st['check']);
     final behind = (check['behind'] as num?)?.toInt() ?? 0;
-    final sha = '${_map(check['current'])['sha'] ?? ''}';
+    final current = _map(check['current']);
+    final server = '${current['version'] ?? ''}'.isNotEmpty
+        ? '${current['version']}'
+        : '${current['sha'] ?? ''}'.length > 7
+            ? '${current['sha']}'.substring(0, 7)
+            : '${current['sha'] ?? ''}';
     final managed = _info?['managed'] == true;
     final line = _error ??
         (_info == null
@@ -306,8 +341,7 @@ class _UpdateControlsState extends State<UpdateControls> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Steady version', style: context.tt.titleMedium),
       const SizedBox(height: 4),
-      Text('This phone: ${kAppBuild.isEmpty ? 'development build' : 'build $kAppBuild'}'
-          '${sha.isEmpty ? '' : ' · server: ${sha.length > 7 ? sha.substring(0, 7) : sha}'}',
+      Text('This phone: $thisAppVersion${server.isEmpty ? '' : ' · server: $server'}',
           style: TextStyle(color: context.sc.ink2)),
       Text(line, style: TextStyle(color: behind > 0 ? context.cs.primary : context.sc.ink2, fontWeight: behind > 0 ? FontWeight.w600 : null)),
       const SizedBox(height: 8),

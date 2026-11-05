@@ -22,9 +22,13 @@ import (
 )
 
 const (
-	pbkdfIter    = 600000
-	sessionIdle  = 30 * time.Minute
-	sessionMax   = 8 * time.Hour
+	pbkdfIter = 600000
+	// A session lasts while its tab is open: every page keeps it alive once a minute (the
+	// /alive frame) and nothing else ends it but signing out, a restart, or the browser closing
+	// (the cookie is for the browser session only). A closed tab, or a computer asleep, has
+	// stopped asking after this long, and the session ends.
+	sessionIdle  = 10 * time.Minute
+	aliveEvery   = 60 // seconds between the /alive frame's visits
 	failWindow   = 15 * time.Minute
 	failsPerIP   = 8
 	failsPerUser = 10
@@ -152,22 +156,19 @@ func (s *Sessions) New(user string, now time.Time) (string, *Session) {
 	return id, ss
 }
 
-// Get returns a live session. touch=false (the pages' own auto-refresh) doesn't count as
-// activity, so an unattended tab still signs out after sessionIdle.
-func (s *Sessions) Get(id string, now time.Time, touch bool) *Session {
+// Get returns a live session, and keeps it alive: any request from an open tab counts.
+func (s *Sessions) Get(id string, now time.Time) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ss := s.m[id]
 	if ss == nil {
 		return nil
 	}
-	if now.Sub(ss.Seen) > sessionIdle || now.Sub(ss.Started) > sessionMax {
+	if now.Sub(ss.Seen) > sessionIdle {
 		delete(s.m, id)
 		return nil
 	}
-	if touch {
-		ss.Seen = now
-	}
+	ss.Seen = now
 	return ss
 }
 

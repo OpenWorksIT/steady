@@ -3,6 +3,7 @@
 //	servers.json  the practice servers: name, address and their two keys
 //	users.json    who may sign in (password hashes and authenticator secrets)
 //	audit.log     sign-ins and every action, one JSON line each
+//	todo.json     OpenWorks' to-do list and the monthly upkeep round (todo.go)
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
@@ -33,6 +34,8 @@ type Server struct {
 type Store struct {
 	dir string
 	mu  sync.Mutex
+	// todo.json (todo.go)
+	todoMu sync.Mutex
 }
 
 func NewStore(dir string) *Store { return &Store{dir: dir} }

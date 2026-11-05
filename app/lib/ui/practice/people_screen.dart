@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The practice's people, for the master clinician and the practice admin: names, roles, and for
-// each patient whether they're set up and connected (agreements, app version, notifications,
-// watch sharing and permissions, last check-in and upload dates). Nothing here shows check-ins,
-// scores or watch data (the server doesn't send them).
+// The practice's people, for the master clinician (Settings > Practice > People) and the practice
+// admin (their first screen): names, roles, and for each patient whether they're set up and
+// connected (agreements, app version, notifications, watch sharing and permissions, last check-in
+// and upload dates). Nothing here shows check-ins, scores or watch data (the server doesn't send
+// them).
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
@@ -11,7 +12,7 @@ import '../../services/api.dart';
 import '../brand.dart';
 import '../clinician/clinician_shell.dart' show guarded;
 import '../clinician/invite_dialog.dart';
-import '../settings_sheet.dart';
+import '../settings_screen.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'support_shell.dart' show appVersionText;
@@ -19,7 +20,10 @@ import 'support_shell.dart' show appVersionText;
 typedef _People = ({List<Person> patients, List<Person> clinicians, List<Person> admins, String serverBuild});
 
 class PeopleScreen extends StatefulWidget {
-  const PeopleScreen({super.key});
+  /// The practice admin's first screen, with the Settings gear. Without it (the master clinician,
+  /// from Settings > Practice) it has a back button instead.
+  final bool home;
+  const PeopleScreen({this.home = false, super.key});
   @override
   State<PeopleScreen> createState() => _PeopleScreenState();
 }
@@ -264,8 +268,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const BrandedTitle(Text('Practice')),
-          actions: [IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: () => showSettingsSheet(context))],
+          title: widget.home ? const BrandedTitle(Text('Practice')) : const Text('People'),
+          actions: [if (widget.home) const SettingsButton()],
           bottom: const TabBar(tabs: [Tab(text: 'Patients'), Tab(text: 'Staff')]),
         ),
         floatingActionButton: Builder(

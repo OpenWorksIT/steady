@@ -12,7 +12,9 @@ import '../brand.dart';
 import '../clinician/clinician_shell.dart' show guarded;
 import '../clinician/feedback_inbox_screen.dart';
 import '../clinician/server_updates_screen.dart';
-import '../settings_sheet.dart';
+import '../community/community_rules.dart';
+import '../community/community_tab.dart';
+import '../settings_screen.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -25,22 +27,29 @@ class SupportShell extends StatefulWidget {
 class _SupportShellState extends State<SupportShell> {
   int _tab = 0;
   @override
-  Widget build(BuildContext context) => Scaffold(
-        body: IndexedStack(index: _tab, children: const [
-          FeedbackInboxScreen(home: true),
-          SupportStaffScreen(),
-          ServerUpdatesScreen(),
-        ]),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _tab,
-          onDestinationSelected: (i) => setState(() => _tab = i),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.inbox_outlined), selectedIcon: Icon(Icons.inbox), label: 'To look at'),
-            NavigationDestination(icon: Icon(Icons.badge_outlined), selectedIcon: Icon(Icons.badge), label: 'Staff'),
-            NavigationDestination(icon: Icon(Icons.dns_outlined), selectedIcon: Icon(Icons.dns), label: 'Server'),
-          ],
-        ),
-      );
+  Widget build(BuildContext context) {
+    // the community (Announcements and Steady development, for OpenWorks), when set up
+    final forum = AppScope.of(context).config.communityUrl;
+    final community = forum.isNotEmpty && communityTabHere(forum);
+    return Scaffold(
+      body: IndexedStack(index: _tab, children: [
+        const FeedbackInboxScreen(home: true),
+        const SupportStaffScreen(),
+        const ServerUpdatesScreen(),
+        if (community) CommunityTab(active: _tab == 3),
+      ]),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: [
+          const NavigationDestination(icon: Icon(Icons.inbox_outlined), selectedIcon: Icon(Icons.inbox), label: 'To look at'),
+          const NavigationDestination(icon: Icon(Icons.badge_outlined), selectedIcon: Icon(Icons.badge), label: 'Staff'),
+          const NavigationDestination(icon: Icon(Icons.dns_outlined), selectedIcon: Icon(Icons.dns), label: 'Server'),
+          if (community) const NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum), label: 'Community'),
+        ],
+      ),
+    );
+  }
 }
 
 /// The practice's staff for OpenWorks support: reset passwords (including a full reset after a
@@ -113,7 +122,7 @@ class _SupportStaffScreenState extends State<SupportStaffScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const BrandedTitle(Text('Staff')),
-        actions: [IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: () => showSettingsSheet(context))],
+        actions: const [SettingsButton()],
       ),
       body: Loader<({List<Person> staff, String serverBuild})>(
         key: _key,

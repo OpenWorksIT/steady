@@ -114,9 +114,15 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 		case r.URL.Path == "/api/steady/fleet" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			json.NewEncoder(w).Encode(map[string]any{
 				"practice": "VR Clinical Psychology", "health": map[string]any{"status": "good", "reasons": []any{}},
-				"version": map[string]any{"code": "83f8776", "managed": true, "signed": true, "behind": 0},
-				"host":    map[string]any{"disk": map[string]any{"total": 25e9, "used": 5e9}, "memory": map[string]any{"total": 2e9, "available": 1e9}, "backups": map[string]any{"newest": time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), "count": 3, "bytes": 1e6}},
-				"counts":  map[string]any{"patients": 12, "staff": 4, "checkins7d": 60},
+				"version":           map[string]any{"code": "83f8776", "managed": true, "signed": true, "behind": 0, "latest": map[string]any{"sha": "83f87760000", "release": "v1.0.2"}},
+				"host":              map[string]any{"disk": map[string]any{"total": 25e9, "used": 5e9}, "memory": map[string]any{"total": 2e9, "available": 1e9}, "backups": map[string]any{"newest": time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), "count": 3, "bytes": 1e6}},
+				"counts":            map[string]any{"patients": 12, "staff": 4, "checkins7d": 60, "olderConsent": 3, "deletionOverdue": 0, "staffWithoutTwoStep": 1},
+				"operatorAgreement": map[string]any{"version": "1.0", "signed": true, "signedAt": "2026-11-03T08:00:00Z"},
+				"audit": map[string]any{"at": time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339), "code": "9d66cbe", "items": []any{
+					map[string]any{"level": "fail", "section": "Firewall and listening ports", "text": "no firewall drops incoming connections <script>"},
+					map[string]any{"level": "warn", "section": "SSH", "text": "X11 forwarding is on"},
+					map[string]any{"level": "ok", "section": "Disk", "text": "disk 11% used"},
+				}},
 			})
 		case r.URL.Path == "/api/steady/fleet/request" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			var b map[string]string
@@ -213,7 +219,9 @@ func TestSignInAndPages(t *testing.T) {
 	// the overview shows the server
 	res, _ = c.Get(site.URL + "/")
 	page := body(t, res)
-	for _, want := range []string{"VR Clinical Psychology", "83f8776", "up to date", "20% of", "5 h ago", "60"} {
+	// its version as a number: it runs the latest signed release (1.0.2), though it doesn't report versions yet
+	for _, want := range []string{"VR Clinical Psychology", "<code>1.0.2</code>", "up to date", "20% of", "5 h ago", "60",
+		"1 to fix, 1 to look at", "3 on an older consent statement, 1 staff without two-step sign-in"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("overview lacks %q", want)
 		}
@@ -227,6 +235,19 @@ func TestSignInAndPages(t *testing.T) {
 	body(t, res)
 	res, _ = c.Get(site.URL + "/s/0")
 	page = body(t, res)
+	if !strings.Contains(page, "Operator agreement") || !strings.Contains(page, "signed, version 1.0, on 3 Nov 2026") {
+		t.Fatalf("the detail page doesn't say the operator agreement is signed")
+	}
+	// the security and privacy check: what to fix first, what passed one click down, text escaped
+	for _, want := range []string{"Security and privacy checks", "checked 2 h ago by code 9d66cbe", "no firewall drops incoming connections &lt;script&gt;",
+		"X11 forwarding is on", "1 passed", "disk 11% used", "Patients on an older consent statement</dt><dd>3"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("detail page lacks %q", want)
+		}
+	}
+	if strings.Contains(page, "<script>") {
+		t.Fatal("a check's text wasn't escaped")
+	}
 	i := strings.Index(page, `name="csrf" value="`)
 	csrf := page[i+len(`name="csrf" value="`):]
 	csrf = csrf[:strings.Index(csrf, `"`)]
@@ -413,20 +434,70 @@ func TestMessagesCantComeFromALink(t *testing.T) {
 	}
 }
 
-func TestAutoRefreshDoesntKeepYouIn(t *testing.T) {
+func TestAnOpenTabStaysSignedIn(t *testing.T) {
 	app, site, _, u, _ := setup(t)
 	start := time.Now()
 	clock := start
 	app.now = func() time.Time { return clock }
 	c := signIn(t, site, u, start)
-	// the page refreshes itself every minute for 40 minutes
-	for m := 1; m <= 40; m++ {
+	// a whole day with the tab open: only its /alive frame asks, once a minute
+	for m := 1; m <= 24*60; m++ {
 		clock = start.Add(time.Duration(m) * time.Minute)
-		res, _ := c.Get(site.URL + "/?auto=1")
-		body(t, res)
-		if m > 31 && res.StatusCode != http.StatusSeeOther {
-			t.Fatalf("still signed in after %d idle minutes", m)
+		res, _ := c.Get(site.URL + "/alive")
+		b := body(t, res)
+		if res.StatusCode != 200 || res.Header.Get("Refresh") != "60" || !strings.Contains(b, "alive") {
+			t.Fatalf("signed out after %d minutes with the tab open: %d %q", m, res.StatusCode, b)
 		}
+	}
+	if res, _ := c.Get(site.URL + "/"); res.StatusCode != 200 {
+		t.Fatalf("overview after a day: %d", res.StatusCode)
+	}
+	// every page carries the frame, and may frame only this site
+	res, _ := c.Get(site.URL + "/todo")
+	page := body(t, res)
+	if !strings.Contains(page, `<iframe class="alive" src="/alive"`) || !strings.Contains(res.Header.Get("Content-Security-Policy"), "frame-src 'self'") ||
+		!strings.Contains(res.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") || res.Header.Get("X-Frame-Options") != "DENY" {
+		t.Fatal("no /alive frame, or the frame rules are wrong")
+	}
+	res, _ = c.Get(site.URL + "/alive")
+	body(t, res)
+	if !strings.Contains(res.Header.Get("Content-Security-Policy"), "frame-ancestors 'self'") || res.Header.Get("X-Frame-Options") != "SAMEORIGIN" {
+		t.Fatal("/alive may be framed by other sites")
+	}
+}
+
+func TestAClosedTabSignsOut(t *testing.T) {
+	app, site, _, u, _ := setup(t)
+	start := time.Now()
+	clock := start
+	app.now = func() time.Time { return clock }
+	c := signIn(t, site, u, start)
+	// the tab closes: nothing asks for 11 minutes
+	clock = start.Add(11 * time.Minute)
+	res, _ := c.Get(site.URL + "/alive")
+	if b := body(t, res); res.Header.Get("Refresh") != "" || !strings.Contains(b, "signed out") {
+		t.Fatalf("still alive after the tab closed: %q", b)
+	}
+	if res, _ := c.Get(site.URL + "/"); res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("still signed in after the tab closed: %d", res.StatusCode)
+	}
+	// and signed out, /alive keeps nobody in
+	res, _ = client().Get(site.URL + "/alive")
+	if res.Header.Get("Refresh") != "" {
+		t.Fatal("/alive keeps reloading for nobody")
+	}
+	body(t, res)
+}
+
+func TestTheSignInCookieIsForTheBrowserSessionOnly(t *testing.T) {
+	_, site, _, u, _ := setup(t)
+	c := client()
+	code, _ := totpAt(u.TOTP, time.Now().Unix()/30)
+	res, _ := c.PostForm(site.URL+"/login", url.Values{"name": {u.Name}, "password": {"a long enough password"}, "code": {code}})
+	body(t, res)
+	sc := res.Header.Get("Set-Cookie")
+	if !strings.HasPrefix(sc, cookieName+"=") || strings.Contains(sc, "Max-Age") || strings.Contains(sc, "Expires") {
+		t.Fatalf("the cookie outlives the browser: %s", sc)
 	}
 }
 
@@ -588,5 +659,104 @@ func TestSignInQueueGivesUp(t *testing.T) {
 	app.Routes().ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable || time.Since(start) > 2*time.Second {
 		t.Fatalf("busy: %d after %v", w.Code, time.Since(start))
+	}
+}
+
+func TestAuditSummary(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	// none yet (a server older than 1.0.6, or the service not installed)
+	if a := makeAudit(map[string]any{}, now); a.Have || a.Summary != "no check yet" || a.PrivacyWarn {
+		t.Fatalf("no audit: %+v", a)
+	}
+	at := func(d time.Duration) string { return now.Add(-d).Format(time.RFC3339) }
+	ok := map[string]any{"level": "ok", "section": "Disk", "text": "fine"}
+	a := makeAudit(map[string]any{"audit": map[string]any{"at": at(time.Hour), "items": []any{ok}}}, now)
+	if a.Summary != "all clear" || a.SummaryClass != "good" || a.Oks != 1 || a.Stale {
+		t.Fatalf("clear: %+v", a)
+	}
+	// a check that stopped running isn't "all clear"
+	a = makeAudit(map[string]any{"audit": map[string]any{"at": at(20 * time.Hour), "items": []any{ok}}}, now)
+	if !a.Stale || a.SummaryClass != "warn" || !strings.Contains(a.Summary, "stopped running") {
+		t.Fatalf("stale: %+v", a)
+	}
+	// failures first, then warnings; junk ignored
+	a = makeAudit(map[string]any{"audit": map[string]any{"at": at(time.Hour), "items": []any{
+		map[string]any{"level": "warn", "text": "w"}, "junk", map[string]any{"level": "fail", "text": "f"}, map[string]any{"level": "other"}}},
+		"counts": map[string]any{"deletionOverdue": 2.0}}, now)
+	if a.Fails != 1 || a.Warns != 1 || a.Problems[0].Text != "f" || a.SummaryClass != "bad" || !a.PrivacyWarn || a.PrivacyNote != "2 deletion past 25 days" {
+		t.Fatalf("problems: %+v", a)
+	}
+}
+
+func TestChecksPageBySeverity(t *testing.T) {
+	_, site, _, u, _ := setup(t)
+	c := signIn(t, site, u, time.Now())
+	res, _ := c.Get(site.URL + "/checks")
+	page := body(t, res)
+	fix, look := strings.Index(page, "To fix"), strings.Index(page, "To look at")
+	if fix < 0 || look < fix {
+		t.Fatal("not ordered by severity")
+	}
+	fixPart, lookPart := page[fix:look], page[look:]
+	for _, want := range []string{"no firewall drops incoming connections &lt;script&gt;"} {
+		if !strings.Contains(fixPart, want) {
+			t.Fatalf("to fix lacks %q", want)
+		}
+	}
+	for _, want := range []string{"X11 forwarding is on", "3 patient(s) haven&#39;t yet agreed to the current consent statement", "1 staff member(s) without two-step sign-in"} {
+		if !strings.Contains(lookPart, want) {
+			t.Fatalf("to look at lacks %q", want)
+		}
+	}
+	if !strings.Contains(page, `aria-label="1 to fix, 3 to look at, 1 passed"`) || !strings.Contains(page, `href="/checks"`) {
+		t.Fatal("no bar or no link to the page")
+	}
+	if strings.Contains(page, "<script>") {
+		t.Fatal("not escaped")
+	}
+}
+
+func TestMakeChecks(t *testing.T) {
+	now := time.Now()
+	down := &Status{Server: Server{Name: "Down"}, At: now, Err: "can't reach the server: refused"}
+	none := &Status{Server: Server{Name: "Old"}, At: now, Data: map[string]any{"counts": map[string]any{"deletionOverdue": 2.0}}}
+	stale := &Status{Server: Server{Name: "Stale"}, At: now, Data: map[string]any{"audit": map[string]any{"at": now.Add(-30 * time.Hour).Format(time.RFC3339), "items": []any{
+		map[string]any{"level": "ok", "text": "fine"}}}}}
+	p := makeChecks([]*Status{down, none, stale}, now)
+	if len(p.Fix) != 2 || p.Fix[0].Server != "Down" || !strings.Contains(p.Fix[1].Text, "2 deletion request(s)") {
+		t.Fatalf("fix: %+v", p.Fix)
+	}
+	if len(p.Look) != 2 || !strings.Contains(p.Look[0].Text, "no security and privacy check") || !strings.Contains(p.Look[1].Text, "has stopped") {
+		t.Fatalf("look: %+v", p.Look)
+	}
+	if p.Servers[2].Passed != 1 || p.Servers[2].SummaryClass != "warn" || p.Servers[0].SummaryClass != "bad" {
+		t.Fatalf("servers: %+v", p.Servers)
+	}
+	if p.Servers[1].FixW != "50.00" || p.Servers[1].LookW != "50.00" {
+		t.Fatalf("bar: %+v", p.Servers[1])
+	}
+}
+
+func TestVersionText(t *testing.T) {
+	ver := func(v map[string]any) string { return versionText(map[string]any{"version": v}) }
+	cases := []struct {
+		v    map[string]any
+		want string
+	}{
+		{map[string]any{"code": "48e2af3", "current": map[string]any{"version": "1.0.5"}}, "1.0.5"},
+		{map[string]any{"code": "b489d65", "current": map[string]any{"version": "1.1.0 test 23"}}, "1.1.0 test 23"},
+		// a server from before versions: the release's number when it runs the latest release
+		{map[string]any{"code": "48e2af3", "latest": map[string]any{"sha": "48e2af3aaaa", "release": "v1.0.5"}}, "1.0.5"},
+		// ...and its code when it doesn't
+		{map[string]any{"code": "6bc38d5", "latest": map[string]any{"sha": "48e2af3aaaa", "release": "v1.0.5"}}, "6bc38d5"},
+		{map[string]any{}, "?"},
+	}
+	for _, c := range cases {
+		if got := ver(c.v); got != c.want {
+			t.Errorf("%v: %q, want %q", c.v, got, c.want)
+		}
+	}
+	if releaseText(map[string]any{"version": map[string]any{"latest": map[string]any{"release": "v1.0.5"}}}) != "1.0.5" {
+		t.Error("release text")
 	}
 }

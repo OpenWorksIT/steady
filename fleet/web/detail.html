@@ -9,6 +9,23 @@
 {{if .Row.Busy}}<p class="busy">{{.Row.Busy}}</p>{{end}}
 <dl>{{range .Facts}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
 
+{{with .Row.Audit}}
+<h2 id="checks">Security and privacy checks</h2>
+{{if .Have}}<p><span class="check {{.SummaryClass}}">{{.Summary}}</span> <span class="muted">· checked {{.Checked}}{{if .Code}} by code {{.Code}}{{end}} · runs every 6 hours on the server (audit-server.sh)</span></p>
+{{else}}<p class="muted">No check from this server yet. On the server: <code>sudo ./ctl/install.sh</code> in its deploy folder (Steady 1.0.6 or newer) sets it up and runs the first one.</p>{{end}}
+<dl>
+<dt>Patients on an older consent statement</dt><dd>{{.OlderConsent}}</dd>
+<dt>Deletion requests past 25 days</dt><dd>{{.DeletionOverdue}}</dd>
+<dt>Staff without two-step sign-in</dt><dd>{{.StaffWithoutTwoStep}}</dd>
+</dl>
+{{if .Problems}}<div class="table"><table class="checks"><tbody>
+{{range .Problems}}<tr><td><span class="pill {{if eq .Level "fail"}}down{{else}}slow{{end}}">{{if eq .Level "fail"}}fix{{else}}look{{end}}</span></td><td class="muted">{{.Section}}</td><td>{{.Text}}</td></tr>
+{{end}}</tbody></table></div>{{end}}
+{{if .Passed}}<details><summary>{{.Oks}} passed</summary><div class="table"><table class="checks"><tbody>
+{{range .Passed}}<tr><td><span class="pill good">ok</span></td><td class="muted">{{.Section}}</td><td>{{.Text}}</td></tr>
+{{end}}</tbody></table></div></details>{{end}}
+{{end}}
+
 <h2>Actions</h2>
 {{if .Row.CanAct}}
 <div class="actions">

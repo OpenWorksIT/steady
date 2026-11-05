@@ -1,15 +1,22 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Steady - research: the RADR view for psychologists, and the fictional demo patients that
-// OpenWorks loads with deploy/accounts.sh demo-patients.
+// Steady - RADR for psychologists: the RADR tab, each number explained, flags marked as
+// reviewed; and the fictional demo patients that OpenWorks loads with deploy/accounts.sh
+// demo-patients.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// RADR is a research view (lib/radr.js, docs/RADR.md): not a risk score, prediction or diagnosis.
+// RADR (lib/radr.js, docs/RADR.md) shows how far a patient's watch data and check-ins are from
+// their own normal, to improve care: not a risk score, prediction or diagnosis. It orders the
+// psychologist's list and never raises an alert. Only staff who may see the patient use these
+// routes (their psychologist, or a colleague it's shared with); every read is access-logged
+// before the answer goes out, and refused if it can't be.
 
-// The patient's RADR for the last `days` days (default 56, at most 365).
+// The patient's RADR for the last `days` days (default 56, at most 365), with the flags on the
+// latest day and who marked each as reviewed.
 routerAdd("GET", "/api/steady/patients/{id}/radr", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const w = require(`${__hooks}/lib/wearable.js`);
   const R = require(`${__hooks}/lib/radr.js`);
+  const D = require(`${__hooks}/lib/radr_data.js`);
   s.requireRole(e, "clinician");
   const v = s.viewablePatient($app, e.auth.id, e.request.pathValue("id"));
   const p = v.patient;
@@ -18,12 +25,61 @@ routerAdd("GET", "/api/steady/patients/{id}/radr", (e) => {
   const tz = p.getInt("tzOffset") || 120;
   const to = w.localDay(s.nowMs(), tz);
   const from = R.addDays(to, -(days - 1));
-  const out = require(`${__hooks}/lib/radr_data.js`).forPatient($app, p, from, to);
+  const out = D.forPatient($app, p, from, to);
+  out.flags = D.current($app, p).flags;
   s.audit($app, e, "patient.radr", "user:" + p.id + " " + from + ".." + to + (v.own ? "" : " shared"), p.id, true);
   return e.json(200, out);
 }, $apis.requireAuth());
 
-// Load (or remove) the three fictional research patients for one psychologist. Terminal only.
+// One day explained (default: the latest rated day): in plain words, what was measured, the
+// person's usual range, the value then, how far from usual and why that counts, with the days
+// and values behind each number. On the latest day, its flags and their reviews too.
+routerAdd("GET", "/api/steady/patients/{id}/radr/explain", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const w = require(`${__hooks}/lib/wearable.js`);
+  const D = require(`${__hooks}/lib/radr_data.js`);
+  s.requireRole(e, "clinician");
+  const v = s.viewablePatient($app, e.auth.id, e.request.pathValue("id"));
+  const p = v.patient;
+  const q = e.requestInfo().query || {};
+  const today = w.localDay(s.nowMs(), p.getInt("tzOffset") || 120);
+  const asked = String(q.day || "");
+  if (asked && (!w.validDay(asked) || asked > today || asked < w.addDays(today, -400))) {
+    throw s.badRequest("day must be a date like 2026-11-02, in the last 400 days.");
+  }
+  // logged before anything is read: if the access log can't be written, nothing is shown
+  s.audit($app, e, "patient.radr.explain", "user:" + p.id + (asked ? " " + asked : "") + (v.own ? "" : " shared"), p.id, true);
+  const cur = D.current($app, p);
+  const latest = cur.latest ? cur.latest.day : null;
+  const day = asked || latest || today;
+  const out = D.explain($app, p, day);
+  out.latestDay = latest;
+  out.flags = day === latest ? cur.flags : [];
+  return e.json(200, out);
+}, $apis.requireAuth());
+
+// Marks one flag on the latest day as reviewed (body: { key, note }): who and when. The flag
+// stays visible with that, and no longer moves the patient up the list until something new
+// appears. The patient's own psychologist or a colleague it's shared with.
+routerAdd("POST", "/api/steady/patients/{id}/radr/review", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const D = require(`${__hooks}/lib/radr_data.js`);
+  s.requireRole(e, "clinician");
+  const v = s.viewablePatient($app, e.auth.id, e.request.pathValue("id"));
+  const p = v.patient;
+  const b = s.body(e);
+  const key = s.core.str(b.key, 80);
+  if (!/^radr:(sleep|circadian|activity|cardiac):\d{4}-\d{2}-\d{2}$/.test(key)) throw s.badRequest("This can't be marked as reviewed.");
+  // logged first: it reads the patient's data, and if the log can't be written nothing changes
+  s.audit($app, e, "patient.radr.review", "radr" + (v.own ? "" : " shared"), p.id, true);
+  const flag = D.current($app, p).flags.filter((f) => f.key === key)[0];
+  if (!flag) throw s.badRequest("This has changed since you opened it. Pull down to refresh, then look again.");
+  const reviewed = D.markReviewed($app, p, flag, e.auth, s.core.str(b.note, 500));
+  D.refreshLatest($app, p);
+  return e.json(200, { key: key, reviewed: reviewed });
+}, $apis.requireAuth());
+
+// Load (or remove) the three fictional demo patients for one psychologist. Terminal only.
 routerAdd("POST", "/api/steady/ops/demo", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const x = require(`${__hooks}/lib/practice.js`);
@@ -123,4 +179,13 @@ routerAdd("POST", "/api/steady/ops/demo", (e) => {
   });
   s.audit($app, null, "ops.demo.create", "clinician:" + c.id + " count:" + created.length, "");
   return e.json(200, { removed: existing.length, created: created });
+});
+
+// Test servers only: the fictional demo patients go on living, a day at a time, so a test server
+// looks like one in use (lib/demo_daily.js). Off unless .env says STEADY_DEMO_DAILY=on, and only
+// users marked demo are touched.
+cronAdd("steady_demo_daily", "30 21 * * *", () => {
+  if (String($os.getenv("STEADY_DEMO_DAILY") || "").trim() !== "on") return;
+  const n = require(`${__hooks}/lib/demo_daily.js`).run($app, Date.now());
+  if (n) console.log("steady: the demo patients got " + n + " new day(s)");
 });

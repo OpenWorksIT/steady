@@ -1,0 +1,19 @@
+name: steady_fcm
+description: "Minimal Firebase Cloud Messaging bridge for Steady on Android: permission, token, notification display, taps. Android only, so Firebase stays out of the iPhone and web apps."
+version: 0.1.0
+publish_to: "none"
+
+environment:
+  sdk: ">=3.10.0 <4.0.0"
+  flutter: ">=3.38.1"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: za.co.openworks.steady.fcm
+        pluginClass: SteadyFcmPlugin

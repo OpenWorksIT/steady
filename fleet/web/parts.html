@@ -1,6 +1,7 @@
 {{define "top"}}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><title>{{.}} · Steady fleet</title><link rel="stylesheet" href="/app.css"></head><body>{{end}}
-{{define "bar"}}<header><a class="brand" href="/">Steady fleet</a><nav><a href="/">Servers</a><a href="/audit">Audit log</a>
-<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="link">Sign out {{.User}}</button></form></nav></header>{{end}}
+{{define "bar"}}<header><a class="brand" href="/">Steady fleet</a><nav><a href="/">Servers</a><a href="/checks">Checks</a><a href="/todo">To do</a><a href="/audit">Audit log</a>
+<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="link">Sign out {{.User}}</button></form></nav></header>
+<iframe class="alive" src="/alive" title="Keeps you signed in while this tab is open" aria-hidden="true" tabindex="-1"></iframe>{{end}}
 {{define "end"}}<footer>Steady fleet view · OpenWorks IT · free software (AGPL-3.0). It shows versions, health, counts and backup age; never anything about patients.</footer></body></html>{{end}}

@@ -91,7 +91,8 @@ class ExportInstrument {
   ExportInstrument(this.name, this.items, this.responseSets);
 }
 
-/// RADR (the research view) for the report period: see server/pb_hooks/lib/radr.js.
+/// RADR for the report period (how far watch data and check-ins are from the person's own
+/// normal, to improve care): see server/pb_hooks/lib/radr.js.
 class ExportRadrDay {
   final DateTime day;
   final double? watch, self, combined;
@@ -113,12 +114,30 @@ class ExportRadr {
   List<Map<String, dynamic>> exclusions = const [];
   /// each measure's value and usual value on the first and latest rated days
   Map<String, dynamic> startFeatures = const {}, latestFeatures = const {};
+  /// the flags on the latest day (when the period reaches today): [{key, domain, since, day, score,
+  /// review: {by, at, note} | null}]
+  List<Map<String, dynamic>> flags = const [];
   ExportRadr(this.days, this.concordance, this.latest, this.shift, this.wearDays, this.checkinDays);
 
   static const domainKeys = ['sleep', 'circadian', 'activity', 'cardiac'];
   static const domainNames = {'sleep': 'Sleep', 'circadian': 'Body clock', 'activity': 'Activity', 'cardiac': 'Heart'};
 
   List<ExportRadrDay> get rated => days.where((d) => d.watch != null).toList();
+
+  /// "Sleep away from usual since 28 Oct: marked as reviewed in Steady by Dr X on 2 Nov ("note")",
+  /// or "...: not yet marked as reviewed in Steady".
+  static String flagText(Map<String, dynamic> f, String Function(DateTime) date) {
+    final name = domainNames['${f['domain']}'] ?? '${f['domain']}';
+    final since = DateTime.tryParse('${f['since'] ?? ''}');
+    final r = asMap(f['review']);
+    final at = _date(r['at']);
+    final by = '${r['by'] ?? ''}';
+    final note = '${r['note'] ?? ''}'.trim();
+    final review = r.isEmpty
+        ? 'not yet marked as reviewed in Steady'
+        : 'marked as reviewed in Steady by ${by.isEmpty ? 'the psychologist' : by}${at == null ? '' : ' on ${date(at)}'}${note.isEmpty ? '' : ' ("$note")'}';
+    return '$name away from usual${since == null ? '' : ' since ${date(since)}'}: $review';
+  }
 
   static ExportRadrDay _day(Map<String, dynamic> j) {
     final dom = asMap(j['domains']);
@@ -152,6 +171,7 @@ class ExportRadr {
     r.exclusions = asList(j['exclusions']).map(asMap).toList();
     r.startFeatures = asMap(asMap(j['start'])['features']);
     r.latestFeatures = asMap(asMap(j['latest'])['features']);
+    r.flags = asList(j['flags']).map(asMap).toList();
     return r;
   }
 }

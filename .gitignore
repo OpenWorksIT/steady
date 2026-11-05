@@ -4,6 +4,11 @@ deploy/secrets/
 server/pb_data/
 *.p8
 *.pem
+# Firebase: the app takes its settings from the build (--dart-define), servers keep their key
+# in deploy/secrets/fcm.json
+google-services.json
+GoogleService-Info.plist
+fcm.json
 
 # Flutter / Dart
 app/.dart_tool/
@@ -16,6 +21,8 @@ app/packages/*/.dart_tool/
 
 # Go
 pusher/pusher
+fleet/fleet
+community/signin/signin
 
 # Node test runs
 node_modules/

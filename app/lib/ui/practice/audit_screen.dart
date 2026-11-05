@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Settings > Audit report (master clinician and practice admin): who opened or changed what, for
-// a patient's access request (POPIA section 23) or a review. Reading it is logged too.
+// Settings > Practice > Audit report (master clinician and practice admin): who opened or changed
+// what, for a patient's access request (POPIA section 23) or a review. Reading it is logged too.
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
@@ -15,12 +15,14 @@ const _actions = {
   'patient.summary': 'Opened a patient',
   'patient.biometrics': 'Looked at watch data',
   'patient.radr': 'Looked at RADR',
+  'patient.radr.explain': 'Looked at how RADR was worked out',
+  'patient.radr.review': 'Marked RADR as reviewed',
   'patient.notes': 'Read notes',
   'patient.note.add': 'Added a note',
   'patient.export': 'Exported a patient',
   'patients.export': 'Exported all patients',
   'patient.flag.review': 'Marked a flag as reviewed',
-  'patient.export.heidi': 'Exported a patient for Heidi',
+  'patient.export.heidi': 'Exported a patient for AI note-taking',
   'account.self-lock': 'Locked their own account',
   'account.device.linked': 'Linked a device',
   'account.device.removed': 'Removed a device',
@@ -37,6 +39,8 @@ const _actions = {
   'account.create': 'Added a staff account',
   'audit.read': 'Read the audit report',
   'people.list': 'Opened the practice\'s people',
+  'operator-agreement.sign': 'Signed the operator agreement',
+  'account.community-sign-in': 'Signed in to the community forum',
 };
 
 String _describe(String action) {

@@ -18,6 +18,8 @@ jobs:
         with:
           node-version: 22
       - run: node --test server/tests/*.test.js
+      # how versions are worked out (docs/VERSIONS.md)
+      - run: deploy/test/version_test.sh
 
   server-live:
     # Boots the real PocketBase with Steady's migrations and hooks and checks it starts cleanly.
@@ -142,6 +144,12 @@ jobs:
           sed 's/STEADY_DOMAIN/steady.example.co.za/' deploy/proxy/steady.caddy > site.caddy
           docker run --rm -v "$PWD/site.caddy:/etc/caddy/Caddyfile:ro" caddy:2 \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > v5.txt 2>&1 || note "proxy site Caddyfile" v5.txt
+          # OpenWorks' own sites: the forum and its sign-in bridge
+          for site in community/community.caddy community/signin/signin.caddy; do
+            docker run --rm -v "$PWD/$site:/etc/caddy/Caddyfile:ro" caddy:2 \
+              caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile > v6.txt 2>&1 || note "$site" v6.txt
+          done
+          docker compose -f community/signin/compose.yml config -q > v7.txt 2>&1 || note "sign-in bridge compose" v7.txt
           exit $fail
       - name: server log on failure
         if: failure()
@@ -160,9 +168,13 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: "1.27"
-      # the push relay and the fleet view (fleet/): both standard library only
+      # the push relay, the fleet view (fleet/) and the forum's sign-in bridge (community/signin/):
+      # all standard library only
       - run: cd pusher && go vet ./... && go test ./...
       - run: cd fleet && go vet ./... && go test ./...
+      - run: cd community/signin && test -z "$(gofmt -l .)" && go vet ./... && go test ./...
+      # the forum's setup script and its Steady Community look, against a stand-in for Discourse
+      - run: python3 community/test_setup.py
 
   app:
     runs-on: ubuntu-latest
@@ -176,6 +188,12 @@ jobs:
           flutter-version: 3.47.9
       # Each step reports its full output as one annotation, so it can be read with
       # `gh run view` even where log downloads aren't available.
+      - name: one version number
+        # VERSION is Steady's version; the app's own (pubspec.yaml) must say the same
+        run: |
+          v="$(tr -d ' \r\n' < VERSION)"; a="$(sed -nE 's/^version: *([0-9.]+).*/\1/p' app/pubspec.yaml)"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error title=VERSION::VERSION must be like 1.1.0, not '$v'"; exit 1; }
+          [ "$v" = "$a" ] || { echo "::error title=version::VERSION says $v but app/pubspec.yaml says $a"; exit 1; }
       - name: pub get
         working-directory: app
         run: |
@@ -215,10 +233,21 @@ jobs:
       - name: build apk
         working-directory: app
         timeout-minutes: 30
+        # Android notifications through OpenWorks IT's Firebase project (repository variables, not
+        # secrets: they're in every copy of the app). Without them the app has no Android
+        # notifications and says so in Settings. docs/APP.md, "Notifications".
+        env:
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          FIREBASE_SENDER_ID: ${{ vars.FIREBASE_SENDER_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
           set -o pipefail
           flutter create --org za.co.openworks --project-name steady --platforms android . > ../create.txt 2>&1
           rm -f test/widget_test.dart
           python3 scripts/patch_android.py 2>&1 | tee ../patch.txt
           grep -q 'Theme.AppCompat' android/app/src/main/res/values/styles.xml || { echo "::error title=patch_android::LaunchTheme isn't AppCompat"; exit 1; }
-          flutter build apk --debug --target-platform android-arm64 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
+          grep -q 'default_notification_icon' android/app/src/main/AndroidManifest.xml || { echo "::error title=patch_android::no notification icon for Firebase"; exit 1; }
+          flutter build apk --debug --target-platform android-arm64 \
+            --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
+            --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }

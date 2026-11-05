@@ -1,29 +1,33 @@
 #!/usr/bin/env python3
-# Steady community forum: one-off (and re-runnable) setup through the Discourse admin API.
+# Steady Community (the forum): one-off (and re-runnable) setup through the Discourse admin API.
 #
 # Copyright (C) 2026 OpenWorks IT (Pty) Ltd. GNU AGPL v3 or later; see LICENSE.
 #
 # Python 3 standard library only. Safe to run again: groups and categories are found by
 # name or slug and only changed where they differ. See docs/COMMUNITY.md, "Run setup.py".
-"""Configure the Steady community forum (Discourse) through its admin API.
+"""Configure Steady Community, the forum (built on Discourse), through its admin API.
 
 Sets the site settings, creates the "clinicians" and "openworks" groups, creates the
-categories with their permissions, closes any other category to OpenWorks, and posts the
-welcome and guidelines topic in Announcements.
+categories with their permissions, closes any other category to OpenWorks, posts the
+welcome and guidelines topic in Announcements, and gives the forum the Steady Community look
+(community/brand/: logo, icons, fonts, palettes, theme, wording) in place of Discourse's own.
 
 Credentials come from the environment, so they stay out of your shell history:
   DISCOURSE_URL           default https://community.steadyapp.co.za
-  DISCOURSE_API_KEY       an admin API key (Admin > Advanced > API keys)
-  DISCOURSE_API_USERNAME  the admin username the key belongs to
+  DISCOURSE_API_KEY       an admin API key (rake api_key:create_master, or Admin > Advanced > API keys)
+  DISCOURSE_API_USERNAME  the admin username to act as (system, with a key from rake)
 
 Run with --dry-run first: it reads the forum and prints what it would change. Without
 DISCOURSE_API_KEY, --dry-run prints the intended configuration only.
 """
 
 import argparse
+import hashlib
 import json
+import mimetypes
 import os
 import re
+import secrets
 import sys
 import time
 import urllib.error
@@ -31,6 +35,7 @@ import urllib.parse
 import urllib.request
 
 DEFAULT_URL = "https://community.steadyapp.co.za"
+SIGNIN_URL = "https://signin.steadyapp.co.za"  # the sign-in bridge (community/signin/)
 CONTACT_EMAIL = "info@openworks.co.za"  # shown to members as the forum's contact address
 
 # Permission levels Discourse uses for category access.
@@ -62,7 +67,7 @@ GROUPS = [
     {
         "name": "openworks",
         "full_name": "OpenWorks IT",
-        "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements and Steady development only. Mention @openworks there, or send a personal message.",
+        "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements, the Steady manual and Steady development only. Mention @openworks there, or send a personal message.",
         "visibility_level": VIS_LOGGED_ON,
         "members_visibility_level": VIS_LOGGED_ON,
         "mentionable_level": ALIAS_EVERYONE,
@@ -78,6 +83,22 @@ CATEGORIES = [
         "text_color": "FFFFFF",
         "description": "News for the community from the community lead and OpenWorks IT. Clinicians can reply.",
         "permissions": {"clinicians": CREATE_POST, "openworks": FULL},
+    },
+    {
+        "name": "Steady manual",
+        "slug": "manual",
+        "color": "2C5F7C",
+        "text_color": "FFFFFF",
+        "description": "How to use Steady, step by step with screenshots: for psychologists, practice administrators and the master psychologist, and what patients see. Questions in the replies: OpenWorks IT reads and answers here.",
+        "permissions": {"clinicians": CREATE_POST, "openworks": FULL},
+    },
+    {
+        "name": "The science",
+        "slug": "science",
+        "color": "143A3E",
+        "text_color": "FFFFFF",
+        "description": "How each part of Steady works and why: the methods, the evidence and the references, signed off by VR Clinical Psychology. Clinicians only; questions and challenges welcome in the replies.",
+        "permissions": {"clinicians": CREATE_POST},
     },
     {
         "name": "Clinical practice",
@@ -111,11 +132,21 @@ CATEGORIES = [
         "description": "Ideas, bugs and releases, with OpenWorks IT. OpenWorks reads and posts here.",
         "permissions": {"clinicians": FULL, "openworks": FULL},
     },
+    {
+        "name": "Tea room",
+        "slug": "tea-room",
+        "was": ["general"],  # Discourse's own General, given a use
+        "color": "A88C6B",
+        "text_color": "FFFFFF",
+        "description": "The staff room: introductions, the work and the life around it, what's helping you. Clinicians only, and still no patient-identifying information.",
+        "permissions": {"clinicians": FULL},
+    },
 ]
 
-WELCOME_TITLE = "Welcome to the Steady community: please read first"
+WELCOME_TITLE = "Welcome to Steady Community: please read first"
+WELCOME_TITLES_BEFORE = ["Welcome to the Steady community: please read first"]
 WELCOME_RAW = """\
-Welcome. This forum is for psychologists at practices that use Steady. It is a place to talk about the science, build questionnaires together, plan studies across practices, and shape how Steady develops.
+Welcome. Steady Community is for psychologists at practices that use Steady. It is a place to talk about the science, build questionnaires together, plan studies across practices, and shape how Steady develops.
 
 The first community is VR Clinical Psychology. Kempie van Rooyen is the community lead and runs the forum.
 
@@ -138,11 +169,11 @@ Data from studies run across practices will only ever be shared here as totals a
 
 | Area | Who can read it |
 |---|---|
-| Clinical practice, Research and studies, Questionnaires and tools | Clinicians only |
-| Announcements, Steady development | Clinicians and OpenWorks IT |
+| The science, Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
+| Announcements, Steady manual, Steady development | Clinicians and OpenWorks IT |
 | A practice's private category (if it has one) | That practice's psychologists only |
 
-OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
+OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements, the Steady manual and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
 
 To ask OpenWorks something, post in Steady development and mention @openworks, or send them a personal message. A mention of @openworks anywhere else reaches nobody, because they can't see it.
 
@@ -150,7 +181,11 @@ As with any hosted system, whoever runs the server could technically read its da
 
 ## Signing in
 
-The forum is invitation only, and you need to be signed in to see anything. Everyone signs in with a password and a 6-digit code from an authenticator app (Aegis, 2FAS, Google or Microsoft Authenticator). Keep your backup codes somewhere safe.
+The community opens only inside Steady: choose Community in the Steady app or web app, and you're in as yourself, with the Steady sign-in you already used (password, authenticator code, this device). There is no separate forum password, and the community doesn't open on its own in a browser.
+
+Your name and email address come from Steady, and your practice shows beside your name. To change them, change them in Steady (or ask your practice); the community follows the next time you open it.
+
+When someone leaves a practice, the practice stops their Steady account, and with it their way into the community; the community lead signs them out here.
 
 ## Good to know
 
@@ -161,6 +196,7 @@ The forum is invitation only, and you need to be signed in to see anything. Ever
 """
 
 TOO_MANY_REQUESTS_RETRIES = 4
+KEY_DESCRIPTION = "setup.py"  # the one-off key's description (community/run-setup.sh, docs/COMMUNITY.md)
 
 
 class SetupError(Exception):
@@ -184,7 +220,7 @@ class Discourse:
         self.dry_run = dry_run
         self.opener = urllib.request.build_opener(NoRedirect)
 
-    def request(self, method, path, body=None, allow_404=False):
+    def request(self, method, path, body=None, allow_404=False, raw=None, content_type=None):
         if method != "GET" and self.dry_run:
             raise AssertionError("write attempted in dry-run")
         url = self.base + path
@@ -193,6 +229,9 @@ class Discourse:
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        elif raw is not None:
+            data = raw
+            headers["Content-Type"] = content_type
         for attempt in range(TOO_MANY_REQUESTS_RETRIES + 1):
             req = urllib.request.Request(url, data=data, method=method, headers=headers)
             try:
@@ -208,7 +247,13 @@ class Discourse:
                     print(f"  (rate limited, waiting {wait} s)", file=sys.stderr)
                     time.sleep(wait)
                     continue
-                raise SetupError(_describe_http_error(method, path, err.code, text, err.headers))
+                e = SetupError(_describe_http_error(method, path, err.code, text, err.headers))
+                if err.code in (301, 302, 303, 307, 308) and err.headers:
+                    loc = err.headers.get("Location", "")
+                    # only to this forum
+                    if loc.startswith(self.base + "/") or loc.startswith("/"):
+                        e.location = loc
+                raise e
             except urllib.error.URLError as err:
                 raise SetupError(f"Could not reach {self.base}: {err.reason}. Check the URL and that the server is up.")
             except json.JSONDecodeError:
@@ -223,6 +268,26 @@ class Discourse:
 
     def put(self, path, body):
         return self.request("PUT", path, body)
+
+    def delete(self, path):
+        return self.request("DELETE", path)
+
+    def post_file(self, path, file_path, fields):
+        """A multipart upload: the file as "file", plus plain form fields."""
+        boundary = "steady-" + secrets.token_hex(12)
+        name = os.path.basename(file_path)
+        ctype = MIME_TYPES.get(os.path.splitext(name)[1]) or mimetypes.guess_type(name)[0] or "application/octet-stream"
+        parts = []
+        for key, value in fields.items():
+            parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode("utf-8"))
+        with open(file_path, "rb") as f:
+            parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+                         f'Content-Type: {ctype}\r\n\r\n'.encode("utf-8") + f.read() + b"\r\n")
+        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+        return self.request("POST", path, raw=b"".join(parts), content_type=f"multipart/form-data; boundary={boundary}")
+
+
+MIME_TYPES = {".woff2": "font/woff2", ".png": "image/png", ".svg": "image/svg+xml"}
 
 
 def _retry_after(err, text):
@@ -241,7 +306,7 @@ def _describe_http_error(method, path, code, text, headers):
     try:
         payload = json.loads(text)
         errors = payload.get("errors") or [payload.get("error") or payload.get("message")]
-        detail = "; ".join(str(e) for e in errors if e)
+        detail = "; ".join(str(e) for e in errors if e).rstrip(".")
     except (ValueError, AttributeError):
         detail = text.strip()[:200]
     hint = ""
@@ -273,12 +338,19 @@ def desired_settings(args):
     return [
         # Hard rules (also pinned in community.yml; checked here in case the pin was removed).
         ("login_required", "true"),
-        ("invite_only", "true"),
-        ("enforce_second_factor", "all"),
-        ("enable_local_logins", "true"),          # username/email + password stays the way in
+        ("invite_only", "false"),                 # who joins is decided by Steady (no invitations)
+        # the only way in: Steady, through the sign-in bridge (community/signin/)
+        ("enable_discourse_connect", "true"),
+        ("discourse_connect_url", SIGNIN_URL + "/discourse"),
+        ("enforce_second_factor", "no"),          # Steady asks for the code; Discourse can't do both
+        ("auth_overrides_email", "true"),
+        ("auth_overrides_name", "true"),
+        ("email_editable", "false"),
+        ("logout_redirect", SIGNIN_URL + "/signed-out"),
+        ("maximum_session_age", "12"),            # every visit to the Community tab signs in again
+        ("enable_local_logins", "false"),
         ("enable_local_logins_via_email", "false"),
         ("enable_passkeys", "false"),
-        ("enable_discourse_connect", "false"),
         ("enable_discourse_id", "false"),
         ("enable_google_oauth2_logins", "false"),
         ("enable_github_logins", "false"),
@@ -298,16 +370,29 @@ def desired_settings(args):
         ("discourse_ai_enabled", "false"),
         # Everything else.
         ("allow_uncategorized_topics", "false"),
-        ("invite_allowed_groups", "1|2"),          # admins and moderators only send invites
+        ("invite_allowed_groups", "1|2"),          # admins and moderators only (invites aren't used)
         ("edit_history_visible_to_public", "false"),  # earlier versions of posts: staff only
         ("can_permanently_delete", "true"),        # lets admins remove a slip for good
         ("enable_backups", "true"),
         ("backup_frequency", "1"),                 # daily
         ("maximum_backups", "7"),
         ("title", args.title),
-        ("site_description", "Psychologists at practices that use Steady: science, questionnaires, studies and development."),
-        ("short_site_description", "Steady community"),
+        ("site_description", "For psychologists at practices that use Steady: the science behind between-session care, questionnaires and tools, and studies across practices."),
+        ("short_site_description", "For psychologists at practices that use Steady"),
         ("contact_email", args.contact_email),
+        # Steady Community, not Discourse: no maker's badge, no Discourse tutorial bot
+        ("enable_powered_by_discourse", "false"),
+        ("discourse_narrative_bot_enabled", "false"),
+        # people by their names ("Welcome back, Test Clinician"), not their usernames
+        ("prioritize_username_in_ux", "false"),
+        # one place to talk: topics and personal messages, which flags and the guidelines cover.
+        # Chat is real-time and invites a quick aside about a patient; switch it on here if wanted.
+        ("chat_enabled", "false"),
+        # who runs it, for Discourse's terms of service (/tos); see "Steady: for a lawyer to confirm"
+        ("company_name", "OpenWorks IT (Pty) Ltd"),
+        ("company_url", "https://openworks.co.za"),
+        ("governing_law", "South Africa"),
+        ("city_for_disputes", "Gqeberha"),
     ]
 
 
@@ -315,7 +400,9 @@ def desired_settings(args):
 # the admin list, so the API can't change it; this script can only read some of them back.
 PINNED_IN_APP_YML = {
     "login_required", "invite_only", "enforce_second_factor", "enable_local_logins_via_email",
-    "enable_passkeys", "enable_discourse_connect", "enable_discourse_id",
+    "enable_passkeys", "enable_discourse_connect", "enable_discourse_id", "discourse_connect_url",
+    "auth_overrides_email", "auth_overrides_name", "email_editable", "logout_redirect",
+    "enable_local_logins", "maximum_session_age",
     "enable_google_oauth2_logins", "enable_github_logins", "enable_twitter_logins",
     "enable_facebook_logins", "enable_discord_logins", "enable_linkedin_oidc_logins",
     "sign_in_with_apple_enabled", "microsoft_auth_enabled", "openid_connect_enabled",
@@ -343,6 +430,10 @@ def apply_settings(api, args, group_ids):
     pm_groups = _pm_groups(current.get("personal_message_enabled_groups"), group_ids)
     if pm_groups:
         wanted.append(("personal_message_enabled_groups", pm_groups))
+    # the reading list and known issues are wikis: clinicians edit them from their first day
+    wiki_groups = _with_groups(current.get("edit_wiki_post_allowed_groups"), group_ids, ("clinicians",))
+    if wiki_groups:
+        wanted.append(("edit_wiki_post_allowed_groups", wiki_groups))
 
     for name, value in wanted:
         if name in current:
@@ -367,6 +458,18 @@ def apply_settings(api, args, group_ids):
             say("skipped", f"{name}: not offered by this Discourse version")
             unknown.append(name)
     return unknown, mismatched
+
+
+def _with_groups(current_value, group_ids, names):
+    """A group-list setting with these groups added to what's there."""
+    if current_value is None or not group_ids:
+        return None
+    ids = [i for i in str(current_value).split("|") if i]
+    for name in names:
+        gid = group_ids.get(name)
+        if gid is not None and str(gid) not in ids:
+            ids.append(str(gid))
+    return "|".join(ids)
 
 
 def _pm_groups(current_value, group_ids):
@@ -461,6 +564,18 @@ def describe(perms):
     return "; ".join(f"{g}: {LEVEL_NAMES.get(p, p)}" for g, p in sorted(perms.items())) or "nobody but staff"
 
 
+def _describe_category(api, cat_id, text):
+    """A category's description is the first post of its "About the ..." topic."""
+    shown = api.get(f"/c/{cat_id}/show.json").get("category", {})
+    topic_url = shown.get("topic_url")
+    if not topic_url:
+        return
+    topic = api.get(f"{topic_url}.json")
+    posts = topic.get("post_stream", {}).get("posts") or []
+    if posts:
+        api.put(f"/posts/{posts[0]['id']}.json", {"post": {"raw": text, "edit_reason": "Steady Community"}})
+
+
 def ensure_categories(api, specs, existing_groups):
     print("Categories")
     cats, _ = load_categories(api)
@@ -472,6 +587,19 @@ def ensure_categories(api, specs, existing_groups):
         if missing and not api.dry_run:
             raise SetupError(f"Category {spec['name']}: group(s) {', '.join(missing)} not found.")
         cat = by_slug.get(spec["slug"]) or by_name.get(spec["name"].lower())
+        old = next((by_slug[w] for w in spec.get("was", []) if w in by_slug), None)
+        if cat is None and old is not None:
+            # an existing category put to this use: renamed, recoloured and described
+            if api.dry_run:
+                say("would rename", f"{old['name']} to {spec['name']}")
+            else:
+                api.put(f"/categories/{old['id']}.json", {
+                    "name": spec["name"], "slug": spec["slug"], "color": spec["color"],
+                    "text_color": spec["text_color"], "permissions": spec["permissions"]})
+                _describe_category(api, old["id"], spec["description"])
+                say("renamed", f"{old['name']} to {spec['name']} ({describe(spec['permissions'])})")
+            result[spec["slug"]] = old["id"]
+            continue
         if cat is None:
             if api.dry_run:
                 say("would add", f"{spec['name']} ({describe(spec['permissions'])})")
@@ -499,10 +627,12 @@ def ensure_categories(api, specs, existing_groups):
 
 
 def lock_other_categories(api, managed_slugs):
-    """No other category may be open to OpenWorks or to everyone (OpenWorks are members too)."""
+    """No other category may be open to OpenWorks or to everyone (OpenWorks are members too).
+    Returns what couldn't be done."""
     print("Other categories (OpenWorks must not see them)")
     cats, uncategorized = load_categories(api)
     any_found = False
+    problems = []
     for cat in cats:
         if cat["slug"] in managed_slugs or cat["id"] == uncategorized:
             continue
@@ -523,11 +653,50 @@ def lock_other_categories(api, managed_slugs):
             keep["clinicians"] = min(dropped.values())
         if api.dry_run:
             say("would fix", f"{cat['name']}: {describe(perms)} -> {describe(keep)}")
-        else:
+            continue
+        try:
             api.put(f"/categories/{cat['id']}.json", {"name": cat["name"], "permissions": keep})
             say("fixed", f"{cat['name']}: {describe(keep)}")
+        except SetupError as err:
+            if "pre-seeded" not in str(err):
+                raise
+            # Discourse won't change who sees its own Site Feedback (or Staff) category, and says
+            # to delete it instead. Nothing here uses it: feedback goes to Steady development.
+            try:
+                api.delete(f"/categories/{cat['id']}.json")
+                say("removed", f"{cat['name']}: Discourse's own category, open to everyone; not used here")
+            except SetupError as err2:
+                say("WRONG", f"{cat['name']} stays open to everyone ({describe(perms)}): it can't be closed, and "
+                             f"deleting it failed: {err2}")
+                problems.append(f"{cat['name']}: open to everyone; delete it (it must hold no topics first)")
     if not any_found:
         say("ok", "none")
+    return problems
+
+
+# --- the side menu --------------------------------------------------------------------
+
+def ensure_sidebar(api, cat_ids):
+    """Everyone's side menu lists Steady Community's categories, in order (Discourse starts
+    with its General only). Applied to existing members too."""
+    print("Side menu")
+    ids = [str(i) for i in cat_ids.values() if i is not None]
+    if not ids:
+        say("skipped", "no categories yet")
+        return
+    value = "|".join(ids)
+    listed = api.get("/admin/site_settings.json")
+    current = {x["setting"]: x.get("value") for x in listed.get("site_settings", [])}
+    name = "default_navigation_menu_categories"
+    if name not in current:
+        say("skipped", f"{name}: not offered by this Discourse version")
+    elif norm(current[name]) == norm(value):
+        say("ok", "the categories, in order")
+    elif api.dry_run:
+        say("would set", "the categories, in order, for everyone")
+    else:
+        api.put(f"/admin/site_settings/{name}.json", {name: value, "update_existing_user": "true"})
+        say("set", "the categories, in order, for everyone")
 
 
 # --- welcome topic --------------------------------------------------------------------
@@ -539,8 +708,16 @@ def ensure_welcome(api, cat_id):
         return
     listing = api.get(f"/c/announcements/{cat_id}.json")
     for topic in listing.get("topic_list", {}).get("topics", []):
-        if topic.get("title", "").strip().lower() == WELCOME_TITLE.lower():
+        title = topic.get("title", "").strip().lower()
+        if title == WELCOME_TITLE.lower():
             say("ok", f"already posted (topic {topic['id']})")
+            return
+        if title in (t.lower() for t in WELCOME_TITLES_BEFORE):
+            if api.dry_run:
+                say("would rename", f"topic {topic['id']} to '{WELCOME_TITLE}'")
+            else:
+                api.put(f"/t/-/{topic['id']}.json", {"title": WELCOME_TITLE})
+                say("renamed", f"topic {topic['id']} to '{WELCOME_TITLE}'")
             return
     if api.dry_run:
         say("would add", f"'{WELCOME_TITLE}' in Announcements, pinned")
@@ -549,6 +726,427 @@ def ensure_welcome(api, cat_id):
     topic_id = created.get("topic_id")
     api.put(f"/t/{topic_id}/status.json", {"status": "pinned", "enabled": "true"})
     say("added", f"topic {topic_id}, pinned in Announcements")
+
+
+# --- the look: Steady Community, not Discourse ------------------------------------------
+#
+# Everything is in community/brand/: the logo, icons and share image, the fonts, and the theme
+# (theme/common.scss, theme/color_definitions.scss, theme/footer.html). The palettes and the
+# wording are here. Change a file there, run this again, and the forum follows.
+
+BRAND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "brand")
+THEME_NAME = "Steady Community"
+
+# Discourse palette colours (hex, no #). Light from steadyapp.co.za; dark from the same family.
+PALETTES = {
+    "light": {"name": "Steady Community", "base": "Light", "colors": {
+        "primary": "17282a", "secondary": "f5f8f7", "tertiary": "236a70", "quaternary": "2c5f7c",
+        "header_background": "f5f8f7", "header_primary": "17282a", "highlight": "d9894a",
+        "selected": "e4ecf1", "hover": "e9efee", "danger": "b3261e", "success": "2e7d4f",
+        "love": "c46b2c",
+    }},
+    "dark": {"name": "Steady Community, dark", "base": "Dark", "colors": {
+        "primary": "dfeae9", "secondary": "0f2a2d", "tertiary": "7fc2c8", "quaternary": "9cc3d9",
+        "header_background": "0f2a2d", "header_primary": "dfeae9", "highlight": "f0b45c",
+        "selected": "1d4247", "hover": "173a3e", "danger": "f2a19b", "success": "7fcf9c",
+        "love": "f0b45c",
+    }},
+}
+
+# site setting -> image in community/brand/
+BRAND_IMAGES = [
+    ("logo", "wordmark.png"),
+    ("logo_dark", "wordmark-dark.png"),
+    ("logo_small", "steady-mark.png"),
+    ("logo_small_dark", "steady-mark.png"),
+    ("digest_logo", "wordmark.png"),
+    ("large_icon", "steady-icon-512.png"),
+    ("manifest_icon", "steady-icon-512.png"),
+    ("favicon", "favicon-32.png"),
+    ("apple_touch_icon", "apple-touch-icon.png"),
+    ("opengraph_image", "og.png"),
+]
+
+# the theme's files: (Discourse field name, file, type: 0 html, 1 scss, 2 upload)
+THEME_TEXT_FIELDS = [
+    ("scss", "theme/common.scss", 1),
+    ("color_definitions", "theme/color_definitions.scss", 1),
+    ("footer", "theme/footer.html", 0),
+]
+THEME_UPLOADS = [  # SCSS variable -> file
+    ("steady_atkinson", "fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2"),
+    ("steady_barlow_300", "fonts/barlow-latin-300-normal.woff2"),
+    ("steady_barlow_400", "fonts/barlow-latin-400-normal.woff2"),
+    ("steady_barlow_500", "fonts/barlow-latin-500-normal.woff2"),
+    ("steady_mark", "steady-mark.png"),
+]
+
+# Discourse's own wording, where members see it
+TEXTS = {
+    "js.composer.reply_placeholder": "Type here. Never anything that could identify a patient: no names, dates of birth, places or rare details. Markdown works; drag or paste images.",
+    "js.composer.reply_placeholder_no_images": "Type here. Never anything that could identify a patient: no names, dates of birth, places or rare details. Markdown works.",
+    "js.welcome_banner.header.new_members": "Welcome to Steady Community, %{preferred_display_name}",
+    "js.welcome_banner.header.logged_in_members": "Welcome back, %{preferred_display_name}",
+    "js.welcome_banner.subheader.logged_in_members": "Psychologists at practices that use Steady. No patient-identifying information, ever.",
+    "js.welcome_banner.search_placeholder": "Search Steady Community",
+    "powered_by_html": "Steady Community, for psychologists at practices that use Steady",
+}
+
+def _welcome_message():
+    """The private message every new member gets (Discourse's welcome_user), from drafts/."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drafts", "welcome-message.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return {}
+    first, _, body = text.partition("\n")
+    if not first.startswith("Subject:"):
+        return {}
+    return {"system_messages.welcome_user.subject_template": first[len("Subject:"):].strip(),
+            "system_messages.welcome_user.text_body_template": body.strip() + "\n"}
+
+
+TEXTS.update(_welcome_message())
+
+# Topics Discourse writes about itself when it's installed: removed. (Its terms of service and
+# privacy topics stay: /tos and /privacy show them.) The guidelines topic gets ours.
+SEEDED_TO_REMOVE = [re.compile(r"^welcome to .*:wave:\s*$", re.I),
+                    re.compile(r"^(admin guide: getting started|read me first: admin quick start guide)$", re.I)]
+SEEDED_GUIDELINES_TITLES = {"faq/guidelines", "guidelines", "faq"}
+SYSTEM_USER_ID = -1
+
+GUIDELINES_RAW = """\
+Steady Community is for psychologists at practices that use Steady: the science behind between-session care, the questionnaires and tools, studies across practices, and how Steady develops. These are its guidelines.
+
+## No patient-identifying information, ever
+
+Not here, and not in a personal message:
+
+- no names, initials or nicknames
+- no dates of birth, ID numbers, file or account numbers, phone numbers or addresses
+- no screenshots or photos of patient screens, exports, reports or notes
+- no case details that together could point to one person (a rare event, a town and a date, for example)
+
+Talk about patterns, methods and made-up examples. If you see something that breaks this rule, flag the post: the community lead removes it for good, edit history included. If it was your own post, delete it and tell an admin; editing keeps the earlier version.
+
+## How we talk here
+
+- Disagree with ideas, not people. Be kind and specific.
+- Cite your sources with a link, so others can read the original.
+- Check a questionnaire's licence before posting its full text.
+- This is not a place for urgent clinical matters: nobody watches it around the clock.
+
+## Who runs it
+
+Kempie van Rooyen is the community lead. OpenWorks IT builds and hosts Steady and the community, and can read only Announcements, the Steady manual and Steady development. To reach them, post in Steady development or send @openworks a personal message.
+"""
+
+
+def brand_file(rel):
+    return os.path.join(BRAND_DIR, rel)
+
+
+def sha1_of(rel):
+    with open(brand_file(rel), "rb") as f:
+        return hashlib.sha1(f.read()).hexdigest()
+
+
+def same_upload(current, rel):
+    """Discourse names an upload after its SHA-1, so the address says whether it's this file."""
+    return bool(current) and sha1_of(rel) in str(current)
+
+
+def ensure_brand(api, args):
+    """The Steady Community look. Each part carries on if another fails; returns what failed."""
+    print("The look: Steady Community")
+    problems = []
+    for part in (_brand_images, _brand_palettes_and_theme, _brand_texts, _brand_seeded_topics):
+        try:
+            part(api, problems)
+        except (SetupError, OSError, KeyError, TypeError, ValueError, AttributeError, IndexError) as err:
+            say("FAILED", f"{part.__name__[1:].replace('_', ' ')}: {err}")
+            problems.append(f"{part.__name__[1:]}: {err}")
+    return problems
+
+
+def _brand_images(api, problems):
+    listed = api.get("/admin/site_settings.json")
+    current = {s["setting"]: s.get("value") for s in listed.get("site_settings", [])}
+    for setting, rel in BRAND_IMAGES:
+        if setting not in current:
+            say("skipped", f"{setting}: not offered by this Discourse version")
+            continue
+        if same_upload(current[setting], rel):
+            say("ok", f"{setting} is {rel}")
+            continue
+        if api.dry_run:
+            say("would set", f"{setting} to {rel}")
+            continue
+        up = api.post_file("/uploads.json", brand_file(rel),
+                           {"upload_type": "site_setting", "for_site_setting": "true", "site_setting_name": setting})
+        api.put(f"/admin/site_settings/{setting}.json", {setting: up["url"]})
+        say("set", f"{setting} to {rel}")
+
+
+def _brand_palettes_and_theme(api, problems):
+    schemes = api.get("/admin/color_schemes.json") or []
+    if isinstance(schemes, dict):
+        schemes = schemes.get("color_schemes", [])
+    ids = {}
+    for key, pal in PALETTES.items():
+        found = next((c for c in schemes if c.get("name") == pal["name"] and not c.get("is_base")), None)
+        colors = [{"name": n, "hex": h} for n, h in pal["colors"].items()]
+        if found:
+            have = {c["name"]: str(c.get("hex", "")).lower().lstrip("#") for c in found.get("colors", [])}
+            ids[key] = found["id"]
+            if all(have.get(n) == h for n, h in pal["colors"].items()):
+                say("ok", f"palette '{pal['name']}'")
+            elif api.dry_run:
+                say("would set", f"palette '{pal['name']}' colours")
+            else:
+                api.put(f"/admin/color_schemes/{found['id']}.json", {"color_scheme": {"name": pal["name"], "colors": colors}})
+                say("set", f"palette '{pal['name']}' colours")
+        elif api.dry_run:
+            say("would add", f"palette '{pal['name']}'")
+        else:
+            made = api.post("/admin/color_schemes.json",
+                            {"color_scheme": {"name": pal["name"], "base_scheme_id": pal["base"], "colors": colors}})
+            ids[key] = made.get("color_scheme", made)["id"]
+            say("added", f"palette '{pal['name']}'")
+
+    listing = api.get("/admin/themes.json") or {}
+    themes = listing.get("themes", [])
+    theme = next((t for t in themes if t.get("name") == THEME_NAME and not t.get("component")), None)
+    have = {}
+    for f in (theme or {}).get("theme_fields", []):
+        have[(f.get("target"), f.get("name"))] = f
+    fields = []
+    changed = []
+    for name, rel, type_id in THEME_TEXT_FIELDS:
+        with open(brand_file(rel), encoding="utf-8") as fh:
+            value = fh.read()
+        if (have.get(("common", name)) or {}).get("value") != value:
+            changed.append(rel)
+        fields.append({"target": "common", "name": name, "value": value, "type_id": type_id})
+    for var, rel in THEME_UPLOADS:
+        cur = have.get(("common", var)) or {}
+        if cur.get("upload_id") and same_upload(cur.get("url"), rel):
+            fields.append({"target": "common", "name": var, "type_id": 2, "upload_id": cur["upload_id"]})
+            continue
+        changed.append(rel)
+        if api.dry_run:
+            continue
+        up = api.post_file("/admin/themes/upload_asset.json", brand_file(rel), {})
+        fields.append({"target": "common", "name": var, "type_id": 2, "upload_id": up["upload_id"]})
+
+    if api.dry_run:
+        if theme is None:
+            say("would add", f"theme '{THEME_NAME}', the default, with the two palettes")
+        elif changed or not theme.get("default"):
+            say("would set", f"theme '{THEME_NAME}': {', '.join(changed) or 'make it the default'}")
+        else:
+            say("ok", f"theme '{THEME_NAME}' is the default and up to date")
+        return
+    if theme is None:
+        theme = api.post("/admin/themes.json", {"theme": {
+            "name": THEME_NAME, "user_selectable": False, "color_scheme_id": ids.get("light"),
+            "theme_fields": fields, "default": True}})
+        theme = theme.get("theme", theme)
+        api.put(f"/admin/themes/{theme['id']}.json", {"theme": {"dark_color_scheme_id": ids.get("dark"), "default": True}})
+        say("added", f"theme '{THEME_NAME}', the default for everyone")
+    else:
+        body = {"color_scheme_id": ids.get("light"), "dark_color_scheme_id": ids.get("dark"), "default": True}
+        if changed:
+            body["theme_fields"] = fields
+        api.put(f"/admin/themes/{theme['id']}.json", {"theme": body})
+        say("set" if changed or not theme.get("default") else "ok",
+            f"theme '{THEME_NAME}'" + (f": {', '.join(changed)}" if changed else " is the default"))
+    # nobody switches to one of Discourse's own looks
+    for other in themes:
+        if other.get("id") != theme["id"] and other.get("user_selectable") and not other.get("component"):
+            try:
+                api.put(f"/admin/themes/{other['id']}.json", {"theme": {"user_selectable": False}})
+                say("set", f"theme '{other.get('name')}' no longer offered to members")
+            except SetupError as err:
+                say("left", f"theme '{other.get('name')}' stays selectable: {err}")
+
+
+def _brand_texts(api, problems):
+    # one text Discourse won't let change doesn't stop the others
+    for key, value in TEXTS.items():
+        try:
+            current = api.get(f"/admin/customize/site_texts/{key}.json?locale=en", allow_404=True)
+            if current is None:
+                say("skipped", f"{key}: not in this Discourse version")
+                continue
+            if (current.get("site_text") or {}).get("value") == value:
+                say("ok", f"text {key}")
+                continue
+            if api.dry_run:
+                say("would set", f"text {key}")
+                continue
+            api.put(f"/admin/customize/site_texts/{key}.json", {"site_text": {"value": value, "locale": "en"}})
+            say("set", f"text {key}")
+        except SetupError as err:
+            say("FAILED", f"text {key}: {err}")
+            problems.append(f"text {key}: {err}")
+
+
+def _first_poster(topic):
+    posters = topic.get("posters") or []
+    return posters[0].get("user_id") if posters else None
+
+
+def _brand_seeded_topics(api, problems):
+    topics, path = [], "/latest.json?no_definitions=true"
+    for _ in range(10):  # a new forum has a handful of pages at most
+        listing = api.get(path) or {}
+        topics += listing.get("topic_list", {}).get("topics", [])
+        more = listing.get("topic_list", {}).get("more_topics_url")
+        if not more:
+            break
+        path = more.replace("/latest?", "/latest.json?", 1) if more.startswith("/latest?") else more
+    for topic in topics:
+        title = (topic.get("title") or "").strip()
+        if _first_poster(topic) != SYSTEM_USER_ID:
+            continue
+        if any(p.match(title) for p in SEEDED_TO_REMOVE):
+            if api.dry_run:
+                say("would remove", f"Discourse's topic '{title}' ({topic['id']})")
+            else:
+                api.delete(f"/t/{topic['id']}.json")
+                say("removed", f"Discourse's topic '{title}' ({topic['id']})")
+        elif title.lower() in SEEDED_GUIDELINES_TITLES:
+            first = (api.get(f"/t/{topic['id']}.json").get("post_stream", {}).get("posts") or [{}])[0]
+            post = api.get(f"/posts/{first['id']}.json") if first.get("id") else {}
+            if (post.get("raw") or "").strip() == GUIDELINES_RAW.strip():
+                say("ok", "guidelines are Steady Community's")
+            elif api.dry_run:
+                say("would set", f"the guidelines topic ({topic['id']}) to Steady Community's")
+            else:
+                api.put(f"/posts/{first['id']}.json", {"post": {"raw": GUIDELINES_RAW, "edit_reason": "Steady Community guidelines"}})
+                api.put(f"/t/-/{topic['id']}.json", {"title": "Guidelines"})
+                say("set", f"the guidelines topic ({topic['id']}) to Steady Community's")
+
+
+# --- the first topics ------------------------------------------------------------------
+#
+# community/topics/<category slug>/NN-name.md: "# Title", optionally "<!-- steady: pinned, wiki -->"
+# on the next line, then the post. Each is posted once, as the system user, with an external id
+# made from its file name, so it's found again whatever happens to its title. A topic already
+# there is left as the forum has it (someone may have edited it); --update-topics replaces it
+# with the file's text.
+
+TOPICS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "topics")
+TOPIC_FLAGS = re.compile(r"^<!--\s*steady:\s*([a-z ,]+?)\s*-->$")
+
+
+def load_topics():
+    topics = []
+    if not os.path.isdir(TOPICS_DIR):
+        return topics
+    for cat in sorted(os.listdir(TOPICS_DIR)):
+        folder = os.path.join(TOPICS_DIR, cat)
+        if not os.path.isdir(folder):
+            continue
+        for name in sorted(os.listdir(folder)):
+            if not name.endswith(".md"):
+                continue
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                lines = f.read().split("\n")
+            title = lines[0].lstrip("#").strip()
+            rest, flags = lines[1:], set()
+            m = TOPIC_FLAGS.match(rest[0].strip()) if rest else None
+            if m:
+                flags = {x.strip() for x in m.group(1).split(",") if x.strip()}
+                rest = rest[1:]
+            key = f"{cat}/{name[:-3]}"
+            topics.append({"key": key, "category": cat, "title": title, "flags": flags, "folder": folder,
+                           "raw": "\n".join(rest).strip() + "\n",
+                           "external_id": "steady-" + hashlib.sha1(key.encode()).hexdigest()[:16]})
+    return topics
+
+
+TOPIC_IMAGE = re.compile(r"!\[([^\]]*)\]\(((?:images|shots)/[^)\s]+\.(?:png|jpe?g|webp|gif))\)")
+ANY_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
+def _same_text(a, b):
+    """Two posts say the same, images aside (in the forum they're upload:// addresses)."""
+    return ANY_IMAGE.sub("![]()", a).strip() == ANY_IMAGE.sub("![]()", b).strip()
+
+
+def _with_uploads(api, topic, done):
+    """The post with each of its screenshots uploaded (once a run; Discourse keeps one copy of
+    each file anyway) and referred to the way Discourse's own editor does."""
+    def put(m):
+        alt, rel = m.group(1).replace("|", " ").strip(), m.group(2)
+        path = os.path.join(topic["folder"], rel)
+        if path not in done:
+            up = api.post_file("/uploads.json", path, {"upload_type": "composer", "synchronous": "true"})
+            done[path] = up
+        up = done[path]
+        size = f"|{up['width']}x{up['height']}" if up.get("width") and up.get("height") else ""
+        return f"![{alt}{size}]({up.get('short_url') or up['url']})"
+    return TOPIC_IMAGE.sub(put, topic["raw"])
+
+
+def _find_topic(api, external_id):
+    """The topic with this external id, or None. Discourse answers with a redirect to it."""
+    try:
+        api.get(f"/t/external_id/{external_id}.json")
+    except SetupError as err:
+        loc = getattr(err, "location", "")
+        if not loc:
+            if " HTTP 404" in str(err):
+                return None
+            raise
+        path = urllib.parse.urlparse(loc).path.rstrip("/")
+        return api.get(path + ".json")
+    return None
+
+
+def ensure_topics(api, cat_ids, args):
+    topics = load_topics()
+    print(f"The first topics ({len(topics)} in community/topics/)")
+    uploaded = {}
+    # posted last first, so each category lists them in order (newest at the top)
+    for t in reversed(topics):
+        cat_id = cat_ids.get(t["category"])
+        label = f"{t['category']}: {t['title']}"
+        if cat_id is None:
+            say("would add" if api.dry_run else "skipped", label + ("" if api.dry_run else " (no such category)"))
+            continue
+        found = _find_topic(api, t["external_id"])
+        if found is None:
+            if api.dry_run:
+                say("would add", label)
+                continue
+            made = api.post("/posts.json", {"title": t["title"], "raw": _with_uploads(api, t, uploaded),
+                                            "category": cat_id, "external_id": t["external_id"]})
+            topic_id, post_id = made["topic_id"], made["id"]
+            say("added", label)
+        else:
+            topic_id = found["id"]
+            post_id = found["post_stream"]["posts"][0]["id"]
+            raw = (api.get(f"/posts/{post_id}.json") or {}).get("raw", "")
+            if _same_text(raw, t["raw"]):
+                say("ok", label)
+            elif not args.update_topics:
+                say("left", f"{label}: differs from its file (edited in the forum?); --update-topics replaces it")
+            elif api.dry_run:
+                say("would set", f"{label} to its file")
+            else:
+                api.put(f"/posts/{post_id}.json", {"post": {"raw": _with_uploads(api, t, uploaded),
+                                                            "edit_reason": "Steady Community"}})
+                say("set", f"{label} to its file")
+        if api.dry_run:
+            continue
+        if "pinned" in t["flags"] and not (found or {}).get("pinned"):
+            api.put(f"/t/{topic_id}/status.json", {"status": "pinned", "enabled": "true"})
+        if "wiki" in t["flags"] and not ((found or {}).get("post_stream", {}).get("posts") or [{}])[0].get("wiki"):
+            api.put(f"/posts/{post_id}/wiki.json", {"wiki": "true"})
 
 
 # --- activity-count account for OpenWorks ---------------------------------------------
@@ -639,6 +1237,18 @@ def print_plan(args, categories, groups):
     if not args.skip_welcome:
         print("Welcome and guidelines topic")
         say("want", f"'{WELCOME_TITLE}' in Announcements, pinned")
+    if not args.skip_topics:
+        topics = load_topics()
+        print("The first topics")
+        say("want", f"{len(topics)} topics from community/topics/, in "
+                    + ", ".join(sorted({t['category'] for t in topics})))
+    if not args.skip_brand:
+        print("The look: Steady Community")
+        say("want", f"theme '{THEME_NAME}' (community/brand/theme/), the default, with palettes "
+                    + " and ".join(f"'{p['name']}'" for p in PALETTES.values()))
+        say("want", "logo, icons and share image: " + ", ".join(sorted({rel for _, rel in BRAND_IMAGES})))
+        say("want", f"{len(TEXTS)} texts in Steady Community's words; Discourse's own welcome and admin guide removed; "
+                    "the guidelines topic in Steady Community's words")
     if args.stats_account:
         print("Activity-count account")
         say("want", f"{STATS_USERNAME} with a granular key ({STATS_SCOPE})")
@@ -673,6 +1283,14 @@ def main(argv=None):
     parser.add_argument("--leave-other-categories", action="store_true",
                         help="don't close other categories (General, Site Feedback, ...) to OpenWorks")
     parser.add_argument("--skip-welcome", action="store_true", help="don't post the welcome topic")
+    parser.add_argument("--revoke-key", action="store_true",
+                        help=f"at the end, remove the API key(s) described '{KEY_DESCRIPTION}', this one last "
+                             "(community/run-setup.sh makes such a key for one run)")
+    parser.add_argument("--skip-topics", action="store_true", help="don't post the first topics (community/topics/)")
+    parser.add_argument("--update-topics", action="store_true",
+                        help="replace topics that differ from their files (edits made in the forum are lost)")
+    parser.add_argument("--skip-brand", action="store_true",
+                        help="leave the look alone (logo, palettes, theme, wording: community/brand/)")
     parser.add_argument("--stats-account", action="store_true",
                         help=f"also create the {STATS_USERNAME} account and its activity-count key")
     parser.add_argument("--stats-email", metavar="ADDRESS",
@@ -700,6 +1318,15 @@ def main(argv=None):
         return 2
 
     api = Discourse(args.url, api_key, api_user, args.dry_run)
+    try:
+        return run(api, args, groups, categories)
+    finally:
+        if args.revoke_key:
+            revoke_keys(args.url, api_key, api_user)
+
+
+def run(api, args, groups, categories):
+    api_user = api.headers["Api-Username"]
     print(f"{'Dry run against' if args.dry_run else 'Setting up'} {api.base}\n")
     try:
         me = api.get(f"/u/{urllib.parse.quote(api_user)}.json")
@@ -708,11 +1335,17 @@ def main(argv=None):
 
         group_ids = ensure_groups(api, groups)
         cat_ids = ensure_categories(api, categories, set(group_ids))
+        ensure_sidebar(api, cat_ids)
         if not args.leave_other_categories:
-            lock_other_categories(api, {c["slug"] for c in categories})
+            mismatched_categories = lock_other_categories(api, {c["slug"] for c in categories})
+        else:
+            mismatched_categories = []
         unknown, mismatched = apply_settings(api, args, group_ids)
         if not args.skip_welcome:
             ensure_welcome(api, cat_ids.get("announcements"))
+        if not args.skip_topics:
+            ensure_topics(api, cat_ids, args)
+        brand_problems = [] if args.skip_brand else ensure_brand(api, args)
         if args.stats_account:
             ensure_stats_account(api, args)
     except SetupError as err:
@@ -724,13 +1357,39 @@ def main(argv=None):
         print("Not offered by this Discourse (check by hand in Admin > Settings, or in community.yml):")
         for name in unknown:
             print(f"  - {name}")
+    if mismatched_categories:
+        print("Categories that are still open to everyone (OpenWorks included):")
+        for p in mismatched_categories:
+            print(f"  - {p}")
+    if brand_problems:
+        print("The look wasn't finished (the rest was done; run it again after fixing):")
+        for p in brand_problems:
+            print(f"  - {p}")
     if mismatched:
         print("Pinned to the wrong value (fix in containers/community.yml, then ./launcher rebuild community):")
         for name in mismatched:
             print(f"  - {name}")
         return 1
+    if brand_problems or mismatched_categories:
+        return 1
     print("Dry run finished; nothing was changed." if args.dry_run else "Done.")
     return 0
+
+
+
+def revoke_keys(url, api_key, api_user):
+    """Removes this run's one-off key (and any other left behind under the same description),
+    through the API: the key in use goes last. Used by community/run-setup.sh."""
+    api = Discourse(url, api_key, api_user, False)
+    try:
+        listing = api.get("/admin/api/keys.json") or {}
+        keys = [k for k in listing.get("keys", []) if k.get("description") == KEY_DESCRIPTION and not k.get("revoked_at")]
+        keys.sort(key=lambda k: k.get("created_at") or "")
+        for k in keys:
+            api.delete(f"/admin/api/keys/{k['id']}.json")
+        print(f"\nRemoved the one-off key ({len(keys)} '{KEY_DESCRIPTION}' key(s) in all).")
+    except SetupError as err:
+        print(f"\nCouldn't remove the one-off key: {err}\nRemove it by hand: docs/COMMUNITY.md, step 4.", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -168,10 +168,17 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
             bullet('Only daily totals and averages leave your phone, not every reading.'),
             bullet('Up to the last 30 days are shared when you connect, then new days as you use Steady.'),
             bullet('Your psychologist at $practice can see it, and a colleague there if your psychologist shares your record with them '
-                '(for example while they are away). It helps them understand how you are doing between sessions, can go into your '
-                'clinical file with the rest of your Steady information, and may be used, without your name, to improve care.'),
-            bullet('Nobody watches this data around the clock. It does not raise alarms. If you need help, call one of the numbers at the bottom of this page.'),
+                '(for example while they are away). It helps them understand how you are doing between sessions, and may be used, '
+                'without your name, to improve care.'),
+            bullet('Nobody watches this data around the clock and it does not raise alarms. It can help your psychologist decide whose '
+                'information to look at first. If you need help, call one of the numbers at the bottom of this page.'),
             bullet('To stop, open Settings in Steady and tap "Stop sharing watch data". You can also remove Steady\'s access in $storeName.'),
+            const SizedBox(height: 10),
+            Text('Your clinical record', style: context.tt.titleMedium),
+            const SizedBox(height: 6),
+            bullet('Watch data you share may be added to your clinical record at $practice.'),
+            bullet('Once it is in your clinical record, your psychologist decides how to use it in your care.'),
+            bullet('If you stop sharing, nothing new is added. What you already shared stays in your record.'),
             const SizedBox(height: 12),
             Card(
               child: CheckboxListTile(
