@@ -126,6 +126,7 @@ void main() {
     expect(find.byTooltip('Back'), findsOneWidget);
     expect(find.text('Sam'), findsOneWidget);
     expect(find.text('Change password'), findsOneWidget);
+    expect(find.text('Change email'), findsOneWidget, reason: 'everyone can change their own email');
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.widgetWithText(AppBar, 'Patients'), findsOneWidget);

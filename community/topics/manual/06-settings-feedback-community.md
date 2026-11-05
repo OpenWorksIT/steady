@@ -9,7 +9,7 @@ Tap the gear on **Patients**.
 - **Practice**: the library, feedback tickets and, for the master psychologist, more (see *For practice administrators and the master psychologist*).
 - **Notifications**: whether notifications are on.
 - **Archived patients**.
-- **Change password**, **Two-step sign-in** and **Your devices**.
+- **Change password**, **Change email** (a code goes to the new address, and the old one is told), **Two-step sign-in** and **Your devices**. If you change your email and use the Community, ask OpenWorks IT to add the new address to your practice's list.
 - **Sign out**: signs you out on all your devices.
 
 ![Settings for a psychologist](images/45-psych-settings.webp)

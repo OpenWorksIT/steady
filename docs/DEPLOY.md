@@ -158,7 +158,7 @@ notes in OPERATOR-AGREEMENT.md).
 
 | Who | Can | Can't |
 |---|---|---|
-| Psychologist | Invite patients, see and send to their own patients, keep notes, mark flags as reviewed (RADR flags also for a patient shared with them), set a patient as stable or archived and switch RADR measures off for them, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records (PDF, Excel, Heidi) | See other psychologists' patients unless shared with them |
+| Psychologist | Invite patients, see and send to their own patients, keep notes, mark flags as reviewed (RADR flags also for a patient shared with them), set a patient as stable or archived and switch RADR measures off for them, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records (PDF, Excel, AI note-taking) | See other psychologists' patients unless shared with them |
 | Master clinician | All of the above, plus create psychologist and practice admin accounts, reset their passwords, stop their accounts, invite patients for and move patients to any psychologist, see every patient's connection status, read the audit report, and install server updates from Settings | Restore a stopped staff account, clear someone's authenticator, or reset their own password (OpenWorks support does these) |
 | Practice admin | Patients' names and whether each is set up and connected (no data); invite a patient for a chosen psychologist, reset patients' and psychologists' passwords, stop accounts, move patients, remind a patient to reconnect their watch, read the audit report and server health; feedback as tickets | See check-ins, scores, notes or watch data; create psychologist accounts; restore accounts; install updates |
 | OpenWorks support | The practice's staff (names, status, app versions), the server and its updates, feedback in full; reset any staff password, including a full reset after a lost phone; restore stopped or locked accounts | See anything about patients, including their names |
@@ -258,7 +258,10 @@ sudo /opt/steady/deploy/update.sh
 
 Migrations run automatically on start; the app's "Update now" (below) takes a copy of the data
 first. After the first update to 1.0.4 or later, run `sudo ./ctl/install.sh` once: it installs
-the locked-down update services from `deploy/ctl/` (running it again is harmless).
+the locked-down update services from `deploy/ctl/` (running it again is harmless). An update
+never installs new services by itself, so run it again after an update that adds one: 1.1.0
+added the security and privacy check (`steady-audit.timer`), and the fleet view flags a server
+red until it's installed.
 
 Up to 1.0.4, "Update now" couldn't build: its locked-down service sees `/root` read-only, where
 Docker's build tool keeps its state ("read-only file system" in the log), and the app then

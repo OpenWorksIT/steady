@@ -457,6 +457,20 @@ class Api {
     _saveAuth(res);
   }
 
+  /// Change your own email address, step 1: your password and the new address. A code goes to
+  /// the new address; returns that address as the email shows it (t***@example.org).
+  Future<String> emailChangeStart(String email, String password) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/email',
+        method: 'POST', body: {'email': email.trim(), 'password': password});
+    return '${res['email'] ?? ''}';
+  }
+
+  /// Step 2: the code from that email. The account then has the new address.
+  Future<void> emailChangeFinish(String code) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/email/confirm', method: 'POST', body: {'code': code.trim()});
+    _saveAuth(res);
+  }
+
   /// Two-step sign-in: a new secret and the otpauth:// address for the QR code.
   Future<({String secret, String uri})> twoStepStart() async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/me/two-step/start', method: 'POST');

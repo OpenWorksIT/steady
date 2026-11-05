@@ -21,22 +21,29 @@ function origin(v) {
   return ORIGIN.test(s) ? s : "";
 }
 
-/** The bridge's address, the forum's and the shared key; null when this server isn't set up. */
+/** The bridge's address, the forum's and the shared key; null when this server isn't set up.
+ *  support: OpenWorks' own server, where OpenWorks IT opens the community
+ *  (STEADY_COMMUNITY_SUPPORT=yes: the test server only, the one the bridge marks "support"). */
 function config() {
   var url = origin($os.getenv("STEADY_COMMUNITY_SIGNIN"));
   var forum = origin($os.getenv("STEADY_COMMUNITY_URL"));
   var key = String($os.getenv("STEADY_COMMUNITY_KEY") || "");
   if (!url || !forum || key.length < 32) return null;
-  return { url: url, forum: forum, key: key };
+  var support = String($os.getenv("STEADY_COMMUNITY_SUPPORT") || "").trim().toLowerCase() === "yes";
+  return { url: url, forum: forum, key: key, support: support };
 }
 
 /** Why this account may not open the community, or "" when it may: psychologists, practice
- *  admins (the forum shows them the Steady manual only) and OpenWorks support, with two-step
- *  sign-in on (whatever the server's own setting), and an email. */
-function refusal(user, s) {
+ *  admins (the forum shows them the Steady manual only) and OpenWorks support (on OpenWorks' own
+ *  server only, never a practice's), with two-step sign-in on (whatever the server's own
+ *  setting), and an email. */
+function refusal(user, s, cfg) {
   var role = user.getString("role");
   if (role !== "clinician" && role !== "admin" && role !== "support") {
     return "The community is for psychologists, practice administrators and OpenWorks IT.";
+  }
+  if (role === "support" && !(cfg && cfg.support)) {
+    return "OpenWorks IT opens the community from its own server, not from a practice's.";
   }
   if (!s.twoStepOn(user)) return "Set up two-step sign-in in Steady first (Settings > Two-step sign-in).";
   if (!user.email()) return "This account has no email address. Ask the practice to add one.";

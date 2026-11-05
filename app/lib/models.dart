@@ -52,8 +52,13 @@ class AppConfig {
 
   /// The Steady community for psychologists and practice admins ('' when this server has none).
   final String communityUrl;
+
+  /// Whether OpenWorks support opens the community from this server: only OpenWorks' own (the
+  /// test server), never a practice's.
+  final bool communitySupport;
   AppConfig({
     this.communityUrl = '',
+    this.communitySupport = false,
     required this.practiceName,
     required this.crisisNotice,
     required this.consentVersion,
@@ -113,6 +118,7 @@ class AppConfig {
         brandAccent: '${asMap(j['brand'])['accent'] ?? ''}',
         brandLogo: '${asMap(j['brand'])['logo'] ?? ''}',
         communityUrl: '${j['communityUrl'] ?? ''}'.startsWith('https://') ? '${j['communityUrl']}' : '',
+        communitySupport: j['communitySupport'] == true,
       );
 }
 
