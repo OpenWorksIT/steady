@@ -554,3 +554,18 @@ func TestEmailRules(t *testing.T) {
 		t.Error("names are cut at 100 characters")
 	}
 }
+
+// GET /version: the release and code this build is, for the fleet view, and nothing else.
+func TestVersion(t *testing.T) {
+	buildVersion, buildCode = "1.1.1", "5f74a8885898"
+	t.Cleanup(func() { buildVersion, buildCode = "dev", "" })
+	r := newRig(t, settings())
+	w := r.get("/version")
+	var got map[string]string
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || len(got) != 2 || got["version"] != "1.1.1" || got["code"] != "5f74a8885898" {
+		t.Fatalf("version: %d %s", w.Code, w.Body.String())
+	}
+	if w.Header().Get("Cache-Control") != "no-store" || strings.Contains(w.Body.String(), "vr") {
+		t.Errorf("headers or extra: %v %s", w.Header(), w.Body.String())
+	}
+}

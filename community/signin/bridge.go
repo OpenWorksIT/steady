@@ -103,6 +103,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /app.css", a.file("web/app.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /app.js", a.file("web/app.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /healthz", a.healthz)
+	mux.HandleFunc("GET /version", a.version)
 	mux.HandleFunc("GET /{$}", a.outside)
 	return a.headers(mux)
 }
@@ -414,6 +415,14 @@ func (a *App) healthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte("ok\n"))
+}
+
+// version: which release and code this bridge was built from, for the fleet view to compare with
+// its own release (deploy/code-of.sh). Nothing else: no settings, no practices.
+func (a *App) version(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(map[string]string{"version": buildVersion, "code": buildCode})
 }
 
 /* ---------------------------------------------------------------- visitors */
