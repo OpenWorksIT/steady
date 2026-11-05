@@ -4,8 +4,9 @@
 // The forum opens only in the Community tab of the app and the web app, never on its own. The
 // tab asks for the note below and opens the forum with it: OpenWorks' sign-in bridge
 // (community/signin/) checks it with this practice's key and signs the person in to the forum
-// as who they are in Steady. Psychologists and OpenWorks support only, with two-step sign-in on;
-// never practice admins or patients. Each note is written to the access log.
+// as who they are in Steady. Psychologists, practice admins (who see only the Steady manual
+// there) and OpenWorks support, with two-step sign-in on; never patients. Each note is written
+// to the access log.
 //
 //   POST /api/steady/community/sign-in   signed in   ->  {url}
 //

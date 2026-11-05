@@ -95,7 +95,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 7.1 The Practice authorises OpenWorks to use these Sub-operators:
 
 - Rackzar: the virtual server that hosts the Server, in South Africa.
-- domains.co.za: the mail service that sends Steady's account emails (staff sign-in codes and account notices, and patients' password-reset codes and deletion confirmations), located in [To complete: country where the mail is kept]. These emails carry no clinical information.
+- domains.co.za: the mail service that sends Steady's account emails (staff sign-in codes and account notices, and patients' password-reset codes and deletion confirmations), located in South Africa (Teraco's data centre in Isando, Johannesburg). These emails carry no clinical information.
 - Apple: delivers push notifications to iPhones (Apple Push Notification service).
 - Google: delivers push notifications to Android phones, where they are sent through Google's Firebase Cloud Messaging.
 - GitHub: holds Steady's source code and builds, and distributes Steady's releases and Android app. It receives no Practice Information.
@@ -284,13 +284,14 @@ Steady after the update.
 ### Blanks for OpenWorks to fill in before release
 
 Left as `[To complete: ...]` in the text (`accounts.sh check` and `audit-server.sh` warn while any
-are left):
+are left). None are left.
 
-- Where domains.co.za keeps the Steady mailbox's mail (clause 7.1): to check with domains.co.za.
-
-Filled in on 3 November: the registration number (2024/733128/07), the address (24 Pelican Road, Port Elizabeth, 6070), the Information
-Officer (Tiaan van der Merwe), the phone and WhatsApp number, and who signs for OpenWorks (Tiaan
-van der Merwe, Director, Founder and Principal Engineer).
+Filled in on 3 November: where domains.co.za keeps the Steady mailbox's mail (clause 7.1: South
+Africa, Teraco's data centre in Isando, from domains.co.za's email hosting page,
+https://www.domains.co.za/email-hosting), the registration number (2024/733128/07), the address
+(24 Pelican Road, Port Elizabeth, 6070), the Information Officer (Tiaan van der Merwe), the phone
+and WhatsApp number, and who signs for OpenWorks (Tiaan van der Merwe, Director, Founder and
+Principal Engineer).
 
 The live list of what a lawyer should confirm, across this agreement, the consent statement and
 the privacy policy, is kept in the "Steady: for a lawyer to confirm" document; the points below

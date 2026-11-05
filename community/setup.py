@@ -7,10 +7,11 @@
 # name or slug and only changed where they differ. See docs/COMMUNITY.md, "Run setup.py".
 """Configure Steady Community, the forum (built on Discourse), through its admin API.
 
-Sets the site settings, creates the "clinicians" and "openworks" groups, creates the
-categories with their permissions, closes any other category to OpenWorks, posts the
-welcome and guidelines topic in Announcements, and gives the forum the Steady Community look
-(community/brand/: logo, icons, fonts, palettes, theme, wording) in place of Discourse's own.
+Sets the site settings, creates the "clinicians", "practice-admins" and "openworks" groups,
+creates the categories with their permissions, closes any other category to OpenWorks and
+practice administrators, posts the welcome and guidelines topic in Announcements, and gives
+the forum the Steady Community look (community/brand/: logo, icons, fonts, palettes, theme,
+wording) in place of Discourse's own.
 
 Credentials come from the environment, so they stay out of your shell history:
   DISCOURSE_URL           default https://community.steadyapp.co.za
@@ -65,6 +66,16 @@ GROUPS = [
         "messageable_level": ALIAS_MEMBERS_MODS_ADMINS,
     },
     {
+        # the sign-in bridge puts a practice's administrators here (never in clinicians)
+        "name": "practice-admins",
+        "full_name": "Practice administrators",
+        "bio_raw": "Administrators at practices that use Steady. They see the Steady manual only, and can ask in its replies.",
+        "visibility_level": VIS_MEMBERS,
+        "members_visibility_level": VIS_MEMBERS,
+        "mentionable_level": ALIAS_MEMBERS_MODS_ADMINS,
+        "messageable_level": ALIAS_MEMBERS_MODS_ADMINS,
+    },
+    {
         "name": "openworks",
         "full_name": "OpenWorks IT",
         "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements, the Steady manual and Steady development only. Mention @openworks there, or send a personal message.",
@@ -90,7 +101,8 @@ CATEGORIES = [
         "color": "2C5F7C",
         "text_color": "FFFFFF",
         "description": "How to use Steady, step by step with screenshots: for psychologists, practice administrators and the master psychologist, and what patients see. Questions in the replies: OpenWorks IT reads and answers here.",
-        "permissions": {"clinicians": CREATE_POST, "openworks": FULL},
+        # the one category practice administrators see
+        "permissions": {"clinicians": CREATE_POST, "practice-admins": CREATE_POST, "openworks": FULL},
     },
     {
         "name": "The science",
@@ -170,7 +182,8 @@ Data from studies run across practices will only ever be shared here as totals a
 | Area | Who can read it |
 |---|---|
 | The science, Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
-| Announcements, Steady manual, Steady development | Clinicians and OpenWorks IT |
+| Announcements, Steady development | Clinicians and OpenWorks IT |
+| Steady manual | Clinicians, practice administrators and OpenWorks IT |
 | A practice's private category (if it has one) | That practice's psychologists only |
 
 OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements, the Steady manual and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
@@ -473,13 +486,15 @@ def _with_groups(current_value, group_ids, names):
 
 
 def _pm_groups(current_value, group_ids):
-    """Let clinicians and OpenWorks send personal messages whatever their trust level."""
+    """Personal messages: staff, clinicians and OpenWorks, whatever their trust level, and nobody
+    else. Discourse's default also lets anyone at trust level 1 send them, which would include
+    practice administrators after a little reading: they ask in the Steady manual's replies."""
     if current_value is None or not group_ids:
         return None
-    ids = [i for i in str(current_value).split("|") if i]
+    ids = ["1", "2"]  # admins, moderators
     for name in ("clinicians", "openworks"):
         gid = group_ids.get(name)
-        if gid is not None and str(gid) not in ids:
+        if gid is not None:
             ids.append(str(gid))
     return "|".join(ids)
 
@@ -626,10 +641,14 @@ def ensure_categories(api, specs, existing_groups):
     return result
 
 
+# groups that see only the categories made for them (CATEGORIES), never any other
+CLOSED_ELSEWHERE = {"openworks", "practice-admins"}
+
+
 def lock_other_categories(api, managed_slugs):
-    """No other category may be open to OpenWorks or to everyone (OpenWorks are members too).
-    Returns what couldn't be done."""
-    print("Other categories (OpenWorks must not see them)")
+    """No other category may be open to OpenWorks, practice administrators or everyone (they
+    are members too). Returns what couldn't be done."""
+    print("Other categories (OpenWorks and practice administrators must not see them)")
     cats, uncategorized = load_categories(api)
     any_found = False
     problems = []
@@ -642,7 +661,7 @@ def lock_other_categories(api, managed_slugs):
         for group, level in perms.items():
             if group in AUTO_GROUP_IDS and group not in STAFF_GROUPS:
                 dropped[group] = level  # everyone, trust levels, logged-in users: includes OpenWorks
-            elif group == "openworks":
+            elif group in CLOSED_ELSEWHERE:
                 dropped[group] = level
             else:
                 keep[group] = level
@@ -1233,7 +1252,7 @@ def print_plan(args, categories, groups):
     for c in categories:
         say("want", f"{c['name']} ({describe(c['permissions'])})")
     if not args.leave_other_categories:
-        say("want", "every other category closed to everyone, trust levels and openworks")
+        say("want", "every other category closed to everyone, trust levels, openworks and practice-admins")
     if not args.skip_welcome:
         print("Welcome and guidelines topic")
         say("want", f"'{WELCOME_TITLE}' in Announcements, pinned")
@@ -1263,6 +1282,9 @@ def parse_practice(text):
     slug = slug.strip().lower()
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,15}", slug):
         raise argparse.ArgumentTypeError("the slug must be lower-case letters, digits and dashes, at most 16 characters")
+    if slug == "admins":
+        # practice-admins is every practice's administrators (the Steady manual only)
+        raise argparse.ArgumentTypeError('"admins" is taken: practice-admins is the practice administrators\' group')
     if not label.strip():
         raise argparse.ArgumentTypeError("the practice name is empty")
     return slug, label.strip()
@@ -1281,7 +1303,8 @@ def main(argv=None):
                         help='also add a private group practice-SLUG and its own category; repeatable, '
                              'e.g. --practice vr="VR Clinical Psychology"')
     parser.add_argument("--leave-other-categories", action="store_true",
-                        help="don't close other categories (General, Site Feedback, ...) to OpenWorks")
+                        help="don't close other categories (General, Site Feedback, ...) to OpenWorks "
+                             "and practice administrators")
     parser.add_argument("--skip-welcome", action="store_true", help="don't post the welcome topic")
     parser.add_argument("--revoke-key", action="store_true",
                         help=f"at the end, remove the API key(s) described '{KEY_DESCRIPTION}', this one last "
@@ -1358,7 +1381,7 @@ def run(api, args, groups, categories):
         for name in unknown:
             print(f"  - {name}")
     if mismatched_categories:
-        print("Categories that are still open to everyone (OpenWorks included):")
+        print("Categories that are still open to everyone (OpenWorks and practice administrators included):")
         for p in mismatched_categories:
             print(f"  - {p}")
     if brand_problems:

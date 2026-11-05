@@ -2239,7 +2239,7 @@ test("demo patients on a test server: a new day every night, only with STEADY_DE
   assert.equal(count(t.rt, "checkins", t.real.id), 0);
 });
 
-test("community: a signed note for the sign-in bridge, for psychologists and support with two-step on", () => {
+test("community: a signed note for the sign-in bridge, for psychologists, practice admins and support with two-step on", () => {
   const crypto = require("crypto");
   const KEY = "k".repeat(20) + "-community-key-0123";
   const R = "/api/steady/community/sign-in";
@@ -2250,7 +2250,8 @@ test("community: a signed note for the sign-in bridge, for psychologists and sup
     sup: rt.makeUser(Object.assign({ name: "OpenWorks", role: "support", active: true, email: "it@example.org" }, two)),
     adm: rt.makeUser(Object.assign({ name: "Front Desk", role: "admin", active: true, email: "desk@example.org" }, two)),
     pat: rt.makeUser({ name: "Pat", role: "patient", active: true, email: "pat@example.org" }),
-    bare: rt.makeUser({ name: "Dr NoCode", role: "clinician", active: true, email: "nocode@example.org" })
+    bare: rt.makeUser({ name: "Dr NoCode", role: "clinician", active: true, email: "nocode@example.org" }),
+    bareAdm: rt.makeUser({ name: "Desk NoCode", role: "admin", active: true, email: "desk2@example.org" })
   });
 
   // not set up (no key, a short key, no forum, an address that isn't https): as if the route weren't there
@@ -2287,11 +2288,25 @@ test("community: a signed note for the sign-in bridge, for psychologists and sup
   assert.equal(s.status, 200);
   assert.equal(JSON.parse(new URL(s.data.url).searchParams.get("p")).role, "support");
 
-  assert.equal(rt.call("POST", R, { auth: p.adm }).status, 403, "not the practice admin");
-  assert.equal(rt.call("POST", R, { auth: p.pat }).status, 403, "never patients");
+  // the practice admin too, as admin: the bridge gives them the Steady manual only
+  const a = rt.call("POST", R, { auth: p.adm });
+  assert.equal(a.status, 200, JSON.stringify(a));
+  const an = JSON.parse(new URL(a.data.url).searchParams.get("p"));
+  assert.equal(an.role, "admin");
+  assert.equal(an.email, "desk@example.org");
+  assert.ok(rt.store.auditlog.some((x) => x.getString("action") === "account.community-sign-in" && x.getString("actor") === p.adm.id), "in the access log");
+
+  const pat = rt.call("POST", R, { auth: p.pat });
+  assert.equal(pat.status, 403, "never patients");
+  assert.match(pat.error, /psychologists, practice administrators and OpenWorks IT/);
   const bare = rt.call("POST", R, { auth: p.bare });
   assert.equal(bare.status, 403, "two-step sign-in on, even where the server doesn't require it");
   assert.match(bare.error, /two-step/);
+  const bareAdm = rt.call("POST", R, { auth: p.bareAdm });
+  assert.equal(bareAdm.status, 403, "the practice admin needs two-step sign-in too");
+  assert.match(bareAdm.error, /two-step/);
+  p.adm.set("email", "");
+  assert.match(rt.call("POST", R, { auth: p.adm }).error, /no email address/, "and an email address");
   p.doc.set("active", false);
   assert.equal(rt.call("POST", R, { auth: p.doc }).status, 403, "a stopped account");
 

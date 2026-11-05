@@ -28,6 +28,8 @@ The master psychologist opens **Settings** from the gear on **Patients**. **Prac
 
 The practice administrator starts on **Practice**, which is the **People** screen (see below). Their **Settings** has **Practice** (**Audit report**, **Feedback tickets** and **Operator agreement**) and **Server health**.
 
+If the practice takes part in the Steady community, the practice administrator also has a **Community** tab in the bottom bar, where they see the Steady manual only.
+
 ![The practice administrator's first screen](images/63-admin-home.webp)
 
 ![Settings for the practice administrator](images/64-admin-settings.webp)

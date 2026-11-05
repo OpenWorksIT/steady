@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The Community tab: the Steady community (community.steadyapp.co.za) for psychologists, opened
-// inside Steady and only here, signed in as whoever is signed in to Steady. The tab asks the
-// server for a short note saying who that is (Api.communitySignIn) and opens the community with
-// it; OpenWorks' sign-in bridge does the rest (docs/COMMUNITY.md). Nothing is opened until the
-// tab is first chosen, and choosing it again later keeps the page where it was.
+// The Community tab: the Steady community (community.steadyapp.co.za) for psychologists (and
+// practice admins, who see the Steady manual only), opened inside Steady and only here, signed
+// in as whoever is signed in to Steady. The tab asks the server for a short note saying who that
+// is (Api.communitySignIn) and opens the community with it; OpenWorks' sign-in bridge does the
+// rest (docs/COMMUNITY.md). Nothing is opened until the tab is first chosen, and choosing it
+// again later keeps the page where it was.
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';

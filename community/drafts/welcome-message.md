@@ -15,4 +15,4 @@ This isn't a place for urgent clinical matters: nobody watches it around the clo
 
 Kempie van Rooyen leads the community. Send him a personal message if there's anything you need.
 
-(OpenWorks IT's accounts see Announcements, the Steady manual and Steady development only.)
+(OpenWorks IT's accounts see Announcements, the Steady manual and Steady development only. Practice administrators' accounts see the Steady manual only.)
