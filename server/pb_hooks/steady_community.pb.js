@@ -13,6 +13,7 @@
 // Needs STEADY_COMMUNITY_URL (the forum), STEADY_COMMUNITY_SIGNIN (the bridge) and
 // STEADY_COMMUNITY_KEY (32 characters or more, the same as this practice's key in the bridge's
 // settings). Without them: 404, and /api/steady/config tells the app there's no Community tab.
+// OpenWorks support gets a note only where STEADY_COMMUNITY_SUPPORT=yes (OpenWorks' own server).
 // See docs/COMMUNITY.md.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -22,7 +23,7 @@ routerAdd("POST", "/api/steady/community/sign-in", (e) => {
   const cfg = C.config();
   if (!cfg) throw new NotFoundError("The community isn't set up for this practice's Steady.");
   s.requireSignedIn(e);
-  const no = C.refusal(e.auth, s);
+  const no = C.refusal(e.auth, s, cfg);
   if (no) throw new ForbiddenError(no);
   s.audit($app, e, C.ACTION, "community forum");
   e.response.header().set("Cache-Control", "no-store");

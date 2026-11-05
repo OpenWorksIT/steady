@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'package:flutter_test/flutter_test.dart';
+import 'package:steady/models.dart';
 import 'package:steady/services/api.dart';
 import 'package:steady/ui/community/community_rules.dart';
 
@@ -28,6 +29,18 @@ void main() {
     expect(tabMessage('steady-community:signed-out'), 'signed-out');
     expect(tabMessage('something else'), isNull);
     expect(tabMessage(null), isNull);
+  });
+
+  test("OpenWorks support's tab: only on OpenWorks' own server", () {
+    const forum = 'https://community.steadyapp.co.za';
+    final practice = AppConfig.fromJson({'communityUrl': forum});
+    final own = AppConfig.fromJson({'communityUrl': forum, 'communitySupport': true});
+    expect(practice.communitySupport, isFalse);
+    expect(own.communitySupport, isTrue);
+    expect(AppConfig.fromJson({'communityUrl': forum, 'communitySupport': 'yes'}).communitySupport, isFalse, reason: 'only true');
+    expect(supportCommunityTab(practice.communityUrl, practice.communitySupport), isFalse);
+    expect(supportCommunityTab(own.communityUrl, own.communitySupport), isTrue);
+    expect(supportCommunityTab('', true), isFalse, reason: 'no community, no tab');
   });
 
   test('in a browser, the tab only where the community shares the site', () {

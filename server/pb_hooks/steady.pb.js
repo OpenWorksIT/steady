@@ -52,7 +52,9 @@ routerAdd("GET", "/api/steady/config", (e) => {
     // the Steady community for psychologists and practice admins (docs/COMMUNITY.md): its
     // Community tab opens it, signed in through Steady; only when this server is set up for it
     // (lib/community.js)
-    communityUrl: (require(`${__hooks}/lib/community.js`).config() || { forum: "" }).forum
+    communityUrl: (require(`${__hooks}/lib/community.js`).config() || { forum: "" }).forum,
+    // whether OpenWorks support opens it here: only on OpenWorks' own server, never a practice's
+    communitySupport: !!(require(`${__hooks}/lib/community.js`).config() || {}).support
   });
 });
 

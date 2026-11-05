@@ -201,6 +201,17 @@ STEADY_COMMUNITY_SIGNIN=https://signin.steadyapp.co.za
 STEADY_COMMUNITY_KEY=<that practice's key>
 ```
 
+**OpenWorks' own server** (the test server, the one marked `support` in the bridge's settings)
+gets a fourth line, and no practice's server ever does:
+
+```bash
+STEADY_COMMUNITY_SUPPORT=yes
+```
+
+It's where OpenWorks IT opens the community. On every other server, OpenWorks' support account
+gets no Community tab, the server won't sign it a note, and the bridge would refuse it anyway:
+three locks, so a support account on a practice's server never reaches the forum.
+
 The server needs the Steady release that has the Community tab, and so does its web app. Its
 Caddy must allow the frame: `deploy/Caddyfile` does (`frame-src`); a server behind another Caddy
 (vps1, behind Shap's) needs `deploy/proxy/steady.caddy` copied there again.
@@ -360,8 +371,12 @@ account is made admin as he arrives. The other VR psychologists just choose Comm
 so does VR's practice administrator, who lands in `practice-admins` and sees the Steady manual.
 Nobody is invited; nobody chooses a forum password.
 
-OpenWorks staff choose Community in Steady with their OpenWorks support account on the server
-marked `support` (their address on the OpenWorks list) and land in `openworks` only. OpenWorks' address is never in
+OpenWorks staff choose Community in Steady with their OpenWorks support account on the test
+server (marked `support` in the bridge, `STEADY_COMMUNITY_SUPPORT=yes` in its `.env`, their
+address on the OpenWorks list) and land in `openworks` only: Announcements, the Steady manual and
+Steady development. They don't see the Science section, Clinical practice, Research and studies,
+Questionnaires and tools or the Tea room. Their support accounts on practices' servers have no
+Community tab. OpenWorks' address is never in
 `DISCOURSE_DEVELOPER_EMAILS` (an address listed there keeps some developer powers even without
 admin).
 
@@ -588,6 +603,8 @@ The bridge says why it refused someone in its log, never with names or addresses
 | "...sends people to ..., not here" | `STEADY_COMMUNITY_SIGNIN` on that server isn't `https://signin.steadyapp.co.za`. |
 | "This address isn't on the community's list" | The person's Steady email isn't on their practice's list (or, for OpenWorks support, the OpenWorks list). Add it, or the domain. |
 | "OpenWorks support comes in through OpenWorks' own server" | A support account opened Community on a practice's server; use the server marked `support`. |
+| "OpenWorks IT opens the community from its own server" | The same, refused by the practice's server itself. On the test server, `STEADY_COMMUNITY_SUPPORT=yes` is missing from its `.env` (step 2). |
+| No Community tab for OpenWorks support on the test server | `STEADY_COMMUNITY_SUPPORT=yes` isn't in its `.env`, or `docker compose up -d` wasn't run after adding it. |
 | "The community didn't open here" in the web app | The practice's Steady isn't a `steadyapp.co.za` address, so the browser won't keep the forum's sign-in in the frame (see "Web addresses"). The phone app works. Or the server's Caddy has no `frame-src` for the forum (step 2). |
 | A blank Community tab in the web app | The browser's console names the rule: `frame-src` in Steady's Caddy, or `frame-ancestors` in `community.caddy`. |
 | "Congratulations, you installed Discourse!" in the Community tab | The forum has no admin yet: step 4, "Discourse's own welcome page". |

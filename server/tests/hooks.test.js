@@ -2284,9 +2284,22 @@ test("community: a signed note for the sign-in bridge, for psychologists, practi
   const again = JSON.parse(new URL(rt.call("POST", R, { auth: p.doc }).data.url).searchParams.get("p"));
   assert.notEqual(again.jti, note.jti, "each note is a new one");
 
-  const s = rt.call("POST", R, { auth: p.sup });
-  assert.equal(s.status, 200);
+  // OpenWorks support: never from a practice's server, only from OpenWorks' own (STEADY_COMMUNITY_SUPPORT=yes)
+  const notHere = rt.call("POST", R, { auth: p.sup });
+  assert.equal(notHere.status, 403, "no note for OpenWorks support on a practice's server");
+  assert.match(notHere.error, /OpenWorks IT opens the community from its own server/);
+  assert.equal(rt.call("GET", "/api/steady/config").data.communitySupport, false, "and the app shows OpenWorks no tab there");
+  for (const v of ["", "no", "true", "1"]) {
+    const other = makeRuntime({ env: Object.assign({}, ENV, SET, { STEADY_COMMUNITY_SUPPORT: v }) });
+    assert.equal(other.call("POST", R, { auth: people(other).sup }).status, 403, "only yes: " + JSON.stringify(v));
+  }
+  const own = makeRuntime({ env: Object.assign({}, ENV, SET, { STEADY_COMMUNITY_SUPPORT: " Yes " }) });
+  const op = people(own);
+  assert.equal(own.call("GET", "/api/steady/config").data.communitySupport, true);
+  const s = own.call("POST", R, { auth: op.sup });
+  assert.equal(s.status, 200, JSON.stringify(s));
   assert.equal(JSON.parse(new URL(s.data.url).searchParams.get("p")).role, "support");
+  assert.equal(own.call("POST", R, { auth: op.doc }).status, 200, "its psychologists still come in as before");
 
   // the practice admin too, as admin: the bridge gives them the Steady manual only
   const a = rt.call("POST", R, { auth: p.adm });
