@@ -303,6 +303,9 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request, s *Session) {
 	for i, st := range sts {
 		row := makeRow(i, st, now)
 		counts[row.Level]++
+		if row.Err == "" && row.Audit.Down != "" {
+			counts["nocheck"]++
+		}
 		rows = append(rows, row)
 	}
 	w.Header().Set("Refresh", "60; url=/?auto=1")

@@ -258,7 +258,10 @@ sudo /opt/steady/deploy/update.sh
 
 Migrations run automatically on start; the app's "Update now" (below) takes a copy of the data
 first. After the first update to 1.0.4 or later, run `sudo ./ctl/install.sh` once: it installs
-the locked-down update services from `deploy/ctl/` (running it again is harmless).
+the locked-down update services from `deploy/ctl/` (running it again is harmless). An update
+never installs new services by itself, so run it again after an update that adds one: 1.1.0
+added the security and privacy check (`steady-audit.timer`), and the fleet view flags a server
+red until it's installed.
 
 Up to 1.0.4, "Update now" couldn't build: its locked-down service sees `/root` read-only, where
 Docker's build tool keeps its state ("read-only file system" in the log), and the app then

@@ -11,8 +11,24 @@ overview says "all clear", "N to look at" or "N to fix" per server, the server's
 each one, and **Checks** (in the bar at the top) lists every server's findings by severity:
 what to fix first, then what to look at, with a bar per server. With them come the privacy numbers the server counts itself: patients on an older
 consent statement, deletion requests past 25 days, staff without two-step sign-in. This is the
-standing picture of what the November 2026 security review found and fixed; a check that stops
-running shows as such.
+standing picture of what the November 2026 security review found and fixed.
+
+A server whose check **isn't running** is a red flag: "check not running" in red on the
+overview (with a count at the top), first under "To fix" on **Checks**, and on the server's
+page with the reason and the command to run there. Every 5 minutes each server reports its
+check's timer (Steady 1.1.1 on), so the flag says which it is:
+
+| The fleet view says | What it means | On the server |
+|---|---|---|
+| the check isn't installed | `steady-audit.timer` isn't there (an update doesn't install it) | `cd /opt/steady/deploy && sudo ./ctl/install.sh` |
+| the check's timer is switched off | it's installed but not enabled | the same |
+| the last check failed (exit-code, exit 2, ...) | `audit-server.sh` stopped with an error | `sudo journalctl -u steady-audit -n 50 --no-pager` |
+| the check ran but Steady can't read its results | `out/audit.json` doesn't reach PocketBase | `sudo ./ctl/install.sh` (it remounts the folder) |
+| the check last ran ... and has stopped | no new results for 13 hours | `systemctl status steady-audit.timer steady-audit.service` |
+| no check from this server | a server before 1.1.1 that sends no results | `sudo ./ctl/install.sh` |
+
+A check that's running right now, or one that's installed and waiting for its first run, isn't
+flagged.
 
 **To do** (in the bar at the top) is OpenWorks' own list: what it has to do, look at or wait
 for, across the practice servers, the community, the apps, the releases and the paperwork, and
@@ -51,8 +67,9 @@ folder, never on a practice's server.
    ```
 2. In-app updates must be set up (`sudo ./ctl/install.sh`), or the buttons can't do anything.
    It also installs the security and privacy check (`steady-audit.timer`, every 6 hours, and
-   once after each update), whose results the fleet view shows. Run it again after updating to
-   Steady 1.0.6 to get the check.
+   once after each update), whose results the fleet view shows. An update doesn't install new
+   services by itself: run `sudo ./ctl/install.sh` again after any update that adds one (1.1.0
+   added the check), or the fleet view flags the server red.
 3. Backups: the fleet view shows the newest file in `/srv/backups/steady` (set
    `STEADY_BACKUP_DIR` in `.env` if they go elsewhere).
 4. Give OpenWorks the server's address and `STEADY_FLEET_KEY` (only that one) through a
