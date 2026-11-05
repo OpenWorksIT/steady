@@ -89,7 +89,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 7.1 The Practice authorises OpenWorks to use these Sub-operators:
 
 - Rackzar: the virtual server that hosts the Server, in South Africa.
-- domains.co.za: the mail service that sends Steady's account emails (staff sign-in codes and account notices, and patients' password-reset codes and deletion confirmations), located in [To complete: country where the mail is kept]. These emails carry no clinical information.
+- domains.co.za: the mail service that sends Steady's account emails (staff sign-in codes and account notices, and patients' password-reset codes and deletion confirmations), located in South Africa (Teraco's data centre in Isando, Johannesburg). These emails carry no clinical information.
 - Apple: delivers push notifications to iPhones (Apple Push Notification service).
 - Google: delivers push notifications to Android phones, where they are sent through Google's Firebase Cloud Messaging.
 - GitHub: holds Steady's source code and builds, and distributes Steady's releases and Android app. It receives no Practice Information.
