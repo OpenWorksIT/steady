@@ -2316,3 +2316,86 @@ test("community: a signed note for the sign-in bridge, for psychologists, practi
   assert.equal(ln.status, 200);
   assert.equal(JSON.parse(new URL(ln.data.url).searchParams.get("p")).name, "D".repeat(99));
 });
+
+test("changing your own email: the password, a code sent to the new address, the old one told", () => {
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_SMTP_HOST: "mail.test", STEADY_MAIL_FROM: "noreply@steadyapp.co.za" }) });
+  const doc = rt.makeUser({ name: "Dr Test", role: "clinician", active: true, email: "dr@example.org", passwordHash: "pw:doctor-password" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "p@example.org", passwordHash: "pw:patient-password" });
+  rt.makeUser({ name: "Someone", role: "clinician", active: true, email: "taken@example.org", passwordHash: "pw:x" });
+  const start = (who, body) => rt.call("POST", "/api/steady/me/email", { auth: who, body });
+  const confirm = (who, code) => rt.call("POST", "/api/steady/me/email/confirm", { auth: who, body: { code } });
+  const codeIn = (m) => /^\s+(\d{6})$/m.exec(m.text)[1];
+
+  assert.equal(start(doc, { email: "test@openworks.co.za", password: "wrong" }).status, 400, "the password first");
+  assert.equal(rt.mails.length, 0);
+  assert.match(start(doc, { email: "not an address", password: "doctor-password" }).error, /valid email/);
+  assert.match(start(doc, { email: "DR@example.org", password: "doctor-password" }).error, /already your email/);
+
+  let r = start(doc, { email: " Test@OpenWorks.co.za ", password: "doctor-password" });
+  assert.equal(r.status, 200, JSON.stringify(r));
+  assert.equal(r.data.email, "t***@openworks.co.za");
+  assert.equal(rt.mails.length, 1);
+  assert.equal(rt.mails[0].to[0].address, "test@openworks.co.za", "the code goes to the new address");
+  const code = codeIn(rt.mails[0]);
+  assert.ok(!rt.mails[0].subject.includes(code), "not in the subject (lock screens show it)");
+  assert.equal(doc.email(), "dr@example.org", "nothing changes before the code");
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "account.email-code-sent" && a.getString("actor") === doc.id));
+
+  assert.match(confirm(doc, "000000").error, /didn't work/);
+  assert.equal(confirm(pat, code).status, 400, "someone else's code is no use");
+  r = confirm(doc, code);
+  assert.equal(r.status, 200, JSON.stringify(r));
+  assert.equal(doc.email(), "test@openworks.co.za");
+  assert.equal(doc.getString("emailChange") || null, null, "the code is gone");
+  const told = rt.mails[rt.mails.length - 1];
+  assert.equal(told.to[0].address, "dr@example.org", "the old address is told");
+  assert.match(told.text, /changed to t\*\*\*@openworks\.co\.za/);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "account.email-changed" && a.getString("actor") === doc.id));
+  assert.match(confirm(doc, code).error, /expired/, "once only");
+
+  // an address that's taken: the same answer, its owner is told, and no code works
+  const before = rt.mails.length;
+  r = start(pat, { email: "taken@example.org", password: "patient-password" });
+  assert.equal(r.status, 200, "the same answer as for a free address");
+  assert.equal(r.data.email, "t***@example.org");
+  const note = rt.mails[before];
+  assert.equal(note.to[0].address, "taken@example.org");
+  assert.match(note.subject, /already has an account/);
+  assert.ok(!/\b\d{6}\b/.test(note.text), "no code in it");
+  for (const guess of ["123456", "000000", "999999"]) assert.equal(confirm(pat, guess).status, 400);
+  assert.equal(pat.email(), "p@example.org");
+
+  // a patient: the emails say nothing about therapy or the practice
+  r = start(pat, { email: "pat.new@example.org", password: "patient-password" });
+  assert.equal(r.status, 200);
+  const pcode = codeIn(rt.mails[rt.mails.length - 1]);
+  assert.equal(confirm(pat, pcode).status, 200);
+  assert.equal(pat.email(), "pat.new@example.org");
+  for (const m of rt.mails.filter((x) => ["pat.new@example.org", "p@example.org"].includes(x.to[0].address))) {
+    assert.ok(!/VR Demo Practice|psycholog|therap|clinic/i.test(m.text + m.subject), "nothing about therapy: " + m.subject);
+  }
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "account.email-changed" && a.getString("patient") === pat.id), "in the patient's access log");
+
+  // five wrong codes, and the code is spent
+  r = start(doc, { email: "dr2@example.org", password: "doctor-password" });
+  const c5 = codeIn(rt.mails[rt.mails.length - 1]);
+  for (let i = 0; i < 5; i++) confirm(doc, "111111");
+  assert.match(confirm(doc, c5).error, /expired/);
+  // and it expires after 15 minutes
+  start(doc, { email: "dr3@example.org", password: "doctor-password" });
+  const c15 = codeIn(rt.mails[rt.mails.length - 1]);
+  rt.tick(16 * 60000);
+  assert.match(confirm(doc, c15).error, /expired/);
+  assert.equal(doc.email(), "test@openworks.co.za");
+  // at most 5 codes an hour (three so far)
+  assert.equal(start(doc, { email: "dr4@example.org", password: "doctor-password" }).status, 200);
+  assert.equal(start(doc, { email: "dr5@example.org", password: "doctor-password" }).status, 200);
+  assert.match(start(doc, { email: "dr6@example.org", password: "doctor-password" }).error, /Too many codes/);
+
+  // a server that can't send email can't change addresses
+  const quiet = makeRuntime({ env: ENV });
+  const q = quiet.makeUser({ name: "Dr Q", role: "clinician", active: true, email: "q@example.org", passwordHash: "pw:pw" });
+  assert.match(quiet.call("POST", "/api/steady/me/email", { auth: q, body: { email: "q2@example.org", password: "pw" } }).error, /can't send email/);
+  // and patients can't set the field themselves through the API
+  assert.ok(/emailChange:isset = false/.test(String(rt.app.findCollectionByNameOrId("users").updateRule)), "the users update rule refuses emailChange");
+});

@@ -63,7 +63,7 @@ Breathing exercises guide them round by round. They can tap **Finish early**. Yo
 The gear on the home screen opens **Settings**:
 
 - **Who sees what you send**: their psychologist, and anyone you've shared them with.
-- **Change password**, and **Two-step sign-in**, which is optional for patients.
+- **Change password**, **Change email** (with a code sent to the new address), and **Two-step sign-in**, which is optional for patients.
 - **Lock Steady** (phone app only): asks for the phone's screen lock when they open Steady and after two minutes away. It's off unless they turn it on.
 - **Stop sharing watch data**, if they've connected a watch.
 - **Delete my account**.
