@@ -78,7 +78,7 @@ GROUPS = [
     {
         "name": "openworks",
         "full_name": "OpenWorks IT",
-        "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements, the Steady manual and Steady development only. Mention @openworks there, or send a personal message.",
+        "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements, the Steady manual, The science and Steady development only. Mention @openworks there, or send a personal message.",
         "visibility_level": VIS_LOGGED_ON,
         "members_visibility_level": VIS_LOGGED_ON,
         "mentionable_level": ALIAS_EVERYONE,
@@ -109,8 +109,9 @@ CATEGORIES = [
         "slug": "science",
         "color": "143A3E",
         "text_color": "FFFFFF",
-        "description": "How each part of Steady works and why: the methods, the evidence and the references, signed off by VR Clinical Psychology. Clinicians only; questions and challenges welcome in the replies.",
-        "permissions": {"clinicians": CREATE_POST},
+        "description": "How each part of Steady works and why: the methods, the evidence and the references, signed off by VR Clinical Psychology. Clinicians and OpenWorks IT; questions and challenges welcome in the replies.",
+        # open to OpenWorks too: the science is published anyway, and OpenWorks keeps it up to date
+        "permissions": {"clinicians": CREATE_POST, "openworks": CREATE_POST},
     },
     {
         "name": "Clinical practice",
@@ -181,12 +182,12 @@ Data from studies run across practices will only ever be shared here as totals a
 
 | Area | Who can read it |
 |---|---|
-| The science, Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
-| Announcements, Steady development | Clinicians and OpenWorks IT |
+| Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
+| Announcements, The science, Steady development | Clinicians and OpenWorks IT |
 | Steady manual | Clinicians, practice administrators and OpenWorks IT |
 | A practice's private category (if it has one) | That practice's psychologists only |
 
-OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements, the Steady manual and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
+OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements, the Steady manual, The science and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
 
 To ask OpenWorks something, post in Steady development and mention @openworks, or send them a personal message. A mention of @openworks anywhere else reaches nobody, because they can't see it.
 
@@ -858,7 +859,7 @@ Talk about patterns, methods and made-up examples. If you see something that bre
 
 ## Who runs it
 
-Kempie van Rooyen is the community lead. OpenWorks IT builds and hosts Steady and the community, and can read only Announcements, the Steady manual and Steady development. To reach them, post in Steady development or send @openworks a personal message.
+Kempie van Rooyen is the community lead. OpenWorks IT builds and hosts Steady and the community, and can read only Announcements, the Steady manual, The science and Steady development. To reach them, post in Steady development or send @openworks a personal message.
 """
 
 
