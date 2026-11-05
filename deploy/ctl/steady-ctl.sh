@@ -104,10 +104,34 @@ stats() {
     --argjson cpus "$(nproc)" --arg load "$(cut -d' ' -f1-3 /proc/loadavg)" \
     --argjson snapshots "$(du -sb "$SNAPS" 2>/dev/null | awk '{print $1}' || echo 0)" \
     --argjson bnewest "${newest:-null}" --argjson bcount "${bcount:-0}" --argjson bbytes "${bbytes:-0}" \
+    --argjson auditService "$(audit_service 2>/dev/null || echo null)" \
     '{at: $at, cpus: $cpus, load: ($load | split(" ") | map(tonumber)),
       disk: {total: $total, used: $used, free: $free}, memory: {total: $memTotal, available: $memAvail},
       snapshotsBytes: $snapshots,
-      backups: {newest: (if $bnewest == null then null else ($bnewest | todate) end), count: $bcount, bytes: $bbytes}}' > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$CTL/host.json"
+      backups: {newest: (if $bnewest == null then null else ($bnewest | todate) end), count: $bcount, bytes: $bbytes},
+      auditService: $auditService}' > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$CTL/host.json"
+}
+
+# The security and privacy check's timer and its last run (steady-audit, from install.sh), so
+# the fleet view can tell a check that isn't installed, is switched off or failed from one that
+# simply hasn't reported yet. The unit files are looked at directly; systemctl adds the last run
+# (and is left out if it can't answer, so the rest still reports).
+audit_service() {
+  local units="${STEADY_SYSTEMD_DIR:-/etc/systemd/system}" installed=false enabled=false props=""
+  [ -f "$units/steady-audit.service" ] && [ -f "$units/steady-audit.timer" ] && installed=true
+  [ -e "$units/timers.target.wants/steady-audit.timer" ] && enabled=true
+  if command -v systemctl >/dev/null 2>&1; then
+    props="$(TZ=UTC systemctl show steady-audit.service -p ActiveState -p Result -p ExecMainStatus -p ExecMainStartTimestamp 2>/dev/null)
+$(TZ=UTC systemctl show steady-audit.timer -p ActiveState -p NextElapseUSecRealtime 2>/dev/null | sed 's/^/timer./')"
+  fi
+  prop() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' <<<"$props"; }
+  when() { [ -n "$1" ] && [ "$1" != "n/a" ] && date -u -d "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true; }
+  jq -n --argjson installed "$installed" --argjson enabled "$enabled" \
+    --arg state "$(prop ActiveState)" --arg result "$(prop Result)" --arg exit "$(prop ExecMainStatus)" \
+    --arg lastRun "$(when "$(prop ExecMainStartTimestamp)")" \
+    --arg timer "$(prop timer.ActiveState)" --arg nextRun "$(when "$(prop timer.NextElapseUSecRealtime)")" \
+    '{installed: $installed, enabled: $enabled, state: $state, result: $result,
+      exitStatus: ($exit | tonumber? // null), lastRun: $lastRun, timer: $timer, nextRun: $nextRun}'
 }
 
 # Restarts Steady's containers (the fleet view's Restart button): nothing is rebuilt or fetched.

@@ -11,8 +11,12 @@
 
 {{with .Row.Audit}}
 <h2 id="checks">Security and privacy checks</h2>
-{{if .Have}}<p><span class="check {{.SummaryClass}}">{{.Summary}}</span> <span class="muted">· checked {{.Checked}}{{if .Code}} by code {{.Code}}{{end}} · runs every 6 hours on the server (audit-server.sh)</span></p>
-{{else}}<p class="muted">No check from this server yet. On the server: <code>sudo ./ctl/install.sh</code> in its deploy folder (Steady 1.0.6 or newer) sets it up and runs the first one.</p>{{end}}
+{{if .Down}}<p class="error">Not running: {{.Down}}.</p>
+<p>On the server: <code>{{.Fix}}</code></p>
+{{if .Have}}<p class="muted">Below is what the last check found, {{.Checked}}.</p>{{end}}
+{{else if .Have}}<p><span class="check {{.SummaryClass}}">{{.Summary}}</span> <span class="muted">· checked {{.Checked}}{{if .Code}} by code {{.Code}}{{end}} · runs every 6 hours on the server (audit-server.sh){{if .Running}} · running again now{{else if .NextRun}} · next run {{.NextRun}}{{end}}</span></p>
+{{else if .Running}}<p class="muted">The first check is running. Its results come in a minute or two.</p>
+{{else}}<p class="muted">No check from this server yet: it's installed and waits for its first run{{if .NextRun}}, {{.NextRun}}{{end}}.</p>{{end}}
 <dl>
 <dt>Patients on an older consent statement</dt><dd>{{.OlderConsent}}</dd>
 <dt>Deletion requests past 25 days</dt><dd>{{.DeletionOverdue}}</dd>
