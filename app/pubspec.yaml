@@ -12,7 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   # PocketBase client (MIT)
-  pocketbase: ^0.25.0
+  pocketbase: ^0.25.3
   # the feedback trail records server calls through PocketBase's HTTP client (BSD-3)
   http: ^1.2.2
   # Keychain / Keystore storage for the session token (BSD-3)

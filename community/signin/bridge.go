@@ -261,32 +261,41 @@ func (a *App) checkNote(n note, cfg *Config, p *Practice) (title, text, why stri
 		return "The community didn't open", "Close it and choose Community in Steady again.", "note ids"
 	case !validEmail(email):
 		return "This email address can't be used", "Your Steady account's email address can't be used in the community. Ask your practice to check it.", "note email"
-	case n.Role == "clinician" && !listed(p.Emails, email):
+	// one list per practice covers its staff: psychologists and practice administrators
+	case (n.Role == "clinician" || n.Role == "admin") && !listed(p.Emails, email):
 		return "This address isn't on the community's list", "Your email address isn't one " + p.Name + " has listed for the community. Ask the community lead to add it.", "email not on the practice's list"
 	case n.Role == "support" && !p.Support:
-		return "The community is for psychologists", "OpenWorks support comes in through OpenWorks' own server, not " + p.Name + "'s.", "support from a practice not marked for it"
+		return forWhom, "OpenWorks support comes in through OpenWorks' own server, not " + p.Name + "'s.", "support from a practice not marked for it"
 	case n.Role == "support" && !listed(cfg.OpenWorks, email):
 		return "This address isn't on the community's list", "Only OpenWorks IT's listed addresses come in as OpenWorks support.", "support address not on the OpenWorks list"
-	case n.Role != "clinician" && n.Role != "support":
-		return "The community is for psychologists", "Only psychologists (and OpenWorks IT) can open Steady Community.", "role " + n.Role
+	case n.Role != "clinician" && n.Role != "admin" && n.Role != "support":
+		return forWhom, "Only psychologists, practice administrators and OpenWorks IT can open Steady Community.", "role " + n.Role
 	}
 	return "", "", ""
 }
 
-// groupsFor: psychologists join clinicians and their practice's own groups, OpenWorks support
-// joins openworks. Everyone leaves every other group the bridge hands out, so someone whose
-// address moved to another practice's list (or to OpenWorks') keeps nothing of the old one.
+const forWhom = "The community is for psychologists, practice administrators and OpenWorks IT"
+
+// groupsFor: psychologists join clinicians and their practice's own groups; practice
+// administrators join practice-admins only (it sees the Steady manual, nothing else); OpenWorks
+// support joins openworks. Everyone leaves every other group the bridge hands out, so someone
+// whose role changed, or whose address moved to another practice's list (or to OpenWorks'),
+// keeps nothing of the old one.
 func groupsFor(role string, p *Practice, cfg *Config) (add, remove []string) {
-	if role == "support" {
-		add = []string{"openworks"}
-	} else {
+	switch role {
+	case "clinician":
 		add = append([]string{"clinicians"}, p.Groups...)
+	case "admin":
+		// never clinicians or the practice's own groups: those are for its psychologists
+		add = []string{"practice-admins"}
+	case "support":
+		add = []string{"openworks"}
 	}
 	adding := map[string]bool{}
 	for _, g := range add {
 		adding[g] = true
 	}
-	all := []string{"clinicians", "openworks"}
+	all := []string{"clinicians", "practice-admins", "openworks"}
 	for _, q := range cfg.Practices {
 		all = append(all, q.Groups...)
 	}

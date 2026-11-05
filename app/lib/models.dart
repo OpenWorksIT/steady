@@ -50,7 +50,7 @@ class AppConfig {
   /// colour like '#B0690C' and the logo's address on the server ('' when not set: plain Steady).
   final String brandTagline, brandAccent, brandLogo;
 
-  /// The Steady community for psychologists ('' when this server has none).
+  /// The Steady community for psychologists and practice admins ('' when this server has none).
   final String communityUrl;
   AppConfig({
     this.communityUrl = '',

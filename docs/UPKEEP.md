@@ -50,7 +50,7 @@ what to look at there, and what it can't see.
 - [ ] The same checks as a practice server, where they apply (it holds no real patient data).
 - [ ] It follows `test` (`STEADY_TRACK=test` in `.env`) and is on its newest commit.
 - [ ] Free disk: `sudo docker image prune -f` if it's filling up.
-- [ ] The community sign-in bridge (`/var/lib/steady-signin/config.json`): each practice's address list still matches its psychologists, and the OpenWorks list its support staff ([COMMUNITY.md](COMMUNITY.md)).
+- [ ] The community sign-in bridge (`/var/lib/steady-signin/config.json`): each practice's address list still matches its psychologists and practice administrators, and the OpenWorks list its support staff ([COMMUNITY.md](COMMUNITY.md)).
 - [ ] The forum's sign-in bridge: `signin check` lists only the practices that should be there (no test server once the forum is live), each with its address list ([COMMUNITY.md](COMMUNITY.md)).
 - [ ] The forum's members (Admin > Users): nobody who has left a practice is still signed in.
 

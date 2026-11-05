@@ -725,7 +725,8 @@ class Api {
   }
 
   /// Opening the community: the address of its sign-in bridge, with a short note from this server
-  /// saying who is signed in (psychologists and OpenWorks support; server/pb_hooks/steady_community.pb.js).
+  /// saying who is signed in (psychologists, practice admins and OpenWorks support;
+  /// server/pb_hooks/steady_community.pb.js).
   Future<String> communitySignIn() async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/community/sign-in', method: 'POST');
     final url = '${res['url'] ?? ''}';

@@ -114,7 +114,7 @@ echo
 curl -fsS $LOCAL/api/health >/dev/null || { echo "The server didn't start. See: docker compose -f deploy/test/compose.yml logs pocketbase" >&2; exit 1; }
 
 # ---------- accounts (idempotent) ----------
-compose exec -T pocketbase /pb/pocketbase superuser upsert "$SUPERUSER_EMAIL" "$SUPERUSER_PASSWORD" --dir=/pb/pb_data >/dev/null
+compose exec -T pocketbase /pb/pocketbase superuser upsert --dir=/pb/pb_data -- "$SUPERUSER_EMAIL" "$SUPERUSER_PASSWORD" >/dev/null
 
 json() { python3 -c 'import json,sys; print(json.dumps(dict(zip(sys.argv[1::2], sys.argv[2::2]))))' "$@"; }
 TOKEN=$(curl -fsS $LOCAL/api/collections/_superusers/auth-with-password \

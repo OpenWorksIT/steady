@@ -1211,8 +1211,9 @@ def operator_agreement(su, tag, adm, sup, doc2, patA):
 
 def community_sign_in(su, tag, adm, sup, doc2, patA):
     """The community, inside Steady: a short note for the sign-in bridge, signed with the
-    practice's key (HMAC-SHA256), for psychologists and OpenWorks support with two-step sign-in
-    on. Never for the practice admin, patients or staff without two-step sign-in."""
+    practice's key (HMAC-SHA256), for psychologists, the practice admin (the forum shows them the
+    Steady manual only) and OpenWorks support with two-step sign-in on. Never for patients or
+    staff without two-step sign-in."""
     G = "community sign-in"
     R = "/api/steady/community/sign-in"
     key = ENV.get("STEADY_COMMUNITY_KEY", "")
@@ -1244,8 +1245,10 @@ def community_sign_in(su, tag, adm, sup, doc2, patA):
     check(G, "each note is a new one", s == 200 and json.loads(note_of(r2)[0] or "{}").get("jti") != note.get("jti"), r2)
     s, r = call("POST", R, sup, {})
     check(G, "OpenWorks support gets one too, as support", s == 200 and json.loads(note_of(r)[0] or "{}").get("role") == "support", [s, r])
+    s, r = call("POST", R, adm, {})
+    check(G, "the practice admin gets one too, as admin", s == 200 and json.loads(note_of(r)[0] or "{}").get("role") == "admin", [s, r])
     N = staff(su, f"cf-n-{tag}@sec.test", "Dr NoCode", two_step=False)
-    for label, tok in (("the practice admin", adm), ("a patient", patA), ("staff without two-step sign-in", N.token), ("nobody signed in", None)):
+    for label, tok in (("a patient", patA), ("staff without two-step sign-in", N.token), ("nobody signed in", None)):
         s, r = call("POST", R, tok, {})
         check(G, f"{label} is refused", s in (401, 403), [s, r])
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": "action='account.community-sign-in'"})
