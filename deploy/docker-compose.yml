@@ -68,6 +68,7 @@ services:
       STEADY_COMMUNITY_URL: ${STEADY_COMMUNITY_URL:-}
       STEADY_COMMUNITY_SIGNIN: ${STEADY_COMMUNITY_SIGNIN:-}
       STEADY_COMMUNITY_KEY: ${STEADY_COMMUNITY_KEY:-}
+      STEADY_COMMUNITY_SUPPORT: ${STEADY_COMMUNITY_SUPPORT:-}
       STEADY_PUSHER_URL: http://pusher:8090
       STEADY_PUSHER_SECRET: ${PUSHER_SECRET}
       # the iPhone app: TestFlight public link while in testing, later the App Store link
