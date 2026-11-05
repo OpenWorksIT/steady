@@ -580,7 +580,9 @@ update Discourse from the browser between rebuilds. Debian keeps itself patched 
 
 The bridge comes with Steady's signed releases, like the fleet view ([FLEET.md](FLEET.md),
 "Updating the fleet view"): check out the new release in `/opt/steady-ops`, then
-`sudo docker compose -f community/signin/compose.yml up -d --build`.
+`sudo docker compose -f community/signin/compose.yml up -d --build`. The fleet view checks that
+the bridge runs exactly its release's code (`GET /version`; FLEET.md, "Which code runs where")
+and flags it red when it doesn't: built from another folder, or not rebuilt after an update.
 
 ## Two-step sign-in, in practice
 

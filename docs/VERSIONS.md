@@ -48,4 +48,4 @@ OpenWorks to keep track; it changes nothing else. Store builds take their versio
 | 1.0.4 | 3 Nov 2026 | Fixes from the November security review; patients agree again when the consent statement changes; the fleet view (1.0.3 was never released on its own) |
 | 1.0.5 | 3 Nov 2026 | Server updates from the app fixed; branches main, test and working; Caddy pinned; the dependency check |
 | 1.1.0 | 5 Nov 2026 | The operator agreement, Android notifications through Google, live security and privacy checks in the fleet view, the Community tab, version numbers, Settings as a page |
-| 1.1.1 | next | Changing your own email address; the fleet view flags a server whose security check isn't running; OpenWorks opens the community only from its own server, and reads The science |
+| 1.1.1 | next | Changing your own email address; the fleet view flags a server whose security check isn't running, and which code OpenWorks' own services run (the sign-in bridge against the fleet view's release); OpenWorks opens the community only from its own server, and reads The science |

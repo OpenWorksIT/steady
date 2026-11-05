@@ -473,6 +473,7 @@ func (a Audit) DownText() string {
 type FeedItem struct {
 	Index                                 int
 	Server, Level, Section, Text, Checked string
+	Link                                  string // where its name leads: the server's checks, or the overview's own services
 }
 
 // ServerChecks is one server's line on the checks page: its counts and a bar of them.
@@ -493,13 +494,32 @@ type ChecksPage struct {
 	Passed    int
 }
 
-func makeChecks(sts []*Status, now time.Time) ChecksPage {
+func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time) ChecksPage {
 	var p ChecksPage
+	// OpenWorks' own services first: the fleet view and the sign-in bridge running other code
+	// than their release
+	for _, o := range ownServices(sts, cst) {
+		if o.Level == "good" {
+			continue
+		}
+		text := o.Note
+		if o.Fix != "" {
+			text += ": " + o.Fix
+		}
+		it := FeedItem{Server: o.Name, Section: "Code", Text: "runs " + o.Runs + ": " + text, Link: "/#code"}
+		if o.Level == "bad" {
+			it.Level = "fail"
+			p.Fix = append(p.Fix, it)
+		} else {
+			it.Level = "warn"
+			p.Look = append(p.Look, it)
+		}
+	}
 	for i, st := range sts {
 		row := makeRow(i, st, now)
 		sc := ServerChecks{Index: i, Name: row.Name}
 		add := func(level, section, text, checked string) {
-			it := FeedItem{Index: i, Server: row.Name, Level: level, Section: section, Text: text, Checked: checked}
+			it := FeedItem{Index: i, Server: row.Name, Level: level, Section: section, Text: text, Checked: checked, Link: fmt.Sprintf("/s/%d#checks", i)}
 			if level == "fail" {
 				p.Fix = append(p.Fix, it)
 				sc.Fix++
@@ -513,6 +533,10 @@ func makeChecks(sts []*Status, now time.Time) ChecksPage {
 			sc.Checked, sc.Summary, sc.SummaryClass = row.Checked, "can't be reached", "bad"
 			p.Servers = append(p.Servers, sc.withBar())
 			continue
+		}
+		// a practice server on an older signed release (a server following a branch is left alone)
+		if row.Behind && get(st.Data, "version", "signed") != false {
+			add("warn", "Version", fmt.Sprintf("runs %s, %s the newest signed release (%s): Update on its page", row.Version, row.VersionNote, releaseText(st.Data)), row.Checked)
 		}
 		a := row.Audit
 		sc.Checked = a.Checked

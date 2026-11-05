@@ -7,7 +7,9 @@
 {{with index .Counts "slow"}}<span class="pill slow">{{.}} slow</span>{{end}}
 {{with index .Counts "struggling"}}<span class="pill struggling">{{.}} struggling</span>{{end}}
 {{with index .Counts "down"}}<span class="pill down">{{.}} unreachable</span>{{end}}
-{{with index .Counts "nocheck"}}<a class="pill down" href="/checks">{{.}} without a running security check</a>{{end}}</p>
+{{with index .Counts "nocheck"}}<a class="pill down" href="/checks">{{.}} without a running security check</a>{{end}}
+{{with index .Counts "behind"}}<span class="pill slow">{{.}} not on the newest release</span>{{end}}
+{{with index .Counts "owncode"}}<a class="pill down" href="#code">{{.}} of OpenWorks' services on other code</a>{{end}}</p>
 {{if .ConfigError}}<p class="error">servers.json: {{.ConfigError}}</p>{{end}}
 {{if not .Rows}}<p>No servers yet: add them to servers.json (docs/FLEET.md).</p>{{end}}
 <div class="table"><table>
@@ -24,6 +26,15 @@
 <td><a href="/s/{{.Index}}">Open</a></td>
 </tr>{{end}}
 </tbody></table></div>
+{{with .Own}}
+<h2 id="code">OpenWorks' own services</h2>
+<p class="muted">Built from a signed release in /opt/steady-ops; each says which code it runs.</p>
+<div class="table"><table>
+<thead><tr><th>Service</th><th>Runs</th><th>Code</th></tr></thead>
+<tbody>
+{{range .}}<tr><td><strong>{{.Name}}</strong></td><td><code>{{.Runs}}</code></td><td><span class="check {{.Level}}">{{.Note}}</span>{{with .Fix}}<br><code>{{.}}</code>{{end}}</td></tr>
+{{end}}</tbody></table></div>
+{{end}}
 {{with .Community}}
 <h2>Community forum</h2>
 <p class="muted">{{.Domain}} · checked {{.Checked}} · numbers only, for the whole forum (Discourse updates them about every 30 minutes)</p>
