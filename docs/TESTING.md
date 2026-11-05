@@ -25,7 +25,7 @@ change isn't released until they pass.
   reset, stop and restore whom, OpenWorks seeing no patients, RADR explanations and reviews (only the
   patient's psychologist or a colleague it's shared with, logged, refused if the log can't be
   written), the audit report, feedback tickets,
-  app versions and watch permissions, exports (flag reviews, notes, methods, the Heidi series),
+  app versions and watch permissions, exports (flag reviews, notes, methods, the AI note-taking series),
   and staff sign-in: device links with emailed codes (wrong, reused and expired codes), "confirm
   it's you", locking your own account, password resets unlinking devices, PocketBase's own email
   routes closed; browser tab sessions (short tokens, renewed as short ones whatever device key
@@ -62,7 +62,7 @@ mail catcher):
 Firebase plugin): what Settings says about notifications, data parsing,
 server addresses and invite links, the watch summaries, chart periods, the patient words and
 calm transitions, the feedback trail, layout rules, the exports (PDF report, Excel workbook,
-Heidi PDF for a full export, a part of a series and chosen dates), the operator agreement's
+AI note-taking PDF for a full export, a part of a series and chosen dates), the operator agreement's
 text, Schedule and PDF, the screen lock (patients' Lock Steady off by default, the crisis numbers
 on its lock screen, two minutes away; staff locked at opening) and when a browser tab's session
 is renewed.
@@ -71,9 +71,9 @@ is renewed.
 
 - Beta 1 and Beta 2 at VR Clinical Psychology: Android (Samsung and others, with Health Connect),
   iPhone through TestFlight, and the web app.
-- The Heidi export, with a fictional patient (Demo C) in Heidi itself: Heidi kept to the wording
-  and got every fact right; its two suggestions (flag review status, linking the Heidi patient
-  profile) are in 1.0.
+- The export for AI note-taking, with a fictional patient (Demo C) in an AI note-taking tool
+  itself: the tool kept to the wording and got every fact right; its two suggestions (flag review
+  status, linking the tool's patient profile) are in 1.0.
 
 ## The test server (vps1)
 
