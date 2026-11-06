@@ -679,7 +679,8 @@ class Api {
               sort: '-created',
               expand: 'instrument',
             ),
-        _checkinRecords(myId, days),
+        // a week at least, so the copy kept for the home screen has the week's moods
+        _checkinRecords(myId, max(days, 7)),
         pb.collection('instruments').getFullList(filter: 'active = true', sort: 'kind,name'),
       ]).timeout(const Duration(seconds: 30));
       final exercises = r[2].where((x) => x.getStringValue('kind') != 'questionnaire').toList();
