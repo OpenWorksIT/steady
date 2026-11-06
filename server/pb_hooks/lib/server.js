@@ -301,6 +301,37 @@ function createInvite(app, e, clinicianId, label) {
 /* ---------- names ---------- */
 
 /** What the psychologist calls a patient: the invite name, else the patient's own name. */
+/** How long an answer waited on the patient's phone before the server could be reached (the
+ *  app's outbox), as the phone measured it: seconds in, ms out. A length of time rather than a
+ *  clock time, so a phone whose clock is wrong still files it at the right time. 0 when not
+ *  given; -1 when it's more than 30 days (too old to file). */
+var MAX_WAIT_DAYS = 30;
+function waited(v) {
+  var n = typeof v === "number" ? v : parseInt(String(v || ""), 10);
+  if (!n || isNaN(n) || n < 0) return 0;
+  if (n > MAX_WAIT_DAYS * 86400) return -1;
+  return Math.floor(n) * 1000;
+}
+
+/** A check-in's time: when the patient answered it, or else when it arrived. */
+function answeredMs(rec) {
+  return toMs(rec, "answeredAt") || toMs(rec, "created");
+}
+
+/** The phone's own id for an answer (15 of a-z, 0-9), or "". */
+function clientId(v) {
+  var c = String(v || "");
+  return /^[a-z0-9]{15}$/.test(c) ? c : "";
+}
+
+/** " · answered 4 h before it arrived": for an answer that waited on the phone 15 minutes or more. */
+function lateNote(answered, arrived) {
+  if (!answered || arrived - answered < 15 * 60000) return "";
+  var mins = Math.round((arrived - answered) / 60000);
+  var text = mins < 60 ? mins + " min" : mins < 48 * 60 ? Math.round(mins / 60) + " h" : Math.round(mins / 1440) + " days";
+  return " · answered " + text + " before it arrived";
+}
+
 function displayName(patient) {
   return patient.getString("clinicianLabel") || patient.getString("name");
 }
@@ -420,7 +451,7 @@ function push(app, userId) {
 
 function checkinRow(r) {
   return {
-    ts: toMs(r, "created"),
+    ts: answeredMs(r),
     mood: r.getInt("mood"),
     anxiety: r.getInt("anxiety"),
     sleep: r.getInt("sleep"),
@@ -553,9 +584,11 @@ function patientSummaries(app, patients, tzOffset) {
 }
 
 function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names, reviews) {
-  var rows = cks.map(checkinRow);
+  // newest answered first (one that waited on a phone can arrive after a later one)
+  var byTime = function (a, b) { return b.ts - a.ts; };
+  var rows = cks.map(checkinRow).sort(byTime);
   var arows = asg.map(function (r) { return assignmentRow(app, r, names); });
-  var allRows = rows.length ? rows : older.map(checkinRow);
+  var allRows = rows.length ? rows : older.map(checkinRow).sort(byTime);
   var last = allRows.length ? allRows[0] : null;
   var flags = core.reviewFlags(allRows, arows, now);
   flags.forEach(function (f) { if (f.key && reviews && reviews[f.key]) f.reviewed = reviews[f.key]; });
@@ -614,6 +647,11 @@ module.exports = {
   core: core,
   nowMs: nowMs,
   toMs: toMs,
+  waited: waited,
+  MAX_WAIT_DAYS: MAX_WAIT_DAYS,
+  answeredMs: answeredMs,
+  clientId: clientId,
+  lateNote: lateNote,
   dateValue: dateValue,
   readJson: readJson,
   body: body,

@@ -431,8 +431,17 @@ routerAdd("POST", "/api/steady/assignments/{id}/complete", (e) => {
   let a = null;
   try { a = $app.findRecordById("assignments", e.request.pathValue("id")); } catch (_) { a = null; }
   if (!a || a.getString("patient") !== e.auth.id) throw new NotFoundError("Not found.");
+  const b0 = s.body(e);
+  const cid = s.clientId(b0.clientId);
+  // sent again from the app's outbox: it's here already
+  if (cid && a.getString("status") === "done" && a.getString("completionId") === cid) return e.json(200, { id: a.id, status: "done", duplicate: true });
+  if (a.getString("status") === "cancelled") throw s.badRequest("Your psychologist withdrew this one, so your answers weren't sent.");
   if (a.getString("status") !== "pending") throw s.badRequest("This one is already done.");
   const now = s.nowMs();
+  // when the patient finished it, if it waited on the phone
+  const wait = s.waited(b0.waited);
+  if (wait < 0) throw s.badRequest("These answers waited on the phone for more than " + s.MAX_WAIT_DAYS + " days, so they weren't sent.");
+  const answered = now - wait;
   const avail = s.toMs(a, "availableFrom");
   if (avail && avail > now) throw s.badRequest("This isn't available yet.");
 
@@ -451,12 +460,13 @@ routerAdd("POST", "/api/steady/assignments/{id}/complete", (e) => {
   }
 
   a.set("status", "done");
-  a.set("completedAt", new DateTime());
+  a.set("completedAt", s.dateValue(answered));
+  a.set("completionId", cid);
   a.set("result", result);
   if (score) a.set("score", score);
   $app.save(a);
 
-  const next = core.nextAvailable(a.getString("repeat"), now, e.auth.getInt("tzOffset"));
+  const next = core.nextAvailable(a.getString("repeat"), answered, e.auth.getInt("tzOffset"));
   if (next) {
     const n = new Record($app.findCollectionByNameOrId("assignments"));
     n.set("patient", a.getString("patient"));
@@ -482,7 +492,7 @@ routerAdd("POST", "/api/steady/assignments/{id}/complete", (e) => {
     patient: e.auth.id,
     assignment: a.id,
     title: s.displayName(e.auth) + " completed " + def.name,
-    body: detail,
+    body: detail + s.lateNote(answered, now),
     severity: score ? score.severity : "none"
   });
   return e.json(200, { id: a.id, status: "done" });
@@ -493,6 +503,15 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireRole(e, "patient");
   const b = s.body(e);
+  const cid = s.clientId(b.clientId);
+  if (cid) {
+    const dup = $app.findRecordsByFilter("assignments", "patient = {:p} && completionId = {:c}", "", 1, 0, { p: e.auth.id, c: cid });
+    if (dup.length) return e.json(200, { id: dup[0].id, duplicate: true });
+  }
+  const now = s.nowMs();
+  const wait = s.waited(b.waited);
+  if (wait < 0) throw s.badRequest("This waited on the phone for more than " + s.MAX_WAIT_DAYS + " days, so it wasn't sent.");
+  const answered = now - wait;
   const inst = s.instrumentDef($app, s.core.str(b.instrument, 30));
   if (inst.def.kind !== "exercise" || !s.sendable(inst.rec)) throw s.badRequest("Only exercises can be started from the app.");
   // a psychologist's own exercise only once it has been sent to this patient (it may be
@@ -510,7 +529,8 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
   rec.set("status", "done");
   rec.set("selfStarted", true);
   rec.set("repeat", "once");
-  rec.set("completedAt", new DateTime());
+  rec.set("completedAt", s.dateValue(answered));
+  rec.set("completionId", cid);
   rec.set("result", s.core.validateExerciseResult(inst.def, b.result));
   $app.save(rec);
   if (clinician) {
@@ -520,7 +540,7 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
       patient: e.auth.id,
       assignment: rec.id,
       title: s.displayName(e.auth) + " did " + inst.def.name,
-      body: "Started by the patient",
+      body: "Started by the patient" + s.lateNote(answered, now),
       severity: "none",
       push: false
     });
@@ -671,6 +691,7 @@ onRecordCreateRequest((e) => {
   r.set("status", "pending");
   r.set("result", null);
   r.set("score", null);
+  r.set("completionId", "");
   r.set("completedAt", "");
   r.set("selfStarted", false);
   if (!r.getString("repeat")) r.set("repeat", "once");
@@ -709,6 +730,17 @@ onRecordCreateRequest((e) => {
   });
   if (!v.ok) throw s.badRequest("Please answer all four questions.", v.errors);
   if (!e.auth.getString("clinician")) throw s.badRequest("Your account isn't linked to a psychologist yet.");
+  // from the app's outbox: the phone's own id (sent twice, stored once) and how long it waited
+  const cid = s.clientId(r.getString("clientId"));
+  if (r.getString("clientId") && !cid) throw s.badRequest("That check-in's id isn't one the app makes.");
+  if (cid) {
+    const dup = e.app.findRecordsByFilter("checkins", "patient = {:p} && clientId = {:c}", "", 1, 0, { p: e.auth.id, c: cid });
+    if (dup.length) return e.json(200, { id: dup[0].id, duplicate: true });
+  }
+  const wait = s.waited((e.requestInfo().body || {}).waited);
+  if (wait < 0) throw s.badRequest("This check-in waited on the phone for more than " + s.MAX_WAIT_DAYS + " days, so it wasn't saved.");
+  r.set("clientId", cid);
+  r.set("answeredAt", wait ? s.dateValue(s.nowMs() - wait) : "");
   r.set("patient", e.auth.id);
   r.set("note", v.value.note);
   e.next();
@@ -730,7 +762,8 @@ onRecordAfterCreateSuccess((e) => {
       kind: "checkin",
       patient: patient.id,
       title: s.displayName(patient) + " checked in",
-      body: "Mood " + r.getInt("mood") + "/5 · Anxiety " + r.getInt("anxiety") + "/5" + (lowRun ? " · low mood in the last 3 check-ins" : ""),
+      body: "Mood " + r.getInt("mood") + "/5 · Anxiety " + r.getInt("anxiety") + "/5" + (lowRun ? " · low mood in the last 3 check-ins" : "") +
+        s.lateNote(s.toMs(r, "answeredAt"), s.toMs(r, "created") || s.nowMs()),
       severity: lowRun ? "warn" : (r.getInt("mood") <= 1 ? "info" : "none")
     });
   }

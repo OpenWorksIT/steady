@@ -9,6 +9,7 @@ their own test in smoke.py) and back on at the end. Standard library only.
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 import base64
+import calendar
 import hashlib
 import hmac
 import http.client
@@ -326,6 +327,24 @@ def run(su):
                 {"patient": a, "mood": 1, "anxiety": 1, "sleep": 1, "energy": 1})
     check(A, "a check-in posted 'as' another patient is saved as the sender's own (or refused)",
           s in (400, 403) or (s == 200 and r.get("patient") == b), r)
+
+    # ---- answers kept on a phone while offline (the app's outbox, 1.2): sent twice, stored once
+    O = "offline answers"
+    cid = secrets.token_hex(8)[:15]
+    ck = {"patient": b, "mood": 3, "anxiety": 3, "sleep": 3, "energy": 3, "clientId": cid, "waited": 3 * 3600}
+    t0 = time.time()
+    s1, r1 = call("POST", "/api/collections/checkins/records", patB, ck)
+    s2, r2 = call("POST", "/api/collections/checkins/records", patB, ck)
+    check(O, "a check-in sent again from the outbox is answered with the first one", s1 == 200 and s2 == 200 and r2.get("id") == r1.get("id") and r2.get("duplicate") is True, [s1, r1, s2, r2])
+    s, r = call("GET", "/api/collections/checkins/records", patB, query={"filter": f"clientId='{cid}'"})
+    got = items(r)[0].get("answeredAt", "") if s == 200 and items(r) else ""
+    try:
+        off = abs(calendar.timegm(time.strptime(got[:19], "%Y-%m-%d %H:%M:%S")) - (t0 - 3 * 3600))
+    except ValueError:
+        off = None
+    check(O, "and is stored once, with the time it was answered", len(items(r)) == 1 and off is not None and off < 120, [got, r])
+    s, r = call("POST", "/api/collections/checkins/records", patC, dict(ck, patient=c))
+    check(O, "another patient's phone with the same id makes its own check-in", s == 200 and r.get("id") != r1.get("id") and r.get("patient") == c, r)
     s, r = call("GET", "/api/collections/checkins/records", patB, query={"expand": "patient", "perPage": 50})
     leaked = [i for i in items(r) if i.get("expand", {}).get("patient", {}).get("id") not in (None, b)]
     # since 1.0.4 expand is refused outright for app accounts (400); before, it had to stay within the rules
