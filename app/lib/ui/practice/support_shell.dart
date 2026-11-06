@@ -28,7 +28,7 @@ class _SupportShellState extends State<SupportShell> {
   int _tab = 0;
   @override
   Widget build(BuildContext context) {
-    // the community (Announcements, the Steady manual and Steady development, for OpenWorks):
+    // the community (Announcements, the Steady manual, The science and Steady development, for OpenWorks):
     // only on OpenWorks' own server, never on a practice's
     final config = AppScope.of(context).config;
     final community = supportCommunityTab(config.communityUrl, config.communitySupport);
