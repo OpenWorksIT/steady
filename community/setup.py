@@ -1140,7 +1140,10 @@ def _find_topic(api, external_id):
             if " HTTP 404" in str(err):
                 return None
             raise
+        # Discourse's redirect may already end in .json (/t/<slug>/<id>.json): add it once only
         path = urllib.parse.urlparse(loc).path.rstrip("/")
+        if path.endswith(".json"):
+            path = path[: -len(".json")]
         return api.get(path + ".json")
     return None
 
