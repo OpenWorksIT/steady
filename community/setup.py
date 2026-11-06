@@ -592,7 +592,9 @@ def _describe_category(api, cat_id, text):
         api.put(f"/posts/{posts[0]['id']}.json", {"post": {"raw": text, "edit_reason": "Steady Community"}})
 
 
-def ensure_categories(api, specs, existing_groups):
+def ensure_categories(api, specs, existing_groups, opened=None):
+    """opened (a set), when given, collects the slugs of existing categories this run opened to
+    another group: ensure_sidebar adds those to existing members' side menus too."""
     print("Categories")
     cats, _ = load_categories(api)
     by_slug = {c["slug"]: c for c in cats if not c.get("parent_category_id")}
@@ -638,6 +640,8 @@ def ensure_categories(api, specs, existing_groups):
             else:
                 api.put(f"/categories/{cat_id}.json", {"name": cat["name"], "permissions": spec["permissions"]})
                 say("fixed", f"{spec['name']}: {describe(spec['permissions'])}")
+                if opened is not None and set(spec["permissions"]) - set(perms):
+                    opened.add(spec["slug"])
         result[spec["slug"]] = cat_id
     return result
 
@@ -696,9 +700,14 @@ def lock_other_categories(api, managed_slugs):
 
 # --- the side menu --------------------------------------------------------------------
 
-def ensure_sidebar(api, cat_ids):
+def ensure_sidebar(api, cat_ids, opened=()):
     """Everyone's side menu lists Steady Community's categories, in order (Discourse starts
-    with its General only). Applied to existing members too."""
+    with its General only). Applied to existing members too.
+
+    Discourse fills a member's side menu once, when the account is made, with the categories it
+    could see then, and adds a category to existing members only when the setting itself changes.
+    So a category this run opened to another group (opened) is taken out of the setting and put
+    back, each with "update existing users", and lands in everyone's side menu."""
     print("Side menu")
     ids = [str(i) for i in cat_ids.values() if i is not None]
     if not ids:
@@ -711,7 +720,16 @@ def ensure_sidebar(api, cat_ids):
     if name not in current:
         say("skipped", f"{name}: not offered by this Discourse version")
     elif norm(current[name]) == norm(value):
-        say("ok", "the categories, in order")
+        again = [str(cat_ids[s]) for s in opened if cat_ids.get(s)]
+        if not again:
+            say("ok", "the categories, in order")
+        elif api.dry_run:
+            say("would add", f"{len(again)} newly opened categor{'y' if len(again) == 1 else 'ies'} to existing members' side menus")
+        else:
+            without = "|".join(i for i in ids if i not in again)
+            api.put(f"/admin/site_settings/{name}.json", {name: without, "update_existing_user": "true"})
+            api.put(f"/admin/site_settings/{name}.json", {name: value, "update_existing_user": "true"})
+            say("set", f"{len(again)} newly opened categor{'y' if len(again) == 1 else 'ies'} in existing members' side menus")
     elif api.dry_run:
         say("would set", "the categories, in order, for everyone")
     else:
@@ -1358,8 +1376,9 @@ def run(api, args, groups, categories):
             raise SetupError(f"{api_user} is not an admin. Use an admin's Global API key.")
 
         group_ids = ensure_groups(api, groups)
-        cat_ids = ensure_categories(api, categories, set(group_ids))
-        ensure_sidebar(api, cat_ids)
+        opened = set()
+        cat_ids = ensure_categories(api, categories, set(group_ids), opened)
+        ensure_sidebar(api, cat_ids, opened)
         if not args.leave_other_categories:
             mismatched_categories = lock_other_categories(api, {c["slug"] for c in categories})
         else:
