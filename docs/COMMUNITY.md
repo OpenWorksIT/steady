@@ -440,6 +440,45 @@ is GPL v2; nothing in its source is changed, only its settings, theme and texts.
 
 ## Adding a practice
 
+Since 1.2 a practice joins from the fleet view, over SSH on vps1 (docs/FLEET.md, "Changing a
+server"). Nothing is copied by hand: no key, no `.env` lines, no `config.json` entry.
+
+1. **Switch it on:** `sudo /opt/steady-ops/fleet/fleet.sh community vr on`. The fleet view makes
+   the practice's key, hands it to its server with the fleet key, and writes the practice into
+   the bridge's list (`/var/lib/steady-fleet/bridge/practices.json`, which the bridge reads
+   alongside `config.json`). For a practice's private area, first run
+   `sudo community/run-setup.sh --practice vr="VR Clinical Psychology"`, then add
+   `--group practice-vr`. OpenWorks' own server (the test server) gets `--openworks`.
+2. **Its people:** the master psychologist chooses who's in, in Steady (Settings > Practice >
+   Community). Each name waits for OpenWorks: `fleet.sh community vr people` lists them, and
+   `fleet.sh community vr approve kempie@vrpsych.co.za` lets them in, within seconds. The
+   fleet view's page for the server, and Checks, show who's waiting. Someone the practice
+   switches off comes off the bridge's list at the fleet view's next poll (a minute), by itself.
+3. **Off again:** `fleet.sh community vr off`. Forum accounts stay; log them out in the forum
+   (Admin > Users) if they shouldn't come back.
+
+Everyone on a practice's staff when it updates to 1.2 starts switched on, so nothing changes for
+a community already open; new staff start switched off.
+
+### Moving a practice from config.json to the fleet view
+
+VR and the test server were added by hand. Once the fleet view, the bridge and both servers run
+1.2:
+
+```bash
+sudo /opt/steady-ops/fleet/fleet.sh community test on --openworks --approve-all
+sudo /opt/steady-ops/fleet/fleet.sh community vr on --approve-all      # with --group practice-vr if it has one
+```
+
+`--approve-all` approves everyone the practice has switched on now. The fleet view's entry
+replaces the one with the same id in `config.json` (`test`, `vr`), so forum accounts carry on
+(their ids start with the practice's id). Then take those entries out of `config.json` (keep
+`openworks` and the forum's settings), and the three `STEADY_COMMUNITY_*` lines (and
+`STEADY_COMMUNITY_SUPPORT`) out of each server's `.env`: what the fleet view set wins anyway.
+`signin check` shows both lists, and warns if the fleet view's can't be used.
+
+### By hand (before 1.2)
+
 1. **Its Steady server:** a key and the three lines in its `.env` (step 2). For the web app's
    Community tab, a `steadyapp.co.za` address (see "Web addresses").
 2. **The bridge:** its entry in `config.json`, with its own `id`, key and address list. The

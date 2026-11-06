@@ -44,19 +44,25 @@ func main() {
 		usage()
 	}
 	path := env("SIGNIN_CONFIG", "/data/config.json")
+	// the practices the fleet view runs (fleet/bridge.go); none until it runs one
+	fleetPath := env("SIGNIN_PRACTICES", "/fleet/practices.json")
 	switch os.Args[1] {
 	case "serve":
-		if err := serve(path); err != nil {
+		if err := serve(path, fleetPath); err != nil {
 			fmt.Fprintln(os.Stderr, "signin:", err)
 			os.Exit(1)
 		}
 	case "check":
-		cfg, err := loadConfig(path)
+		file := NewConfigFile(path, fleetPath)
+		cfg, err := file.Get()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "signin:", err)
 			os.Exit(1)
 		}
-		fmt.Printf("%s is fine: the forum %s, %d practice(s):\n", path, cfg.Forum, len(cfg.Practices))
+		if ferr := file.FleetErr(); ferr != nil {
+			fmt.Printf("WARNING: the fleet view's practices aren't in use, only config.json's: %v\n", ferr)
+		}
+		fmt.Printf("%s (and the fleet view's %s) is fine: the forum %s, %d practice(s):\n", path, fleetPath, cfg.Forum, len(cfg.Practices))
 		for _, p := range cfg.Practices {
 			fmt.Printf("  %-8s %s  %s  (%s)\n", p.ID, p.Name, p.URL, strings.Join(p.Emails, ", "))
 		}
@@ -96,8 +102,8 @@ func usage() {
 	os.Exit(2)
 }
 
-func serve(path string) error {
-	cfg := NewConfigFile(path)
+func serve(path, fleetPath string) error {
+	cfg := NewConfigFile(path, fleetPath)
 	if _, err := cfg.Get(); err != nil {
 		// keeps running: the file is read again when it changes
 		fmt.Fprintln(os.Stderr, "signin: not ready yet:", err)

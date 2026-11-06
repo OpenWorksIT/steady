@@ -516,7 +516,11 @@ type ChecksPage struct {
 	Passed    int
 }
 
-func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time) ChecksPage {
+func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time, cp ...*CommunityPractices) ChecksPage {
+	var runs *CommunityPractices
+	if len(cp) > 0 {
+		runs = cp[0]
+	}
 	var p ChecksPage
 	// OpenWorks' own services first: the fleet view and the sign-in bridge running other code
 	// than their release
@@ -565,6 +569,11 @@ func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time) ChecksPage {
 		// OpenWorks' own accounts aren't needed on a practice's server any more (the fleet resets passwords)
 		if n, _ := get(st.Data, "counts", "supportAccounts").(float64); n > 0 && st.Data["openworksServer"] != true {
 			add("warn", "Accounts", fmt.Sprintf("%d OpenWorks support account(s) on a practice's server: no longer needed, since passwords are reset from the fleet view. Stop each one there: sudo ./accounts.sh set <its email> active off", int(n)), row.Checked)
+		}
+		// the community: names waiting for OpenWorks' approval, and the fleet view and the server
+		// disagreeing about whether it's on
+		if v := makeServerCommunity(st, runs); v.Note != "" {
+			add(v.Level, "Community", v.Note, row.Checked)
 		}
 		// a practice server on an older signed release (a server following a branch is left alone)
 		if row.Behind && get(st.Data, "version", "signed") != false {
@@ -624,4 +633,42 @@ func (sc ServerChecks) withBar() ServerChecks {
 	sc.LookX = sc.FixW
 	sc.LookW = fmt.Sprintf("%.2f", pct(sc.Look))
 	return sc
+}
+
+// ServerCommunity: one server's part in the community, for its page and for Checks.
+type ServerCommunity struct {
+	On, Fleet bool     // on at the server; run from the fleet view (not .env)
+	Approved  int      // staff OpenWorks approved
+	Waiting   []Member // staff the practice put in, waiting for OpenWorks
+	Short     string
+	Level     string // warn or fail, with Note, when something wants doing
+	Note      string
+}
+
+func makeServerCommunity(st *Status, runs *CommunityPractices) ServerCommunity {
+	v := ServerCommunity{Short: st.Server.ShortName()}
+	if st.Err != "" || st.Data == nil || st.Data["community"] == nil {
+		return v
+	}
+	on, fleet, members := communityOf(st.Data)
+	v.On, v.Fleet = on, fleet
+	var pr *CommunityPractice
+	if runs != nil {
+		pr = runs.Practices[v.Short]
+	}
+	if pr != nil {
+		v.Approved = len(pr.Approved)
+		v.Waiting = pending(pr, members)
+	}
+	switch {
+	case pr != nil && !on:
+		v.Level, v.Note = "fail", "the fleet view runs this practice's community, but the server says it's off (a restored backup?): fleet community "+v.Short+" on"
+	case pr == nil && on && fleet:
+		v.Level, v.Note = "fail", "the server has a community key from the fleet view that the fleet view no longer runs: fleet community "+v.Short+" off, or on again"
+	case pr == nil && on:
+		v.Level, v.Note = "warn", "its community runs from .env lines and the bridge's config.json: move it to the fleet view with fleet community "+v.Short+" on --approve-all, then remove those lines and its entry"
+	case len(v.Waiting) > 0:
+		v.Level, v.Note = "warn", fmt.Sprintf("%d staff waiting for OpenWorks' approval: fleet community %s people", len(v.Waiting), v.Short)
+	}
+	return v
 }

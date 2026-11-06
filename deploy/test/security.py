@@ -513,6 +513,8 @@ def run(su):
     for who in (None, doc1, patA):
         s, r = call("POST", "/api/steady/fleet/reset", who, {"email": "doc1@example.org"}, headers={"X-Steady-Fleet": "not-the-key-not-the-key-123"})
         check(U, "nobody without the fleet key can reset a password from the fleet route", s == 404, [s, r])
+        s, r = call("POST", "/api/steady/fleet/community", who, {"on": False}, headers={"X-Steady-Fleet": "not-the-key-not-the-key-123"})
+        check(U, "nobody without the fleet key can switch the community on or off", s == 404, [s, r])
 
     # ---- leaks through pages and errors
     L = "leaks"

@@ -41,6 +41,13 @@ const _actions = {
   'people.list': 'Opened the practice\'s people',
   'operator-agreement.sign': 'Signed the operator agreement',
   'account.community-sign-in': 'Signed in to the community forum',
+  'practice.community': 'Changed who is in the community',
+  'fleet.community.on': 'OpenWorks switched the community on',
+  'fleet.community.off': 'OpenWorks switched the community off',
+  'fleet.account.reset-password': 'OpenWorks reset a password (fleet view)',
+  'account.email-changed': 'Changed their email address',
+  'account.email-code-sent': 'Asked for a code to change their email',
+  'account.email-change.failed': 'Tried to change their email (wrong password)',
 };
 
 String _describe(String action) {

@@ -340,7 +340,9 @@ func (a *App) detail(w http.ResponseWriter, r *http.Request, s *Session) {
 	now := a.now()
 	msg := a.sessions.TakeFlash(s)
 	w.Header().Set("Refresh", "60; url=/s/"+strconv.Itoa(n)+"?auto=1")
-	a.render(w, "detail.html", map[string]any{"User": s.User, "Dev": s.Dev, "CSRF": s.CSRF, "Row": makeRow(n, st, now), "Facts": facts(st, now), "Msg": msg})
+	cp, _ := a.store.CommunityPractices()
+	a.render(w, "detail.html", map[string]any{"User": s.User, "Dev": s.Dev, "CSRF": s.CSRF, "Row": makeRow(n, st, now), "Facts": facts(st, now), "Msg": msg,
+		"Community": makeServerCommunity(st, cp)})
 }
 
 // checks: every server's security and privacy checks, by severity (makeChecks).
@@ -348,7 +350,8 @@ func (a *App) checks(w http.ResponseWriter, r *http.Request, s *Session) {
 	sts, _ := a.poller.Snapshot()
 	now := a.now()
 	w.Header().Set("Refresh", "60; url=/checks?auto=1")
-	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, a.poller.CommunitySnapshot(), now)})
+	cp, _ := a.store.CommunityPractices()
+	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, a.poller.CommunitySnapshot(), now, cp)})
 }
 
 func (a *App) audit(w http.ResponseWriter, r *http.Request, s *Session) {

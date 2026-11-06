@@ -107,6 +107,8 @@ type fakeSteady struct {
 	requests []string
 	srv      *httptest.Server
 	noAudit  map[string]any // when set: no results, and this as the check's timer (host.auditService)
+	comm     map[string]any // when set: the server's community block
+	commSet  []map[string]any
 }
 
 func newFakeSteady(t *testing.T) *fakeSteady {
@@ -133,6 +135,11 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 				delete(d, "audit")
 				d["host"].(map[string]any)["auditService"] = noAudit
 			}
+			f.mu.Lock()
+			if f.comm != nil {
+				d["community"] = f.comm
+			}
+			f.mu.Unlock()
 			json.NewEncoder(w).Encode(d)
 		case r.URL.Path == "/api/steady/fleet/request" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			var b map[string]string
@@ -141,6 +148,21 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 			f.requests = append(f.requests, b["action"])
 			f.mu.Unlock()
 			w.Write([]byte(`{"pending":"` + b["action"] + `"}`))
+		case r.URL.Path == "/api/steady/fleet/community" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
+			var b map[string]any
+			json.NewDecoder(r.Body).Decode(&b)
+			f.mu.Lock()
+			f.commSet = append(f.commSet, b)
+			if b["on"] == true {
+				if f.comm == nil {
+					f.comm = map[string]any{"members": []any{}}
+				}
+				f.comm["on"], f.comm["fleet"] = true, true
+			} else if f.comm != nil {
+				f.comm["on"] = false
+			}
+			f.mu.Unlock()
+			w.Write([]byte(`{"on":` + fmt.Sprint(b["on"] == true) + `}`))
 		case r.URL.Path == "/api/steady/fleet/reset" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			var b map[string]any
 			json.NewDecoder(r.Body).Decode(&b)
@@ -1084,5 +1106,143 @@ func TestFeedbackAndSupportAccountsOnChecks(t *testing.T) {
 	}
 	if f := feedbackText(mk("VR", false, now.Add(-8*24*time.Hour)).Data, now); f != "3 new (1 bug report), the oldest 8 days ago" {
 		t.Fatalf("feedback fact: %q", f)
+	}
+}
+
+// The community run from here: switched on with a key the fleet makes and hands to the server,
+// staff approved from the practice's own list, the bridge's file written in its format, someone
+// the practice takes out removed at the next poll, and off again.
+func TestCommunityFromTheFleet(t *testing.T) {
+	app, site, steady, u, dir := setup(t)
+	t.Setenv("FLEET_ACTOR", "tiaan")
+	member := func(email, name, role string) any { return map[string]any{"email": email, "name": name, "role": role} }
+	steady.mu.Lock()
+	steady.comm = map[string]any{"on": false, "fleet": false, "members": []any{}}
+	steady.mu.Unlock()
+	var out strings.Builder
+	short := "127.0.0.1"
+
+	// community.json must name the forum and the bridge first
+	if err := communityCmd(app.store, []string{short, "on", "--yes"}, strings.NewReader(""), &out); err == nil || !strings.Contains(err.Error(), "signin") {
+		t.Fatalf("without community.json: %v", err)
+	}
+	writeJSON(dir+"/community.json", Community{URL: "https://community.steadyapp.co.za", StatsKey: strings.Repeat("5a", 32), Signin: "https://signin.steadyapp.co.za"})
+	if err := communityCmd(app.store, []string{short, "on"}, strings.NewReader("no\n"), &out); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+		t.Fatalf("unconfirmed: %v", err)
+	}
+	// the practice already has its master psychologist in: --approve-all takes them
+	steady.mu.Lock()
+	steady.comm["members"] = []any{member("kempie@vrpsych.co.za", "Dr Kempie", "clinician")}
+	steady.mu.Unlock()
+	if err := communityCmd(app.store, []string{short, "on", "--approve-all", "--group", "practice-vr", "--yes"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	steady.mu.Lock()
+	sent := steady.commSet[len(steady.commSet)-1]
+	steady.mu.Unlock()
+	key, _ := sent["key"].(string)
+	if sent["on"] != true || sent["forum"] != "https://community.steadyapp.co.za" || sent["signin"] != "https://signin.steadyapp.co.za" || len(key) < 40 || sent["openworks"] != false {
+		t.Fatalf("sent to the server: %v", sent)
+	}
+	var bridge []bridgePractice
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 1 || bridge[0].ID != short || bridge[0].Key != key || strings.Join(bridge[0].Emails, ",") != "kempie@vrpsych.co.za" ||
+		strings.Join(bridge[0].Groups, ",") != "practice-vr" || bridge[0].Name != "VR Clinical Psychology" || bridge[0].Support {
+		t.Fatalf("bridge file: %+v", bridge)
+	}
+	if st, _ := os.Stat(dir + "/bridge/practices.json"); st.Mode().Perm() != 0o600 {
+		t.Fatalf("the bridge's file is %v", st.Mode().Perm())
+	}
+
+	// the master psychologist adds two more: they wait, and only listed staff can be approved
+	steady.mu.Lock()
+	steady.comm["members"] = []any{member("kempie@vrpsych.co.za", "Dr Kempie", "clinician"), member("two@vrpsych.co.za", "Dr Two", "clinician"), member("desk@vrpsych.co.za", "Front Desk", "admin")}
+	steady.mu.Unlock()
+	out.Reset()
+	if err := communityCmd(app.store, []string{short, "people"}, strings.NewReader(""), &out); err != nil || strings.Count(out.String(), "WAITING") != 2 {
+		t.Fatalf("people: %v\n%s", err, out.String())
+	}
+	if err := communityCmd(app.store, []string{short, "approve", "stranger@gmail.com"}, strings.NewReader(""), &out); err == nil || !strings.Contains(err.Error(), "isn't on") {
+		t.Fatalf("a stranger: %v", err)
+	}
+	if err := communityCmd(app.store, []string{short, "approve", "Two@VRpsych.co.za", "desk@vrpsych.co.za"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if strings.Join(bridge[0].Emails, ",") != "desk@vrpsych.co.za,kempie@vrpsych.co.za,two@vrpsych.co.za" {
+		t.Fatalf("after approving: %v", bridge[0].Emails)
+	}
+
+	// the website shows it on the server's page; nobody waits now
+	app.poller.PollAll(context.Background())
+	c := signIn(t, site, u, time.Now())
+	res, _ := c.Get(site.URL + "/s/0")
+	page := body(t, res)
+	if !strings.Contains(page, "On, run from the fleet view. 3 staff approved.") {
+		t.Fatalf("server page: %s", page[strings.Index(page, `id="community"`):][:300])
+	}
+
+	// the practice takes Dr Two out: off the bridge's list at the next poll, and logged
+	steady.mu.Lock()
+	steady.comm["members"] = []any{member("kempie@vrpsych.co.za", "Dr Kempie", "clinician"), member("desk@vrpsych.co.za", "Front Desk", "admin"), member("new@vrpsych.co.za", "Dr New", "clinician")}
+	steady.mu.Unlock()
+	app.poller.PollAll(context.Background())
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if strings.Join(bridge[0].Emails, ",") != "desk@vrpsych.co.za,kempie@vrpsych.co.za" {
+		t.Fatalf("after the practice took one out: %v", bridge[0].Emails)
+	}
+	b, _ := os.ReadFile(dir + "/audit.log")
+	if !strings.Contains(string(b), "two@vrpsych.co.za (taken out by the practice)") || !strings.Contains(string(b), `"what":"community approve"`) {
+		t.Fatalf("log: %s", b)
+	}
+	// the new one waits: on the page with the command, and on Checks
+	res, _ = c.Get(site.URL + "/s/0")
+	page = body(t, res)
+	if !strings.Contains(page, "1 waiting for approval") || !strings.Contains(page, "fleet.sh community 127.0.0.1 approve new@vrpsych.co.za") {
+		t.Fatal("the waiting one isn't on the page with its command")
+	}
+	res, _ = c.Get(site.URL + "/checks")
+	if !strings.Contains(body(t, res), "1 staff waiting for OpenWorks&#39; approval") {
+		t.Fatal("Checks doesn't list the waiting one")
+	}
+
+	// switched off: off at the server, and gone from the bridge's list
+	if err := communityCmd(app.store, []string{short, "off", "--yes"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 0 {
+		t.Fatalf("after off: %+v", bridge)
+	}
+	steady.mu.Lock()
+	last := steady.commSet[len(steady.commSet)-1]
+	steady.mu.Unlock()
+	if last["on"] != false {
+		t.Fatalf("off wasn't sent: %v", last)
+	}
+}
+
+// What the fleet view and a server disagree about shows on Checks.
+func TestCommunityDisagreements(t *testing.T) {
+	st := func(c map[string]any) *Status {
+		return &Status{Server: Server{Name: "VR", URL: "https://vr.steadyapp.co.za"}, At: time.Now(), Data: map[string]any{"community": c}}
+	}
+	runs := &CommunityPractices{Practices: map[string]*CommunityPractice{"vr": {ID: "vr", Approved: []string{"k@vr.co.za"}}}}
+	for _, c := range []struct {
+		data  map[string]any
+		runs  *CommunityPractices
+		level string
+		note  string
+	}{
+		{map[string]any{"on": false, "members": []any{}}, runs, "fail", "says it's off"},
+		{map[string]any{"on": true, "fleet": true, "members": []any{}}, &CommunityPractices{Practices: map[string]*CommunityPractice{}}, "fail", "no longer runs"},
+		{map[string]any{"on": true, "fleet": false, "members": []any{}}, nil, "warn", "runs from .env"},
+		{map[string]any{"on": true, "fleet": true, "members": []any{map[string]any{"email": "k@vr.co.za"}}}, runs, "", ""},
+		{map[string]any{"on": false, "members": []any{}}, nil, "", ""},
+	} {
+		v := makeServerCommunity(st(c.data), c.runs)
+		if v.Level != c.level || !strings.Contains(v.Note, c.note) {
+			t.Errorf("%v: %+v", c.data, v)
+		}
 	}
 }
