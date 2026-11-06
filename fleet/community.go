@@ -15,10 +15,13 @@ import (
 	"time"
 )
 
-// Community is community.json: {"url": "https://community.steadyapp.co.za", "statsKey": "..."}.
+// Community is community.json: {"url": "https://community.steadyapp.co.za", "statsKey": "...",
+// "signin": "https://signin.steadyapp.co.za"}. signin (optional): the sign-in bridge, whose code
+// the fleet view checks against its own release (code.go).
 type Community struct {
 	URL      string `json:"url"`
 	StatsKey string `json:"statsKey"`
+	Signin   string `json:"signin,omitempty"`
 }
 
 // CommunityStatus is the forum's last answer: numbers only.
@@ -27,6 +30,7 @@ type CommunityStatus struct {
 	At     time.Time
 	Err    string
 	Counts map[string]float64
+	Bridge *BridgeStatus // nil: community.json names no sign-in bridge
 }
 
 // the /about.json "stats" fields kept, and nothing else
@@ -50,6 +54,9 @@ func (s *Store) Community() (*Community, error) {
 	}
 	if len(c.StatsKey) < 32 {
 		return nil, fmt.Errorf("community.json: statsKey looks too short")
+	}
+	if c.Signin != "" && !strings.HasPrefix(c.Signin, "https://") {
+		return nil, fmt.Errorf("community.json: signin must start with https://")
 	}
 	return &c, nil
 }
@@ -110,6 +117,9 @@ func (p *Poller) fetchCommunity(ctx context.Context) *CommunityStatus {
 
 func (p *Poller) PollCommunity(ctx context.Context) {
 	st := p.fetchCommunity(ctx)
+	if c, _ := p.store.Community(); st != nil && c != nil && c.Signin != "" {
+		st.Bridge = p.fetchBridge(ctx, c.Signin)
+	}
 	p.mu.Lock()
 	p.community = st
 	p.mu.Unlock()

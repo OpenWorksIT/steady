@@ -28,9 +28,10 @@ class _SupportShellState extends State<SupportShell> {
   int _tab = 0;
   @override
   Widget build(BuildContext context) {
-    // the community (Announcements and Steady development, for OpenWorks), when set up
-    final forum = AppScope.of(context).config.communityUrl;
-    final community = forum.isNotEmpty && communityTabHere(forum);
+    // the community (Announcements, the Steady manual and Steady development, for OpenWorks):
+    // only on OpenWorks' own server, never on a practice's
+    final config = AppScope.of(context).config;
+    final community = supportCommunityTab(config.communityUrl, config.communitySupport);
     return Scaffold(
       body: IndexedStack(index: _tab, children: [
         const FeedbackInboxScreen(home: true),

@@ -8,6 +8,10 @@ import 'package:flutter/foundation.dart';
 /// community.steadyapp.co.za); the phone app has its own web view and always can.
 bool communityTabHere(String forum) => !kIsWeb || sameSite(Uri.base.host, forum);
 
+/// Whether OpenWorks support gets the Community tab: only on OpenWorks' own server (the server
+/// says so), never on a practice's, where the server and the sign-in bridge would refuse it.
+bool supportCommunityTab(String forum, bool ownServer) => forum.isNotEmpty && ownServer && communityTabHere(forum);
+
 /// The page's host and the community share its parent domain.
 bool sameSite(String pageHost, String forum) {
   final host = Uri.tryParse(forum)?.host ?? '';

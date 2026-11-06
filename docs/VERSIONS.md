@@ -43,8 +43,9 @@ OpenWorks to keep track; it changes nothing else. Store builds take their versio
 | Version | Date | What |
 |---|---|---|
 | 0.9 and earlier | 14 to 29 Oct 2026 | The beta: the first build, then the beta on a laptop test server, then on vps1 |
-| 1.0.0 | 30 Oct 2026 | VR's own server (vps2). The 1.0 security audit and penetration tests, signed releases, the access log, Heidi-ready exports |
+| 1.0.0 | 30 Oct 2026 | VR's own server (vps2). The 1.0 security audit and penetration tests, signed releases, the access log, exports for AI note-taking |
 | 1.0.2 | 30 Oct 2026 | Patients can ask to delete their account in the app; the source code link and credits (1.0.1 was never released on its own) |
 | 1.0.4 | 3 Nov 2026 | Fixes from the November security review; patients agree again when the consent statement changes; the fleet view (1.0.3 was never released on its own) |
 | 1.0.5 | 3 Nov 2026 | Server updates from the app fixed; branches main, test and working; Caddy pinned; the dependency check |
-| 1.1.0 | next | The operator agreement, Android notifications through Google, live security and privacy checks in the fleet view, the Community tab, version numbers |
+| 1.1.0 | 5 Nov 2026 | The operator agreement, Android notifications through Google, live security and privacy checks in the fleet view, the Community tab, version numbers, Settings as a page |
+| 1.1.1 | next | Changing your own email address; the fleet view flags a server whose security check isn't running, and which code OpenWorks' own services run (the sign-in bridge against the fleet view's release); OpenWorks opens the community only from its own server, and reads The science |

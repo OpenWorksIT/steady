@@ -15,12 +15,12 @@
 
 <h2 class="sev fix">To fix <span class="n">{{len .Fix}}</span></h2>
 {{if .Fix}}<ul class="feed">
-{{range .Fix}}<li><span class="pill down">fix</span> <a href="/s/{{.Index}}#checks">{{.Server}}</a> <span class="muted">· {{.Section}}{{if .Checked}} · {{.Checked}}{{end}}</span><div>{{.Text}}</div></li>
+{{range .Fix}}<li><span class="pill down">fix</span> <a href="{{.Link}}">{{.Server}}</a> <span class="muted">· {{.Section}}{{if .Checked}} · {{.Checked}}{{end}}</span><div>{{.Text}}</div></li>
 {{end}}</ul>{{else}}<p class="muted">Nothing to fix on any server.</p>{{end}}
 
 <h2 class="sev look">To look at <span class="n">{{len .Look}}</span></h2>
 {{if .Look}}<ul class="feed">
-{{range .Look}}<li><span class="pill slow">look</span> <a href="/s/{{.Index}}#checks">{{.Server}}</a> <span class="muted">· {{.Section}}{{if .Checked}} · {{.Checked}}{{end}}</span><div>{{.Text}}</div></li>
+{{range .Look}}<li><span class="pill slow">look</span> <a href="{{.Link}}">{{.Server}}</a> <span class="muted">· {{.Section}}{{if .Checked}} · {{.Checked}}{{end}}</span><div>{{.Text}}</div></li>
 {{end}}</ul>{{else}}<p class="muted">Nothing to look at.</p>{{end}}
 
 <h2 class="sev ok">Passed <span class="n">{{.Passed}}</span></h2>

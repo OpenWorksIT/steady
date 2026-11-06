@@ -328,6 +328,9 @@ type Audit struct {
 	Have                  bool
 	Checked, Code         string
 	Stale                 bool
+	Down, Fix             string // why the check isn't running on the server ("" when it is: a red flag), and the command that sees to it
+	Running               bool   // a check is under way right now
+	NextRun               string // when the timer runs it next ("in 3 h"), if the server says
 	Fails, Warns, Oks     int
 	Problems, Passed      []Check
 	OlderConsent          string
@@ -362,16 +365,34 @@ func makeAudit(d map[string]any, now time.Time) Audit {
 		}
 	}
 	a.PrivacyNote = strings.Join(notes, ", ")
+	svc, _ := get(d, "host", "auditService").(map[string]any)
+	if svc != nil {
+		a.Running = str(svc["state"]) == "activating"
+		if next := parseTime(svc["nextRun"]); next.After(now.Add(time.Minute)) {
+			a.NextRun = "in " + strings.TrimSuffix(ago(now.Add(-next.Sub(now)), now), " ago")
+		}
+	}
 	m, ok := d["audit"].(map[string]any)
-	if !ok {
+	if ok {
+		a.Have = true
+		at := parseTime(m["at"])
+		a.Checked = ago(at, now)
+		a.Stale = at.IsZero() || now.Sub(at) > auditStale
+		a.Code = str(m["code"])
+	}
+	a.Down, a.Fix = auditDown(a, svc, now)
+	switch {
+	case a.Down != "":
+		a.Summary, a.SummaryClass = "check not running", "bad"
+	case !a.Have && a.Running:
+		a.Summary, a.SummaryClass = "first check running", "muted"
+	case !a.Have:
+		// installed and switched on, but it hasn't run yet: install.sh starts the first one
 		a.Summary, a.SummaryClass = "no check yet", "muted"
+	}
+	if !a.Have {
 		return a
 	}
-	a.Have = true
-	at := parseTime(m["at"])
-	a.Checked = ago(at, now)
-	a.Stale = at.IsZero() || now.Sub(at) > auditStale
-	a.Code = str(m["code"])
 	if items, ok := m["items"].([]any); ok {
 		var fails, warns []Check
 		for _, x := range items {
@@ -393,6 +414,8 @@ func makeAudit(d map[string]any, now time.Time) Audit {
 		a.Problems = append(fails, warns...)
 	}
 	switch {
+	case a.Down != "":
+		// the findings below are from the last check that ran, however old
 	case a.Fails > 0:
 		a.Summary, a.SummaryClass = fmt.Sprintf("%d to fix, %d to look at", a.Fails, a.Warns), "bad"
 	case a.Warns > 0:
@@ -400,19 +423,57 @@ func makeAudit(d map[string]any, now time.Time) Audit {
 	default:
 		a.Summary, a.SummaryClass = "all clear", "good"
 	}
-	if a.Stale {
-		a.Summary += " (" + a.Checked + ": the check has stopped running)"
-		if a.SummaryClass == "good" {
-			a.SummaryClass = "warn"
+	return a
+}
+
+// installCmd sets up (or repairs) the check on a practice server.
+const installCmd = "cd /opt/steady/deploy && sudo ./ctl/install.sh"
+
+// auditDown says why a server's security and privacy check isn't running, and the command to
+// run on the server, or "" when it is running. svc is what the server's stats step saw of the
+// check's timer (host.auditService, Steady 1.1.1 on); nil from older servers, which are judged
+// by their results alone.
+func auditDown(a Audit, svc map[string]any, now time.Time) (why, fix string) {
+	const logs = "sudo journalctl -u steady-audit -n 50 --no-pager"
+	if svc != nil {
+		timer := str(svc["timer"])
+		result := str(svc["result"])
+		switch {
+		case svc["installed"] == false:
+			return "the check isn't installed on this server", installCmd
+		case svc["enabled"] == false || (timer != "" && timer != "active"):
+			return "the check's timer is switched off", installCmd
+		case !a.Running && result != "" && result != "success":
+			last := ago(parseTime(svc["lastRun"]), now)
+			return fmt.Sprintf("the last check failed (%s, exit %s, %s)", result, intText(svc["exitStatus"]), last), logs
 		}
 	}
-	return a
+	switch {
+	case a.Running:
+		return "", ""
+	case !a.Have && svc != nil && str(svc["lastRun"]) != "":
+		return "the check ran " + ago(parseTime(svc["lastRun"]), now) + " but Steady can't read its results (/var/lib/steady/ctl/out/audit.json)", installCmd
+	case !a.Have && svc == nil:
+		return "no check from this server", installCmd
+	case a.Stale:
+		return "the check last ran " + a.Checked + " and has stopped", "systemctl status steady-audit.timer steady-audit.service --no-pager; " + logs
+	}
+	return "", ""
+}
+
+// DownText is the red flag in one line, for the checks page and the overview's tooltip.
+func (a Audit) DownText() string {
+	if a.Down == "" {
+		return ""
+	}
+	return a.Down + ": " + a.Fix
 }
 
 // FeedItem is one finding on the checks page, with the server it's on.
 type FeedItem struct {
 	Index                                 int
 	Server, Level, Section, Text, Checked string
+	Link                                  string // where its name leads: the server's checks, or the overview's own services
 }
 
 // ServerChecks is one server's line on the checks page: its counts and a bar of them.
@@ -433,13 +494,32 @@ type ChecksPage struct {
 	Passed    int
 }
 
-func makeChecks(sts []*Status, now time.Time) ChecksPage {
+func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time) ChecksPage {
 	var p ChecksPage
+	// OpenWorks' own services first: the fleet view and the sign-in bridge running other code
+	// than their release
+	for _, o := range ownServices(sts, cst) {
+		if o.Level == "good" {
+			continue
+		}
+		text := o.Note
+		if o.Fix != "" {
+			text += ": " + o.Fix
+		}
+		it := FeedItem{Server: o.Name, Section: "Code", Text: "runs " + o.Runs + ": " + text, Link: "/#code"}
+		if o.Level == "bad" {
+			it.Level = "fail"
+			p.Fix = append(p.Fix, it)
+		} else {
+			it.Level = "warn"
+			p.Look = append(p.Look, it)
+		}
+	}
 	for i, st := range sts {
 		row := makeRow(i, st, now)
 		sc := ServerChecks{Index: i, Name: row.Name}
 		add := func(level, section, text, checked string) {
-			it := FeedItem{Index: i, Server: row.Name, Level: level, Section: section, Text: text, Checked: checked}
+			it := FeedItem{Index: i, Server: row.Name, Level: level, Section: section, Text: text, Checked: checked, Link: fmt.Sprintf("/s/%d#checks", i)}
 			if level == "fail" {
 				p.Fix = append(p.Fix, it)
 				sc.Fix++
@@ -454,13 +534,21 @@ func makeChecks(sts []*Status, now time.Time) ChecksPage {
 			p.Servers = append(p.Servers, sc.withBar())
 			continue
 		}
+		// a practice server on an older signed release (a server following a branch is left alone)
+		if row.Behind && get(st.Data, "version", "signed") != false {
+			add("warn", "Version", fmt.Sprintf("runs %s, %s the newest signed release (%s): Update on its page", row.Version, row.VersionNote, releaseText(st.Data)), row.Checked)
+		}
 		a := row.Audit
 		sc.Checked = a.Checked
 		if !a.Have {
-			add("warn", "The check", "no security and privacy check from this server yet: it comes with Steady 1.0.6 and sudo ./ctl/install.sh", "")
 			sc.Checked = "never"
-		} else if a.Stale {
-			add("warn", "The check", "the check last ran "+a.Checked+": the steady-audit service on this server has stopped (systemctl status steady-audit.timer)", a.Checked)
+		}
+		if a.Down != "" {
+			add("fail", "The check", a.DownText(), sc.Checked)
+		} else if !a.Have && a.Running {
+			add("warn", "The check", "no security and privacy check from this server yet: the first one is running", "")
+		} else if !a.Have {
+			add("warn", "The check", "no security and privacy check from this server yet: it's installed and waits for its first run", "")
 		}
 		privacy := []struct {
 			key, level, text string

@@ -25,6 +25,13 @@ import (
 	"time"
 )
 
+// Which release and code this build is (the Docker build sets them from VERSION and
+// deploy/code-of.sh); GET /version says so, for the fleet view.
+var (
+	buildVersion = "dev"
+	buildCode    = ""
+)
+
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v

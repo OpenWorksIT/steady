@@ -129,11 +129,11 @@ the log can't be written, nothing is shown.
 - Psychologists can **switch a domain off for one patient** (for example sleep for a shift worker),
   with a reason. It's still collected and shown, just not counted; exports list it.
 - Tapping any number, day, domain or flag opens the explanation above.
-- Exports for the clinical record (PDF, Heidi) list the flags on the latest day and whether each
+- Exports for the clinical record (PDF, AI note-taking) list the flags on the latest day and whether each
   was marked as reviewed in Steady, as they do for the other flags.
 - **Every export states the version** (`radr-1`) and its settings (baseline days, the gap before
-  them, smoothing, the "away" threshold), so a file read later, or by Heidi, says how its numbers
-  were made. A Heidi export in a series says so plainly if the method changed since the previous
+  them, smoothing, the "away" threshold), so a file read later, or by an AI note-taking tool, says how its numbers
+  were made. An AI note-taking export in a series says so plainly if the method changed since the previous
   part. A change to the method gets a new version name.
 
 ## Sources

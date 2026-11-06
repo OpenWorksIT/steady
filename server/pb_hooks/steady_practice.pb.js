@@ -302,6 +302,21 @@ routerAdd("POST", "/api/steady/me/password", (e) => {
   return $apis.recordAuthResponse(e, u, "password");
 }, $apis.requireAuth());
 
+// Change your own email address: your password and the new address, then the code sent there
+// (lib/emailchange.js).
+routerAdd("POST", "/api/steady/me/email", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireSignedIn(e);
+  return e.json(200, require(`${__hooks}/lib/emailchange.js`).start($app, e, s));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/steady/me/email/confirm", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireSignedIn(e);
+  const u = require(`${__hooks}/lib/emailchange.js`).finish($app, e, s);
+  return $apis.recordAuthResponse(e, u, "password");
+}, $apis.requireAuth());
+
 // Two-step sign-in: start (a new secret for the authenticator app), confirm with a code, or
 // switch off (only where it isn't required).
 routerAdd("POST", "/api/steady/me/two-step/start", (e) => {

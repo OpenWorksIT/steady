@@ -303,11 +303,23 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request, s *Session) {
 	for i, st := range sts {
 		row := makeRow(i, st, now)
 		counts[row.Level]++
+		if row.Err == "" && row.Audit.Down != "" {
+			counts["nocheck"]++
+		}
+		if row.Behind {
+			counts["behind"]++
+		}
 		rows = append(rows, row)
+	}
+	own := ownServices(sts, a.poller.CommunitySnapshot())
+	for _, o := range own {
+		if o.Level == "bad" {
+			counts["owncode"]++
+		}
 	}
 	w.Header().Set("Refresh", "60; url=/?auto=1")
 	a.render(w, "overview.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Rows": rows, "ConfigError": cfgErr, "Counts": counts, "Now": now.Format("15:04"),
-		"Community": makeCommunity(a.poller.CommunitySnapshot(), now)})
+		"Community": makeCommunity(a.poller.CommunitySnapshot(), now), "Own": own})
 }
 
 func (a *App) server(r *http.Request) (*Status, int, bool) {
@@ -336,7 +348,7 @@ func (a *App) checks(w http.ResponseWriter, r *http.Request, s *Session) {
 	sts, _ := a.poller.Snapshot()
 	now := a.now()
 	w.Header().Set("Refresh", "60; url=/checks?auto=1")
-	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, now)})
+	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, a.poller.CommunitySnapshot(), now)})
 }
 
 var actions = map[string]string{"check": "check for updates", "update": "install the latest signed release", "restart": "restart Steady"}

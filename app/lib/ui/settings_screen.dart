@@ -10,6 +10,7 @@ import '../services/api.dart';
 import '../services/push.dart';
 import '../wearable/wearable_sync.dart';
 import '../build_info.dart';
+import 'auth/change_email_screen.dart';
 import 'auth/change_password_screen.dart';
 import 'auth/devices_screen.dart';
 import 'auth/screen_lock.dart';
@@ -117,6 +118,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: const Text('Change password'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChangePasswordScreen())),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.alternate_email),
+              title: const Text('Change email'),
+              subtitle: Text(state.api.me?.getStringValue('email') ?? ''),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChangeEmailScreen())),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,

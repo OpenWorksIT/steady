@@ -11,8 +11,24 @@ overview says "all clear", "N to look at" or "N to fix" per server, the server's
 each one, and **Checks** (in the bar at the top) lists every server's findings by severity:
 what to fix first, then what to look at, with a bar per server. With them come the privacy numbers the server counts itself: patients on an older
 consent statement, deletion requests past 25 days, staff without two-step sign-in. This is the
-standing picture of what the November 2026 security review found and fixed; a check that stops
-running shows as such.
+standing picture of what the November 2026 security review found and fixed.
+
+A server whose check **isn't running** is a red flag: "check not running" in red on the
+overview (with a count at the top), first under "To fix" on **Checks**, and on the server's
+page with the reason and the command to run there. Every 5 minutes each server reports its
+check's timer (Steady 1.1.1 on), so the flag says which it is:
+
+| The fleet view says | What it means | On the server |
+|---|---|---|
+| the check isn't installed | `steady-audit.timer` isn't there (an update doesn't install it) | `cd /opt/steady/deploy && sudo ./ctl/install.sh` |
+| the check's timer is switched off | it's installed but not enabled | the same |
+| the last check failed (exit-code, exit 2, ...) | `audit-server.sh` stopped with an error | `sudo journalctl -u steady-audit -n 50 --no-pager` |
+| the check ran but Steady can't read its results | `out/audit.json` doesn't reach PocketBase | `sudo ./ctl/install.sh` (it remounts the folder) |
+| the check last ran ... and has stopped | no new results for 13 hours | `systemctl status steady-audit.timer steady-audit.service` |
+| no check from this server | a server before 1.1.1 that sends no results | `sudo ./ctl/install.sh` |
+
+A check that's running right now, or one that's installed and waiting for its first run, isn't
+flagged.
 
 **To do** (in the bar at the top) is OpenWorks' own list: what it has to do, look at or wait
 for, across the practice servers, the community, the apps, the releases and the paperwork, and
@@ -51,8 +67,9 @@ folder, never on a practice's server.
    ```
 2. In-app updates must be set up (`sudo ./ctl/install.sh`), or the buttons can't do anything.
    It also installs the security and privacy check (`steady-audit.timer`, every 6 hours, and
-   once after each update), whose results the fleet view shows. Run it again after updating to
-   Steady 1.0.6 to get the check.
+   once after each update), whose results the fleet view shows. An update doesn't install new
+   services by itself: run `sudo ./ctl/install.sh` again after any update that adds one (1.1.0
+   added the check), or the fleet view flags the server red.
 3. Backups: the fleet view shows the newest file in `/srv/backups/steady` (set
    `STEADY_BACKUP_DIR` in `.env` if they go elsewhere).
 4. Give OpenWorks the server's address and `STEADY_FLEET_KEY` (only that one) through a
@@ -123,10 +140,12 @@ gets a Docker network of its own (`fleet-edge`) that only it and Shap's Caddy ar
 6. Once the community forum is up (docs/COMMUNITY.md), its numbers can show on the overview too.
    `/var/lib/steady-fleet/community.json`, same owner and mode as servers.json:
    ```json
-   {"url": "https://community.steadyapp.co.za", "statsKey": "<the openworks-stats key>"}
+   {"url": "https://community.steadyapp.co.za", "statsKey": "<the openworks-stats key>",
+    "signin": "https://signin.steadyapp.co.za"}
    ```
    The fleet view asks the forum every 10 minutes and keeps only the counts (members, active
-   this week, topics, posts), never titles, names or text.
+   this week, topics, posts), never titles, names or text. With `signin`, it also asks the
+   sign-in bridge which code it runs (below).
 
 Other commands, the same way (in `/opt/steady-ops`): `passwd <name>`, `resettotp <name>` (a lost phone),
 `deluser <name>` (signs that person out at once).
@@ -156,13 +175,41 @@ is only what people add and change. A copy of `/var/lib/steady-fleet` keeps it w
 
 ## Updating the fleet view
 
-To a newer signed release only, its signature checked (here `v1.0.6`):
+To a newer signed release only, its signature checked (here `v1.1.1`). The sign-in bridge runs
+from the same folder, so rebuild it with the fleet view:
 
 ```bash
 cd /opt/steady-ops && sudo git fetch -q --tags
-sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-signers verify-tag v1.0.6 \
-  && sudo git checkout -q --detach v1.0.6 && sudo docker compose -f fleet/compose.yml up -d --build
+sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-signers verify-tag v1.1.1 \
+  && sudo git checkout -q --detach v1.1.1 && sudo docker compose -f fleet/compose.yml up -d --build \
+  && sudo docker compose -f community/signin/compose.yml up -d --build
 ```
+
+## Which code runs where
+
+**Practice servers** report their version; one behind the newest signed release is counted at
+the top of the overview ("not on the newest release") and listed on Checks under "To look at",
+until it's updated from its page. A server that follows a branch (the test server) is left out.
+
+**OpenWorks' own services** (the overview's last table, and Checks): each is built from a signed
+release in `/opt/steady-ops`, and its Docker build stamps it with that release's `VERSION` and a
+fingerprint of its code (`deploy/code-of.sh`, 12 characters). The fleet view's build also stamps
+the sign-in bridge's fingerprint for the same release, and asks the bridge for its own
+(`GET https://signin.steadyapp.co.za/version`, which says only the version and the code):
+
+| The fleet view says | What it means |
+|---|---|
+| Fleet view: the newest signed release | It runs what the practice servers report as the newest release |
+| Fleet view: 1.1.2 is out | A newer signed release is out: update it (above) |
+| Fleet view: a build without a release number | Built without the Docker build's stamps, not from a release |
+| Sign-in bridge: the same code as the fleet view's release | All well |
+| Sign-in bridge: not the code of release 1.1.1 | Red. Built from another checkout (vps1's test folder), or not rebuilt after the update: `cd /opt/steady-ops && sudo docker compose -f community/signin/compose.yml up -d --build` |
+| Sign-in bridge: an older build that doesn't say which code it runs | Red. The same, from before 1.1.1 |
+| Sign-in bridge: not checked | `community.json` has no `signin` (step 6) |
+
+Both builds now take the top of the repository as their context (`build.context` in each
+`compose.yml`), with a `Dockerfile.dockerignore` beside each Dockerfile that sends only what it
+uses.
 
 ## Security notes
 

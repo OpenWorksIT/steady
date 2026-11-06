@@ -32,6 +32,8 @@ services:
       STEADY_COMMUNITY_URL: ${STEADY_COMMUNITY_URL:-https://community.steady.test}
       STEADY_COMMUNITY_SIGNIN: ${STEADY_COMMUNITY_SIGNIN:-https://signin.steady.test}
       STEADY_COMMUNITY_KEY: ${STEADY_COMMUNITY_KEY:-}
+      # the test stack stands in for OpenWorks' own server, where OpenWorks support opens it
+      STEADY_COMMUNITY_SUPPORT: ${STEADY_COMMUNITY_SUPPORT:-yes}
       # this PC's own scripts (start.sh, smoke.py) use the superuser API through the local port;
       # the tunnel and Caddy still block it, and the dashboard stays closed
       STEADY_SUPERUSER_API: open
@@ -85,7 +87,7 @@ services:
 
   # Named tunnel: a fixed address on your own domain. Needs TUNNEL_TOKEN.
   tunnel:
-    image: cloudflare/cloudflared:2026.10.5
+    image: cloudflare/cloudflared:2026.10.7
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
@@ -96,7 +98,7 @@ services:
   # Quick tunnel: random trycloudflare.com address, no account. No live updates in the app
   # (Cloudflare doesn't pass Server-Sent Events through quick tunnels) and a new address each start.
   quicktunnel:
-    image: cloudflare/cloudflared:2026.10.5
+    image: cloudflare/cloudflared:2026.10.7
     restart: unless-stopped
     command: tunnel --no-autoupdate --url http://caddy:80
     depends_on: [caddy]

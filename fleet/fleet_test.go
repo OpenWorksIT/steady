@@ -105,6 +105,7 @@ type fakeSteady struct {
 	mu       sync.Mutex
 	requests []string
 	srv      *httptest.Server
+	noAudit  map[string]any // when set: no results, and this as the check's timer (host.auditService)
 }
 
 func newFakeSteady(t *testing.T) *fakeSteady {
@@ -112,7 +113,10 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/steady/fleet" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
-			json.NewEncoder(w).Encode(map[string]any{
+			f.mu.Lock()
+			noAudit := f.noAudit
+			f.mu.Unlock()
+			d := map[string]any{
 				"practice": "VR Clinical Psychology", "health": map[string]any{"status": "good", "reasons": []any{}},
 				"version":           map[string]any{"code": "83f8776", "managed": true, "signed": true, "behind": 0, "latest": map[string]any{"sha": "83f87760000", "release": "v1.0.2"}},
 				"host":              map[string]any{"disk": map[string]any{"total": 25e9, "used": 5e9}, "memory": map[string]any{"total": 2e9, "available": 1e9}, "backups": map[string]any{"newest": time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), "count": 3, "bytes": 1e6}},
@@ -123,7 +127,12 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 					map[string]any{"level": "warn", "section": "SSH", "text": "X11 forwarding is on"},
 					map[string]any{"level": "ok", "section": "Disk", "text": "disk 11% used"},
 				}},
-			})
+			}
+			if noAudit != nil {
+				delete(d, "audit")
+				d["host"].(map[string]any)["auditService"] = noAudit
+			}
+			json.NewEncoder(w).Encode(d)
 		case r.URL.Path == "/api/steady/fleet/request" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			var b map[string]string
 			json.NewDecoder(r.Body).Decode(&b)
@@ -664,8 +673,8 @@ func TestSignInQueueGivesUp(t *testing.T) {
 
 func TestAuditSummary(t *testing.T) {
 	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
-	// none yet (a server older than 1.0.6, or the service not installed)
-	if a := makeAudit(map[string]any{}, now); a.Have || a.Summary != "no check yet" || a.PrivacyWarn {
+	// none from a server that doesn't say why: a red flag, with how to set it up
+	if a := makeAudit(map[string]any{}, now); a.Have || a.Summary != "check not running" || a.SummaryClass != "bad" || !strings.Contains(a.Fix, "install.sh") || a.PrivacyWarn {
 		t.Fatalf("no audit: %+v", a)
 	}
 	at := func(d time.Duration) string { return now.Add(-d).Format(time.RFC3339) }
@@ -674,9 +683,9 @@ func TestAuditSummary(t *testing.T) {
 	if a.Summary != "all clear" || a.SummaryClass != "good" || a.Oks != 1 || a.Stale {
 		t.Fatalf("clear: %+v", a)
 	}
-	// a check that stopped running isn't "all clear"
+	// a check that stopped running isn't "all clear": it's a red flag
 	a = makeAudit(map[string]any{"audit": map[string]any{"at": at(20 * time.Hour), "items": []any{ok}}}, now)
-	if !a.Stale || a.SummaryClass != "warn" || !strings.Contains(a.Summary, "stopped running") {
+	if !a.Stale || a.SummaryClass != "bad" || a.Summary != "check not running" || !strings.Contains(a.Down, "20 h ago and has stopped") {
 		t.Fatalf("stale: %+v", a)
 	}
 	// failures first, then warnings; junk ignored
@@ -722,18 +731,71 @@ func TestMakeChecks(t *testing.T) {
 	none := &Status{Server: Server{Name: "Old"}, At: now, Data: map[string]any{"counts": map[string]any{"deletionOverdue": 2.0}}}
 	stale := &Status{Server: Server{Name: "Stale"}, At: now, Data: map[string]any{"audit": map[string]any{"at": now.Add(-30 * time.Hour).Format(time.RFC3339), "items": []any{
 		map[string]any{"level": "ok", "text": "fine"}}}}}
-	p := makeChecks([]*Status{down, none, stale}, now)
-	if len(p.Fix) != 2 || p.Fix[0].Server != "Down" || !strings.Contains(p.Fix[1].Text, "2 deletion request(s)") {
+	// installed and waiting for its first run: worth a look, not a red flag
+	waiting := &Status{Server: Server{Name: "New"}, At: now, Data: map[string]any{"host": map[string]any{"auditService": map[string]any{
+		"installed": true, "enabled": true, "state": "inactive", "result": "success", "timer": "active"}}}}
+	p := makeChecks([]*Status{down, none, stale, waiting}, nil, now)
+	if len(p.Fix) != 4 || p.Fix[0].Server != "Down" || !strings.Contains(p.Fix[1].Text, "no check from this server") ||
+		!strings.Contains(p.Fix[2].Text, "2 deletion request(s)") || !strings.Contains(p.Fix[3].Text, "has stopped") {
 		t.Fatalf("fix: %+v", p.Fix)
 	}
-	if len(p.Look) != 2 || !strings.Contains(p.Look[0].Text, "no security and privacy check") || !strings.Contains(p.Look[1].Text, "has stopped") {
+	if len(p.Look) != 1 || p.Look[0].Server != "New" || !strings.Contains(p.Look[0].Text, "waits for its first run") {
 		t.Fatalf("look: %+v", p.Look)
 	}
-	if p.Servers[2].Passed != 1 || p.Servers[2].SummaryClass != "warn" || p.Servers[0].SummaryClass != "bad" {
+	if p.Servers[2].Passed != 1 || p.Servers[2].SummaryClass != "bad" || p.Servers[0].SummaryClass != "bad" || p.Servers[3].SummaryClass != "warn" {
 		t.Fatalf("servers: %+v", p.Servers)
 	}
-	if p.Servers[1].FixW != "50.00" || p.Servers[1].LookW != "50.00" {
+	if p.Servers[1].FixW != "100.00" || p.Servers[1].LookW != "0.00" {
 		t.Fatalf("bar: %+v", p.Servers[1])
+	}
+}
+
+// What a server's stats step reports about its check (host.auditService) turns into a red flag
+// that says why, or into nothing while the check is fine or under way.
+func TestAuditDown(t *testing.T) {
+	now := time.Date(2026, 11, 5, 18, 0, 0, 0, time.UTC)
+	fresh := map[string]any{"at": now.Add(-time.Hour).Format(time.RFC3339), "items": []any{map[string]any{"level": "ok", "text": "fine"}}}
+	svc := func(kv ...any) map[string]any {
+		m := map[string]any{"installed": true, "enabled": true, "state": "inactive", "result": "success", "exitStatus": 0.0,
+			"lastRun": now.Add(-time.Hour).Format(time.RFC3339), "timer": "active", "nextRun": now.Add(5 * time.Hour).Format(time.RFC3339)}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i].(string)] = kv[i+1]
+		}
+		return m
+	}
+	cases := []struct {
+		name    string
+		audit   any
+		svc     map[string]any
+		down    string // in the reason; "" = not flagged
+		summary string
+	}{
+		{"fine", fresh, svc(), "", "all clear"},
+		{"not installed", nil, svc("installed", false, "state", "", "result", "", "timer", ""), "isn't installed on this server: cd /opt/steady/deploy && sudo ./ctl/install.sh", "check not running"},
+		{"timer off", fresh, svc("enabled", false, "timer", "inactive"), "timer is switched off", "check not running"},
+		{"failed", fresh, svc("state", "failed", "result", "exit-code", "exitStatus", 2.0), "the last check failed (exit-code, exit 2, 1 h ago): sudo journalctl -u steady-audit", "check not running"},
+		{"failed, running again", fresh, svc("state", "activating", "result", "exit-code"), "", "all clear"},
+		{"first one running", nil, svc("state", "activating", "lastRun", ""), "", "first check running"},
+		{"ran, results unread", nil, svc(), "can't read its results", "check not running"},
+		{"waiting for its first run", nil, svc("lastRun", ""), "", "no check yet"},
+		{"systemctl can't answer, results fresh", fresh, svc("state", "", "result", "", "timer", ""), "", "all clear"},
+		{"stale, timer says fine", map[string]any{"at": now.Add(-14 * time.Hour).Format(time.RFC3339), "items": []any{}}, svc(), "has stopped", "check not running"},
+	}
+	for _, c := range cases {
+		d := map[string]any{"host": map[string]any{"auditService": c.svc}}
+		if c.audit != nil {
+			d["audit"] = c.audit
+		}
+		a := makeAudit(d, now)
+		if (c.down == "") != (a.Down == "") || !strings.Contains(a.DownText(), c.down) || a.Summary != c.summary {
+			t.Errorf("%s: down %q, summary %q", c.name, a.DownText(), a.Summary)
+		}
+		if c.down != "" && a.SummaryClass != "bad" {
+			t.Errorf("%s: not red: %s", c.name, a.SummaryClass)
+		}
+	}
+	if a := makeAudit(map[string]any{"audit": fresh, "host": map[string]any{"auditService": svc()}}, now); a.NextRun != "in 5 h" {
+		t.Errorf("next run: %q", a.NextRun)
 	}
 }
 
@@ -758,5 +820,144 @@ func TestVersionText(t *testing.T) {
 	}
 	if releaseText(map[string]any{"version": map[string]any{"latest": map[string]any{"release": "v1.0.5"}}}) != "1.0.5" {
 		t.Error("release text")
+	}
+}
+
+// A server whose check isn't installed: red on the overview (with a count at the top), and the
+// server's page says why and what to run there.
+func TestCheckNotRunningPages(t *testing.T) {
+	app, site, steady, u, _ := setup(t)
+	steady.mu.Lock()
+	steady.noAudit = map[string]any{"installed": false, "enabled": false, "state": "", "result": "", "timer": ""}
+	steady.mu.Unlock()
+	app.poller.PollAll(context.Background())
+	c := signIn(t, site, u, time.Now())
+	res, _ := c.Get(site.URL + "/")
+	page := body(t, res)
+	for _, want := range []string{`id="code"`, `<strong>Fleet view</strong></td><td><code>1.1.1 (code 8272cc124f7a)</code>`, `1 without a running security check`, `class="check bad"`, `title="the check isn&#39;t installed on this server: cd /opt/steady/deploy &amp;&amp; sudo ./ctl/install.sh"`, `>check not running</a>`} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("overview lacks %q", want)
+		}
+	}
+	res, _ = c.Get(site.URL + "/s/0")
+	page = body(t, res)
+	for _, want := range []string{`Not running: the check isn&#39;t installed on this server.`, `<code>cd /opt/steady/deploy &amp;&amp; sudo ./ctl/install.sh</code>`} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("server page lacks %q", want)
+		}
+	}
+	res, _ = c.Get(site.URL + "/checks")
+	page = body(t, res)
+	if fix := strings.Index(page, "To fix"); fix < 0 || !strings.Contains(page[fix:], "the check isn&#39;t installed on this server") {
+		t.Fatal("checks page doesn't list it to fix")
+	}
+}
+
+// The tests run as a release build (the Docker build stamps these), so the fleet view's own
+// code isn't a finding everywhere; TestOwnServices tests the other cases.
+func init() {
+	buildVersion, buildCode, bridgeCode = "1.1.1", "8272cc124f7a", "5f74a8885898"
+}
+
+func TestOwnServices(t *testing.T) {
+	defer func(v, c, b string) { buildVersion, buildCode, bridgeCode = v, c, b }(buildVersion, buildCode, bridgeCode)
+	rel := func(r string) *Status {
+		return &Status{Data: map[string]any{"version": map[string]any{"latest": map[string]any{"release": r}}}}
+	}
+	sts := []*Status{rel("v1.1.0"), rel("v1.1.1"), {Err: "down"}}
+	if newestRelease(sts) != "1.1.1" || !versionLess("1.1.0", "1.1.1") || versionLess("1.10.0", "1.9.0") || versionLess("1.1.1", "1.1.1") {
+		t.Fatal("release order")
+	}
+	find := func(os []OwnService, name string) OwnService {
+		for _, o := range os {
+			if o.Name == name {
+				return o
+			}
+		}
+		return OwnService{}
+	}
+	// no community.json: the fleet view alone, on the newest release
+	os := ownServices(sts, nil)
+	if len(os) != 1 || os[0].Level != "good" || os[0].Runs != "1.1.1 (code 8272cc124f7a)" {
+		t.Fatalf("fleet: %+v", os)
+	}
+	// a newer release is out: update the fleet view
+	if o := ownServices([]*Status{rel("v1.2.0")}, nil)[0]; o.Level != "warn" || !strings.Contains(o.Note, "1.2.0 is out") || o.Fix == "" {
+		t.Fatalf("older fleet: %+v", o)
+	}
+	cases := []struct {
+		name   string
+		bridge *BridgeStatus
+		level  string
+		note   string
+	}{
+		{"not named", nil, "warn", `add "signin"`},
+		{"same code", &BridgeStatus{Version: "1.1.1", Code: "5f74a8885898"}, "good", "the same code"},
+		{"other code", &BridgeStatus{Version: "1.1.1", Code: "0123456789ab"}, "bad", "not the code of release 1.1.1 (5f74a8885898)"},
+		{"older build", &BridgeStatus{Err: "it runs an older build that doesn't say which code it runs"}, "bad", "older build"},
+		{"unreachable", &BridgeStatus{Err: "can't reach the sign-in bridge: refused"}, "bad", "can't reach"},
+	}
+	for _, c := range cases {
+		o := find(ownServices(sts, &CommunityStatus{Bridge: c.bridge}), "Sign-in bridge")
+		if o.Level != c.level || !strings.Contains(o.Note, c.note) || (c.level == "bad" && !strings.Contains(o.Fix, "/opt/steady-ops")) {
+			t.Errorf("%s: %+v", c.name, o)
+		}
+	}
+	// a fleet view built without the stamps can't vouch for the bridge, and says so
+	buildVersion, buildCode, bridgeCode = "dev", "", ""
+	os = ownServices(sts, &CommunityStatus{Bridge: &BridgeStatus{Version: "1.1.1", Code: "5f74a8885898"}})
+	if os[0].Level != "warn" || find(os, "Sign-in bridge").Level != "warn" {
+		t.Fatalf("dev build: %+v", os)
+	}
+	// and the checks page lists what's wrong first: the bridge to fix, the fleet view to look at
+	buildVersion, buildCode, bridgeCode = "1.1.0", "8272cc124f7a", "5f74a8885898"
+	p := makeChecks(sts, &CommunityStatus{Bridge: &BridgeStatus{Version: "1.0.5", Code: "deadbeef0000"}}, time.Now())
+	if len(p.Fix) < 1 || p.Fix[0].Server != "Sign-in bridge" || p.Fix[0].Link != "/#code" || !strings.Contains(p.Fix[0].Text, "runs 1.0.5 (code deadbeef0000)") {
+		t.Fatalf("fix: %+v", p.Fix)
+	}
+	if len(p.Look) < 1 || p.Look[0].Server != "Fleet view" || !strings.Contains(p.Look[0].Text, "1.1.1 is out") {
+		t.Fatalf("look: %+v", p.Look)
+	}
+}
+
+// The fleet view asks the bridge which code it runs; an older bridge has no /version.
+func TestFetchBridge(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/version" {
+			w.Write([]byte(`{"version":"1.1.1","code":"5f74a8885898"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	p := NewPoller(NewStore(t.TempDir()))
+	if b := p.fetchBridge(context.Background(), srv.URL); b.Err != "" || b.Version != "1.1.1" || b.Code != "5f74a8885898" {
+		t.Fatalf("bridge: %+v", b)
+	}
+	old := httptest.NewServer(http.NotFoundHandler())
+	defer old.Close()
+	if b := p.fetchBridge(context.Background(), old.URL); !strings.Contains(b.Err, "older build") {
+		t.Fatalf("old bridge: %+v", b)
+	}
+}
+
+// Behind the newest signed release: on the checks page to look at, and counted on the overview.
+func TestServerBehindIsListed(t *testing.T) {
+	behind := &Status{Server: Server{Name: "VR"}, At: time.Now(), Data: map[string]any{
+		"version": map[string]any{"code": "abc1234", "managed": true, "signed": true, "behind": 3.0,
+			"current": map[string]any{"version": "1.1.0"}, "latest": map[string]any{"release": "v1.1.1"}},
+		"audit": map[string]any{"at": time.Now().Format(time.RFC3339), "items": []any{}}}}
+	branch := &Status{Server: Server{Name: "Test"}, At: time.Now(), Data: map[string]any{
+		"version": map[string]any{"code": "def5678", "managed": true, "signed": false, "behind": 2.0},
+		"audit":   map[string]any{"at": time.Now().Format(time.RFC3339), "items": []any{}}}}
+	p := makeChecks([]*Status{behind, branch}, nil, time.Now())
+	var got []string
+	for _, it := range p.Look {
+		if it.Section == "Version" {
+			got = append(got, it.Server+": "+it.Text)
+		}
+	}
+	if len(got) != 1 || !strings.Contains(got[0], "VR: runs 1.1.0, 3 change(s) behind the newest signed release (1.1.1)") {
+		t.Fatalf("behind: %v", got)
 	}
 }
