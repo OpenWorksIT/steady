@@ -515,6 +515,86 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   assert.ok(rt.store.assignments.filter((a) => a.getString("patient") === pat.id && a.getString("status") === "pending").length === 0);
 });
 
+test("answers kept on the phone while offline arrive once, with the time they were given", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
+  const pat = rt.makeUser({ name: "Lee", role: "patient", clinician: doc.id, active: true, tzOffset: 120, email: "lee@example.org" });
+  const cid = "abcdefghij12345";
+
+  // a check-in answered 4 hours ago, sent now; then the same one sent again (the reply was lost)
+  const four = rt.now() - 4 * 3600e3;
+  const first = rt.create("checkins", pat, { patient: pat.id, mood: 2, anxiety: 3, sleep: 3, energy: 3, clientId: cid, waited: 4 * 3600 });
+  assert.equal(first.status, 200, JSON.stringify(first));
+  assert.equal(s_ms(first.record, "answeredAt"), four);
+  const again = rt.create("checkins", pat, { patient: pat.id, mood: 2, anxiety: 3, sleep: 3, energy: 3, clientId: cid, waited: 4 * 3600 + 2 });
+  assert.equal(again.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(again.data)), { id: first.record.id, duplicate: true });
+  assert.equal(rt.store.checkins.length, 1, "stored once");
+  const n = rt.store.notifications.filter((x) => x.getString("kind") === "checkin");
+  assert.equal(n.length, 1, "one notification");
+  assert.match(n[0].getString("body"), /answered 4 h before it arrived/);
+  // another patient's phone with the same id is a different check-in
+  const pat2 = rt.makeUser({ name: "Sam", role: "patient", clinician: doc.id, active: true, tzOffset: 120, email: "sam@example.org" });
+  assert.equal(rt.create("checkins", pat2, { patient: pat2.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, clientId: cid }).status, 200);
+  assert.equal(rt.store.checkins.length, 2);
+  // an id the app doesn't make is refused; so is a wait of more than 30 days; a negative one is ignored
+  assert.equal(rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, clientId: "Not-Ours" }).status, 400);
+  const old = rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, waited: 31 * 86400 });
+  assert.equal(old.status, 400);
+  assert.match(old.error, /more than 30 days/);
+  const odd = rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, waited: -50, answeredAt: "2020-01-01 00:00:00.000Z" });
+  assert.equal(odd.record.getString("answeredAt"), "", "the phone can't set the time directly");
+  // the psychologist's summary orders by when it was answered: the one from 4 hours ago isn't the latest
+  const sum = rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc });
+  assert.equal(sum.status, 200);
+  assert.equal(sum.data.lastCheckin.ts, rt.now());
+
+  // a questionnaire finished on the phone yesterday evening, sent this morning, sent twice
+  const phq = rt.store.instruments.find((r) => r.getString("key") === "phq9");
+  const as = rt.create("assignments", doc, { patient: pat.id, clinician: doc.id, instrument: phq.id, repeat: "daily", completionId: "zzzzzzzzzzzzzzz" });
+  assert.equal(as.status, 200);
+  assert.equal(as.record.getString("completionId"), "", "a psychologist can't set the phone's id");
+  const answers = { phq9_1: 1, phq9_2: 1, phq9_3: 0, phq9_4: 0, phq9_5: 0, phq9_6: 0, phq9_7: 0, phq9_8: 0, phq9_9: 0 };
+  const evening = rt.now() - 14 * 3600e3;
+  const body = { answers, clientId: "qqqqqqqqqqqqqqq", waited: 14 * 3600 };
+  const done = rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body });
+  assert.equal(done.status, 200, JSON.stringify(done));
+  assert.equal(s_ms(rt.app.findRecordById("assignments", as.record.id), "completedAt"), evening);
+  const dup = rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body });
+  assert.equal(dup.status, 200);
+  assert.equal(dup.data.duplicate, true);
+  assert.equal(rt.store.notifications.filter((x) => x.getString("kind") === "completed").length, 1);
+  assert.match(rt.store.notifications.find((x) => x.getString("kind") === "completed").getString("body"), /answered 14 h before it arrived/);
+  // a different finish of the same one is still refused
+  assert.equal(rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body: { answers, clientId: "rrrrrrrrrrrrrrr" } }).status, 400);
+  // the daily repeat counts from when it was answered: one daily instance, available from today
+  const next = rt.store.assignments.filter((a) => a.getString("instrument") === phq.id && a.getString("status") === "pending");
+  assert.equal(next.length, 1);
+  // withdrawn while the phone was offline: a clear answer, nothing saved
+  const as2 = rt.create("assignments", doc, { patient: pat.id, clinician: doc.id, instrument: phq.id });
+  rt.app.findRecordById("assignments", as2.record.id).set("status", "cancelled");
+  const gone = rt.call("POST", `/api/steady/assignments/${as2.record.id}/complete`, { auth: pat, body: { answers, clientId: "sssssssssssssss" } });
+  assert.equal(gone.status, 400);
+  assert.match(gone.error, /withdrew/);
+
+  // an exercise the patient started themselves, sent twice
+  const box = rt.store.instruments.find((r) => r.getString("key") === "box-breathing");
+  const ex = { instrument: box.id, result: { rounds: 4, seconds: 64 }, clientId: "bbbbbbbbbbbbbbb", waited: 3600 };
+  const s1 = rt.call("POST", "/api/steady/self-start", { auth: pat, body: ex });
+  assert.equal(s1.status, 200, JSON.stringify(s1));
+  const s2 = rt.call("POST", "/api/steady/self-start", { auth: pat, body: ex });
+  assert.equal(s2.status, 200);
+  assert.equal(s2.data.duplicate, true);
+  assert.equal(s2.data.id, s1.data.id);
+  assert.equal(rt.store.assignments.filter((a) => a.getString("instrument") === box.id).length, 1);
+  assert.equal(s_ms(rt.app.findRecordById("assignments", s1.data.id), "completedAt"), rt.now() - 3600e3);
+});
+
+function s_ms(rec, field) {
+  const v = rec.getString(field);
+  return v ? Date.parse(v.replace(" ", "T")) : 0;
+}
+
 test("expired invites are refused", () => {
   const rt = makeRuntime({ env: ENV });
   const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true });
@@ -2417,83 +2497,3 @@ test("changing your own email: the password, a code sent to the new address, the
   // and patients can't set the field themselves through the API
   assert.ok(/emailChange:isset = false/.test(String(rt.app.findCollectionByNameOrId("users").updateRule)), "the users update rule refuses emailChange");
 });
-
-test("answers kept on the phone while offline arrive once, with the time they were given", () => {
-  const rt = makeRuntime({ env: ENV });
-  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
-  const pat = rt.makeUser({ name: "Lee", role: "patient", clinician: doc.id, active: true, tzOffset: 120, email: "lee@example.org" });
-  const cid = "abcdefghij12345";
-
-  // a check-in answered 4 hours ago, sent now; then the same one sent again (the reply was lost)
-  const four = rt.now() - 4 * 3600e3;
-  const first = rt.create("checkins", pat, { patient: pat.id, mood: 2, anxiety: 3, sleep: 3, energy: 3, clientId: cid, waited: 4 * 3600 });
-  assert.equal(first.status, 200, JSON.stringify(first));
-  assert.equal(s_ms(first.record, "answeredAt"), four);
-  const again = rt.create("checkins", pat, { patient: pat.id, mood: 2, anxiety: 3, sleep: 3, energy: 3, clientId: cid, waited: 4 * 3600 + 2 });
-  assert.equal(again.status, 200);
-  assert.deepEqual(JSON.parse(JSON.stringify(again.data)), { id: first.record.id, duplicate: true });
-  assert.equal(rt.store.checkins.length, 1, "stored once");
-  const n = rt.store.notifications.filter((x) => x.getString("kind") === "checkin");
-  assert.equal(n.length, 1, "one notification");
-  assert.match(n[0].getString("body"), /answered 4 h before it arrived/);
-  // another patient's phone with the same id is a different check-in
-  const pat2 = rt.makeUser({ name: "Sam", role: "patient", clinician: doc.id, active: true, tzOffset: 120, email: "sam@example.org" });
-  assert.equal(rt.create("checkins", pat2, { patient: pat2.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, clientId: cid }).status, 200);
-  assert.equal(rt.store.checkins.length, 2);
-  // an id the app doesn't make is refused; so is a wait of more than 30 days; a negative one is ignored
-  assert.equal(rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, clientId: "Not-Ours" }).status, 400);
-  const old = rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, waited: 31 * 86400 });
-  assert.equal(old.status, 400);
-  assert.match(old.error, /more than 30 days/);
-  const odd = rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, waited: -50, answeredAt: "2020-01-01 00:00:00.000Z" });
-  assert.equal(odd.record.getString("answeredAt"), "", "the phone can't set the time directly");
-  // the psychologist's summary orders by when it was answered: the one from 4 hours ago isn't the latest
-  const sum = rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc });
-  assert.equal(sum.status, 200);
-  assert.equal(sum.data.lastCheckin.ts, rt.now());
-
-  // a questionnaire finished on the phone yesterday evening, sent this morning, sent twice
-  const phq = rt.store.instruments.find((r) => r.getString("key") === "phq9");
-  const as = rt.create("assignments", doc, { patient: pat.id, clinician: doc.id, instrument: phq.id, repeat: "daily", completionId: "zzzzzzzzzzzzzzz" });
-  assert.equal(as.status, 200);
-  assert.equal(as.record.getString("completionId"), "", "a psychologist can't set the phone's id");
-  const answers = { phq9_1: 1, phq9_2: 1, phq9_3: 0, phq9_4: 0, phq9_5: 0, phq9_6: 0, phq9_7: 0, phq9_8: 0, phq9_9: 0 };
-  const evening = rt.now() - 14 * 3600e3;
-  const body = { answers, clientId: "qqqqqqqqqqqqqqq", waited: 14 * 3600 };
-  const done = rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body });
-  assert.equal(done.status, 200, JSON.stringify(done));
-  assert.equal(s_ms(rt.app.findRecordById("assignments", as.record.id), "completedAt"), evening);
-  const dup = rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body });
-  assert.equal(dup.status, 200);
-  assert.equal(dup.data.duplicate, true);
-  assert.equal(rt.store.notifications.filter((x) => x.getString("kind") === "completed").length, 1);
-  assert.match(rt.store.notifications.find((x) => x.getString("kind") === "completed").getString("body"), /answered 14 h before it arrived/);
-  // a different finish of the same one is still refused
-  assert.equal(rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body: { answers, clientId: "rrrrrrrrrrrrrrr" } }).status, 400);
-  // the daily repeat counts from when it was answered: one daily instance, available from today
-  const next = rt.store.assignments.filter((a) => a.getString("instrument") === phq.id && a.getString("status") === "pending");
-  assert.equal(next.length, 1);
-  // withdrawn while the phone was offline: a clear answer, nothing saved
-  const as2 = rt.create("assignments", doc, { patient: pat.id, clinician: doc.id, instrument: phq.id });
-  rt.app.findRecordById("assignments", as2.record.id).set("status", "cancelled");
-  const gone = rt.call("POST", `/api/steady/assignments/${as2.record.id}/complete`, { auth: pat, body: { answers, clientId: "sssssssssssssss" } });
-  assert.equal(gone.status, 400);
-  assert.match(gone.error, /withdrew/);
-
-  // an exercise the patient started themselves, sent twice
-  const box = rt.store.instruments.find((r) => r.getString("key") === "box-breathing");
-  const ex = { instrument: box.id, result: { rounds: 4, seconds: 64 }, clientId: "bbbbbbbbbbbbbbb", waited: 3600 };
-  const s1 = rt.call("POST", "/api/steady/self-start", { auth: pat, body: ex });
-  assert.equal(s1.status, 200, JSON.stringify(s1));
-  const s2 = rt.call("POST", "/api/steady/self-start", { auth: pat, body: ex });
-  assert.equal(s2.status, 200);
-  assert.equal(s2.data.duplicate, true);
-  assert.equal(s2.data.id, s1.data.id);
-  assert.equal(rt.store.assignments.filter((a) => a.getString("instrument") === box.id).length, 1);
-  assert.equal(s_ms(rt.app.findRecordById("assignments", s1.data.id), "completedAt"), rt.now() - 3600e3);
-});
-
-function s_ms(rec, field) {
-  const v = rec.getString(field);
-  return v ? Date.parse(v.replace(" ", "T")) : 0;
-}
