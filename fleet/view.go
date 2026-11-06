@@ -37,7 +37,7 @@ func str(v any) string {
 // Row is one server on the overview.
 type Row struct {
 	Index                     int
-	Name, URL, Domain         string
+	Name, URL, Domain, Short  string // Short: the name fleet.sh takes ("vr")
 	Level                     string // good, slow, struggling, down
 	Health                    string
 	Version, VersionNote      string
@@ -92,7 +92,7 @@ func bytesText(b float64) string {
 }
 
 func makeRow(i int, st *Status, now time.Time) Row {
-	r := Row{Index: i, Name: st.Server.Name, URL: st.Server.URL}
+	r := Row{Index: i, Name: st.Server.Name, URL: st.Server.URL, Short: st.Server.ShortName()}
 	r.Domain = strings.TrimPrefix(strings.TrimPrefix(st.Server.URL, "https://"), "http://")
 	r.Checked = ago(st.At, now)
 	if st.Err != "" || st.Data == nil {
@@ -120,7 +120,7 @@ func makeRow(i int, st *Status, now time.Time) Row {
 	}
 	// version: what it runs, as people read it, and whether a newer signed release is waiting
 	r.Version = versionText(d)
-	// the buttons need the server's in-app updates (deploy/ctl/install.sh)
+	// the commands need the server's in-app updates (deploy/ctl/install.sh)
 	r.CanAct = get(d, "version", "managed") == true
 	if b, ok := num(get(d, "version", "behind")); ok && b > 0 {
 		r.Behind = true
@@ -231,6 +231,8 @@ func facts(st *Status, now time.Time) []Fact {
 		{"Staff sign-in by email code", yesNo(get(d, "signIn", "linkedDevices"))},
 		{"Deletion requests waiting", intText(get(d, "counts", "deletionRequests"))},
 		{"Operator agreement", agreementText(get(d, "operatorAgreement"))},
+		{"Feedback waiting", feedbackText(d, now)},
+		{"OpenWorks support accounts", intText(get(d, "counts", "supportAccounts"))},
 	}
 	if lu, ok := d["lastUpdate"].(map[string]any); ok {
 		res := "worked"
@@ -247,6 +249,26 @@ func facts(st *Status, now time.Time) []Fact {
 		f = append(f, Fact{"Last restart", ago(parseTime(lr["at"]), now) + ", " + res})
 	}
 	return f
+}
+
+// feedbackText: how many reports wait and since when, never what they say (the practice reads
+// them in Settings > Practice; OpenWorks with deploy/feedback.sh on the server).
+func feedbackText(d map[string]any, now time.Time) string {
+	n := get(d, "counts", "feedbackNew")
+	if n == nil {
+		return "?"
+	}
+	if f, _ := n.(float64); f == 0 {
+		return "none"
+	}
+	t := intText(n) + " new"
+	if b, _ := get(d, "counts", "feedbackNewBugs").(float64); b > 0 {
+		t += fmt.Sprintf(" (%d bug report%s)", int(b), map[bool]string{true: "", false: "s"}[b == 1])
+	}
+	if at := parseTime(d["feedbackOldestNew"]); !at.IsZero() {
+		t += ", the oldest " + ago(at, now)
+	}
+	return t
 }
 
 func msText(v any) string {
@@ -533,6 +555,16 @@ func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time) ChecksPage {
 			sc.Checked, sc.Summary, sc.SummaryClass = row.Checked, "can't be reached", "bad"
 			p.Servers = append(p.Servers, sc.withBar())
 			continue
+		}
+		// feedback nobody has looked at for a week (counts only: never what it says)
+		if n, _ := get(st.Data, "counts", "feedbackNew").(float64); n > 0 {
+			if at := parseTime(st.Data["feedbackOldestNew"]); !at.IsZero() && now.Sub(at) > 7*24*time.Hour {
+				add("warn", "Feedback", fmt.Sprintf("%d feedback report(s) waiting, the oldest %s: the practice reads them in Settings > Practice; OpenWorks with sudo ./feedback.sh on the server", int(n), ago(at, now)), row.Checked)
+			}
+		}
+		// OpenWorks' own accounts aren't needed on a practice's server any more (the fleet resets passwords)
+		if n, _ := get(st.Data, "counts", "supportAccounts").(float64); n > 0 && st.Data["openworksServer"] != true {
+			add("warn", "Accounts", fmt.Sprintf("%d OpenWorks support account(s) on a practice's server: no longer needed, since passwords are reset from the fleet view. Stop each one there: sudo ./accounts.sh set <its email> active off", int(n)), row.Checked)
 		}
 		// a practice server on an older signed release (a server following a branch is left alone)
 		if row.Behind && get(st.Data, "version", "signed") != false {

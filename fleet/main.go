@@ -1,12 +1,16 @@
 // Steady fleet view: OpenWorks IT's overview of every practice's Steady server (version,
-// health, disk, backups, counts), with Check / Update / Restart. Standard library only.
+// health, disk, backups, counts, security checks). The website only looks; devs change servers
+// with the commands in cli.go, over SSH on vps1 (fleet/fleet.sh). Standard library only.
 //
-//	fleet serve                 run the site (FLEET_ADDR, default :8080; data in FLEET_DATA, default /data)
-//	fleet adduser <name>        add someone: asks for a password, prints the authenticator setup
-//	fleet passwd <name>         a new password for someone
-//	fleet resettotp <name>      a new authenticator secret for someone (a lost phone)
-//	fleet deluser <name>        remove someone
-//	fleet healthz               exits 0 when the site answers (the container's health check)
+//	fleet serve                     run the site (FLEET_ADDR, default :8080; data in FLEET_DATA, default /data)
+//	fleet adduser <name> [--dev]    add someone (an admin, or a dev): asks for a password, prints the authenticator setup
+//	fleet setrole <name> admin|dev  change someone's role
+//	fleet passwd <name>             a new password for someone
+//	fleet resettotp <name>          a new authenticator secret for someone (a lost phone)
+//	fleet deluser <name>            remove someone
+//	fleet users                     who can sign in, and their roles
+//	fleet healthz                   exits 0 when the site answers (the container's health check)
+//	fleet servers | check | update | restart | reset ...   see cli.go
 //
 // See docs/FLEET.md.
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -16,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,11 +47,26 @@ func main() {
 		name = os.Args[2]
 	}
 	var err error
+	args := os.Args[2:]
 	switch cmd {
 	case "serve":
 		err = serve(store)
 	case "adduser":
-		err = addUser(store, name)
+		err = addUser(store, name, hasFlag(args, "--dev"))
+	case "setrole":
+		role := ""
+		if len(os.Args) > 3 {
+			role = os.Args[3]
+		}
+		err = setRole(store, name, role)
+	case "users":
+		err = listUsers(store, os.Stdout)
+	case "servers":
+		err = listServers(store, os.Stdout)
+	case "check", "update", "restart":
+		err = serverAction(store, cmd, args, os.Stdin, os.Stdout)
+	case "reset":
+		err = resetPassword(store, args, os.Stdin, os.Stdout)
 	case "passwd":
 		err = changeUser(store, name, true, false)
 	case "resettotp":
@@ -69,7 +89,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleet serve | adduser <name> | passwd <name> | resettotp <name> | deluser <name>")
+	fmt.Fprintln(os.Stderr, "usage: fleet serve | users | adduser <name> [--dev] | setrole <name> admin|dev | passwd <name> | resettotp <name> | deluser <name>\n       fleet servers | check <server> | update <server> [--yes] | restart <server> [--yes]\n       fleet reset <server> <email> [--two-step] [--yes]")
 	os.Exit(2)
 }
 
@@ -136,7 +156,7 @@ func showTOTP(u User) {
 	fmt.Println("  link: ", OTPAuthURI(u))
 }
 
-func addUser(store *Store, name string) error {
+func addUser(store *Store, name string, dev bool) error {
 	name = strings.ToLower(name)
 	if err := validName(name); err != nil {
 		return err
@@ -147,6 +167,10 @@ func addUser(store *Store, name string) error {
 		return err
 	}
 	u := NewUser(name, pw)
+	u.Role = "admin"
+	if dev {
+		u.Role = "dev"
+	}
 	err = store.UpdateUsers(func(all []User) ([]User, error) {
 		for _, x := range all {
 			if sameName(x.Name, name) {
@@ -159,7 +183,41 @@ func addUser(store *Store, name string) error {
 		return err
 	}
 	showTOTP(u)
-	fmt.Println("\nAdded", name+".")
+	fmt.Println("\nAdded", name, "as", u.RoleName()+".")
+	return nil
+}
+
+func setRole(store *Store, name, role string) error {
+	if role != "admin" && role != "dev" {
+		return fmt.Errorf("usage: fleet setrole <name> admin|dev")
+	}
+	err := store.UpdateUsers(func(all []User) ([]User, error) {
+		for i := range all {
+			if sameName(all[i].Name, name) {
+				all[i].Role = role
+				return all, nil
+			}
+		}
+		return nil, fmt.Errorf("no user called %s", name)
+	})
+	if err == nil {
+		store.Audit(actor(), "ssh", "setrole", name+": "+role)
+		fmt.Println(name, "is now", role+". It shows on their next page.")
+	}
+	return err
+}
+
+func listUsers(store *Store, out io.Writer) error {
+	all, err := store.Users()
+	if err != nil {
+		return err
+	}
+	for _, u := range all {
+		fmt.Fprintf(out, "  %-20s %s\n", u.Name, u.RoleName())
+	}
+	if len(all) == 0 {
+		fmt.Fprintln(out, "Nobody yet: fleet adduser <name> [--dev]")
+	}
 	return nil
 }
 

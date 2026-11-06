@@ -113,7 +113,7 @@ root.
 Disk, memory and load come from `deploy/ctl` (run `sudo ./ctl/install.sh` again after updating, to
 add the 5-minute stats timer). Limits and when to move up a server size: [CAPACITY.md](CAPACITY.md).
 
-OpenWorks IT's fleet view (docs/FLEET.md) shows every practice server on one page and can ask a server to check for updates, update or restart. It needs `STEADY_FLEET_KEY` in `.env` (`gen-keys.sh` prints one), and nothing else: the monitor key stays with `health.sh`.
+OpenWorks IT's fleet view (docs/FLEET.md) shows every practice server on one page. Its devs can ask a server, over SSH on vps1, to check for updates, update, restart or reset a staff member's password (finished only with a code emailed to the person). It needs `STEADY_FLEET_KEY` in `.env` (`gen-keys.sh` prints one), and nothing else: the monitor key stays with `health.sh`. With it, practice servers need no OpenWorks support account.
 
 ## 5. Accounts
 

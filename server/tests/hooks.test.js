@@ -2412,3 +2412,67 @@ test("changing your own email: the password, a code sent to the new address, the
   // and patients can't set the field themselves through the API
   assert.ok(/emailChange:isset = false/.test(String(rt.app.findCollectionByNameOrId("users").updateRule)), "the users update rule refuses emailChange");
 });
+
+test("fleet view: a staff password reset that only the person can finish, and feedback as counts only", () => {
+  const FLEET = "fleet-key-0123456789abcdefgh";
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: FLEET, STEADY_SMTP_HOST: "mail.test", STEADY_MAIL_FROM: "noreply@steadyapp.co.za" }) });
+  const master = rt.makeUser({ name: "Dr Master", role: "clinician", master: true, active: true, email: "master@example.org", passwordHash: "pw:m" });
+  const doc = rt.makeUser({ name: "Dr Two", role: "clinician", active: true, email: "two@example.org", passwordHash: "pw:old-password", totpSecret: "SECRET", totpEnabledAt: "2026-11-01 10:00:00.000Z" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "pat@example.org" });
+  rt.makeUser({ name: "OpenWorks support", role: "support", active: true, email: "support@openworks.co.za" });
+  rt.makeRecord("feedback", { kind: "bug", message: "a private message about a patient", status: "new", who: doc.id });
+  rt.makeRecord("feedback", { kind: "love", message: "lovely", status: "new", who: doc.id });
+  rt.makeRecord("feedback", { kind: "bug", message: "old", status: "done", who: doc.id });
+  const F = { "X-Steady-Fleet": FLEET };
+  const reset = (body, headers) => rt.call("POST", "/api/steady/fleet/reset", { headers: headers === undefined ? F : headers, body });
+
+  // the summary: how many reports wait, never what they say; OpenWorks' accounts counted
+  const sum = rt.call("GET", "/api/steady/fleet", { headers: F });
+  assert.equal(sum.status, 200);
+  assert.equal(sum.data.counts.feedbackNew, 2);
+  assert.equal(sum.data.counts.feedbackNewBugs, 1);
+  assert.ok(sum.data.feedbackOldestNew);
+  assert.equal(sum.data.counts.supportAccounts, 1);
+  assert.equal(sum.data.openworksServer, false);
+  assert.ok(!JSON.stringify(sum.data).includes("private message"), "no feedback text");
+
+  // only with the fleet key, only staff
+  assert.equal(reset({ email: "two@example.org" }, {}).status, 404);
+  assert.equal(reset({ email: "two@example.org" }, { "X-Steady-Fleet": "wrong-key-0123456789abcdefg" }).status, 404);
+  assert.equal(reset({ email: "nobody@example.org" }).status, 404);
+  assert.match(reset({ email: "pat@example.org" }).error, /Patients' passwords/);
+  assert.equal(pat.getBool("mustChangePassword"), false);
+
+  const before = rt.mails.length;
+  const r = reset({ email: "TWO@example.org", twoStep: true });
+  assert.equal(r.status, 200, JSON.stringify(r));
+  assert.ok(r.data.temporaryPassword && r.data.temporaryPassword.length >= 10);
+  assert.equal(r.data.emailedTo, "t***@example.org");
+  assert.equal(doc.getBool("mustChangePassword"), true);
+  assert.equal(doc.getBool("emailCodeNeeded"), true, "it finishes only with the emailed code");
+  assert.equal(doc.getString("totpSecret"), "", "two-step cleared on request");
+  const toPerson = rt.mails.slice(before).find((m) => m.to[0].address === "two@example.org" && /finish a password reset/.test(m.subject));
+  assert.ok(toPerson, "the code goes to the person");
+  assert.ok(!toPerson.text.includes(r.data.temporaryPassword), "never the temporary password by email");
+  const code = /^\s+(\d{6})$/m.exec(toPerson.text)[1];
+  assert.ok(rt.mails.slice(before).some((m) => m.to[0].address === "master@example.org" && /OpenWorks reset a password/.test(m.subject)), "the master psychologist is told");
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "fleet.account.reset-password" && a.getString("target").startsWith("user:" + doc.id)), "in the access log");
+
+  // the temporary password alone doesn't finish it; with the code it does
+  const tmp = r.data.temporaryPassword;
+  doc.setPassword(tmp);
+  const change = (emailCode) => rt.call("POST", "/api/steady/me/password", { auth: doc, body: { password: tmp, newPassword: "a brand new password", emailCode } });
+  assert.match(change("").error, /Enter the code/);
+  assert.match(change("000000").error, /didn't work/);
+  assert.equal(change(code).status, 200);
+  assert.equal(doc.getBool("mustChangePassword"), false);
+
+  // a server that can't send email refuses: the dev resets on the server instead
+  const quiet = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: FLEET }) });
+  quiet.makeUser({ name: "Dr Q", role: "clinician", active: true, email: "q@example.org" });
+  assert.match(quiet.call("POST", "/api/steady/fleet/reset", { headers: F, body: { email: "q@example.org" } }).error, /can't send email/);
+
+  // five an hour, then no more
+  for (let i = 0; i < 4; i++) assert.equal(reset({ email: "master@example.org" }).status, 200);
+  assert.equal(reset({ email: "master@example.org" }).status, 429);
+});

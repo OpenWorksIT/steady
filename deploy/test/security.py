@@ -510,6 +510,9 @@ def run(su):
     check(U, "...a patient's session doesn't do", s == 404, [s, r])
     s, r = call("POST", "/api/steady/fleet/request", doc1, {"action": "restart"}, headers={"X-Steady-Fleet": "not-the-key-not-the-key-123"})
     check(U, "nobody without the fleet key can restart or update the server", s == 404, [s, r])
+    for who in (None, doc1, patA):
+        s, r = call("POST", "/api/steady/fleet/reset", who, {"email": "doc1@example.org"}, headers={"X-Steady-Fleet": "not-the-key-not-the-key-123"})
+        check(U, "nobody without the fleet key can reset a password from the fleet route", s == 404, [s, r])
 
     # ---- leaks through pages and errors
     L = "leaks"
