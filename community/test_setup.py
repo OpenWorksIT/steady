@@ -294,7 +294,9 @@ class LookTest(unittest.TestCase):
 
 
 class TopicsForum:
-    """Topics with external ids, as Discourse keeps them."""
+    """Topics with external ids, as Discourse keeps them. Its redirect to a topic keeps the
+    .json (/t/<slug>/<id>.json), as the forum on vps1 does; suffix "" tries the other form."""
+    suffix = ".json"
 
     def __init__(self):
         self.topics = {}  # id -> {title, raw, category, external_id, pinned, wiki, post}
@@ -309,7 +311,7 @@ class TopicsForum:
         if m:
             for tid, t in self.topics.items():
                 if t["external_id"] == m.group(1):
-                    return (301, {}, {"Location": f"{self.base}/t/some-slug/{tid}"})
+                    return (301, {}, {"Location": f"{self.base}/t/some-slug/{tid}{self.suffix}"})
             return 404
         m = re.fullmatch(r"/t/some-slug/(\d+)\.json", route)
         if m:
@@ -364,6 +366,15 @@ class TopicsTest(unittest.TestCase):
         with redirect_stdout(out):
             setup.ensure_topics(api, self.cats, type("A", (), {"update_topics": update})())
         return out.getvalue()
+
+    def test_found_again_whichever_way_discourse_redirects(self):
+        for suffix in (".json", ""):
+            self.forum.topics.clear()
+            self.forum.suffix = suffix
+            self.run_topics()
+            out = self.run_topics()          # the second run finds every topic it posted
+            self.assertNotIn("Stopped", out, suffix)
+            self.assertEqual(out.count("added"), 0, suffix)
 
     def test_posted_once_pinned_and_wikis_then_left_alone(self):
         files = setup.load_topics()
