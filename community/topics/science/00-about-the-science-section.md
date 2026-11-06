@@ -39,7 +39,7 @@ A change to a method follows the same path each time: a short proposal with its 
 - Bring evidence where you can: a paper with a link, or a pattern from your own practice described in aggregate or through a made-up example.
 - Disagreement is welcome. Several numbers, RADR's especially, are reasoned starting points that are meant to be tested.
 - Never post anything that could identify a patient. The examples in these topics are invented; please keep to that.
-- OpenWorks IT can't read the clinical areas of this forum. When a discussion here ends in a proposed change, the person who raised it, or the community lead, posts the proposal in Steady development, where OpenWorks IT reads and replies.
+- OpenWorks IT reads this section and can reply here, but can't read the clinical areas of this forum (Clinical practice, Research and studies, Questionnaires and tools, the Tea room). When a discussion here ends in a proposed change to Steady, the person who raised it, or the community lead, posts the proposal in Steady development, where it's tracked.
 
 ## Methods will change
 
