@@ -10,7 +10,10 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../feedback/trail.dart';
 import '../models.dart';
+import 'outbox.dart';
 import 'session_store.dart';
+
+export 'outbox.dart' show Outbox, OutboxItem, OutboxRefusal, OutboxFull, isUnreachable;
 
 /// Server address. Practice builds set it at build time:
 ///   flutter build appbundle --dart-define=STEADY_SERVER=https://steady.yourpractice.co.za
@@ -71,6 +74,8 @@ bool isForumAddress(String url) {
 String errorText(Object error) {
   if (error is FormatException) return error.message;
   if (error is NotConfirmed) return 'Not confirmed, so nothing was changed.';
+  if (error is OutboxFull) return error.toString();
+  if (error is TimeoutException) return "The server didn't answer in time. Check your connection and try again.";
   if (error is ClientException) {
     if (error.statusCode == 0) return "Can't reach the server. Check your connection and try again.";
     final r = error.response;
@@ -232,7 +237,11 @@ class Api {
   final FlutterSecureStorage _storage;
   Api._(this.pb, this._storage);
 
-  static Future<Api> create({FlutterSecureStorage storage = kSecureStorage}) async {
+  /// A patient's answers kept on this phone while the practice can't be reached (services/outbox.dart).
+  late final Outbox outbox = Outbox(_SecureOutboxStore(_storage), _deliver, () => myId, enabled: !kIsWeb);
+
+  /// [httpClient]: for tests (a fake server).
+  static Future<Api> create({FlutterSecureStorage storage = kSecureStorage, http.Client Function()? httpClient}) async {
     String? initial;
     String? saved;
     try {
@@ -255,7 +264,7 @@ class Api {
                 : '';
     // every server call goes into the feedback trail (method, path shape, result, time), and
     // carries this device's key (see _DeviceKeyClient)
-    final api = Api._(PocketBase(url, authStore: store, httpClientFactory: () => TrailClient(_DeviceKeyClient(http.Client()))), storage);
+    final api = Api._(PocketBase(url, authStore: store, httpClientFactory: () => TrailClient(_DeviceKeyClient(httpClient?.call() ?? http.Client()))), storage);
     if (url.isNotEmpty) await api.deviceKey();
     return api;
   }
@@ -620,18 +629,120 @@ class Api {
 
   /* ---------------- patient ---------------- */
 
-  Future<void> addCheckin({required int mood, required int anxiety, required int sleep, required int energy, String note = ''}) async {
-    await pb.collection('checkins').create(body: {
-      'patient': myId,
-      'mood': mood,
-      'anxiety': anxiety,
-      'sleep': sleep,
-      'energy': energy,
-      'note': note,
-    });
-  }
+  /// The patient's answers go through the outbox: each returns true when it reached the practice,
+  /// false when the practice couldn't be reached and it was kept on this phone to send later.
+  Future<bool> addCheckin({required int mood, required int anxiety, required int sleep, required int energy, String note = ''}) =>
+      outbox.submit(OutboxItem(
+        kind: 'checkin',
+        id: OutboxItem.newId(),
+        at: DateTime.now().millisecondsSinceEpoch,
+        target: '',
+        title: 'Check-in',
+        body: {'mood': mood, 'anxiety': anxiety, 'sleep': sleep, 'energy': energy, 'note': note},
+      ));
 
   Future<List<Checkin>> myCheckins({int days = 14}) => checkinsFor(myId, days: days);
+
+  /// Sends one waiting answer, with the phone's id for it and how long it waited. A reply that
+  /// doesn't come within 30 seconds counts as "couldn't reach": it is sent again later, and the
+  /// server keeps one.
+  Future<void> _deliver(OutboxItem it, int waited) async {
+    final extra = <String, Object?>{'clientId': it.id, if (waited > 0) 'waited': waited};
+    const t = Duration(seconds: 30);
+    switch (it.kind) {
+      case 'checkin':
+        await pb.collection('checkins').create(body: {...it.body, 'patient': myId, ...extra}).timeout(t);
+      case 'questionnaire':
+        await pb.send('/api/steady/assignments/${it.target}/complete', method: 'POST', body: {'answers': it.body['answers'], ...extra}).timeout(t);
+      case 'exercise':
+        await pb.send('/api/steady/assignments/${it.target}/complete', method: 'POST', body: {'result': it.body['result'], ...extra}).timeout(t);
+      case 'selfstart':
+        await pb.send('/api/steady/self-start', method: 'POST', body: {'instrument': it.target, 'result': it.body['result'], ...extra}).timeout(t);
+    }
+  }
+
+  String get _homeKey => 'steady.home.$myId';
+
+  /// What the patient's home screen and calm start show: what's waiting from the psychologist,
+  /// recent check-ins (mood only) and the exercises they can start. Sends anything waiting on the
+  /// phone first. When the practice can't be reached, the copy this phone kept last time (in its
+  /// secure storage; deleted at sign-out), so the patient can still check in and answer what was
+  /// waiting; [PatientHomeData.offlineSince] then says when that copy is from.
+  Future<PatientHomeData> patientHome({int days = 7}) async {
+    try {
+      await outbox.flush();
+    } catch (_) {}
+    try {
+      final r = await Future.wait<List<RecordModel>>([
+        pb.collection('assignments').getFullList(
+              filter: pb.filter('patient = {:p} && status = "pending"', {'p': myId}),
+              sort: '-created',
+              expand: 'instrument',
+            ),
+        _checkinRecords(myId, days),
+        pb.collection('instruments').getFullList(filter: 'active = true', sort: 'kind,name'),
+      ]).timeout(const Duration(seconds: 30));
+      final exercises = r[2].where((x) => x.getStringValue('kind') != 'questionnaire').toList();
+      if (!kIsWeb) {
+        Map<String, dynamic> j(RecordModel x) => {...x.data, 'id': x.id};
+        final copy = {
+          'at': DateTime.now().millisecondsSinceEpoch,
+          'pending': r[0].map(j).toList(),
+          // the week's moods for the home screen: no notes kept on the phone
+          'recent': r[1].map((x) => {...j(x), 'note': ''}).toList(),
+          'instruments': exercises.map(j).toList(),
+        };
+        try {
+          await _storage.write(key: _homeKey, value: jsonEncode(copy));
+        } catch (_) {}
+      }
+      return _home(r[0], r[1], exercises, null, days);
+    } catch (e) {
+      if (kIsWeb || !isUnreachable(e)) rethrow;
+      Map<String, dynamic>? copy;
+      try {
+        final raw = await _storage.read(key: _homeKey);
+        if (raw != null) copy = asMap(jsonDecode(raw));
+      } catch (_) {}
+      if (copy == null) rethrow;
+      final Map<String, dynamic> saved = copy;
+      List<RecordModel> recs(String k) => asList(saved[k]).map((x) => RecordModel.fromJson(asMap(x))).toList();
+      return _home(recs('pending'), recs('recent'), recs('instruments'), fromMs(saved['at']) ?? DateTime.now(), days);
+    }
+  }
+
+  PatientHomeData _home(List<RecordModel> pending, List<RecordModel> recent, List<RecordModel> instruments, DateTime? offlineSince, int days) {
+    final waiting = outbox.items;
+    final answered = waiting.where((i) => i.kind == 'questionnaire' || i.kind == 'exercise').map((i) => i.target).toSet();
+    final since = DateTime.now().subtract(Duration(days: days));
+    final kept = waiting.where((i) => i.kind == 'checkin').map((i) => Checkin(
+          '',
+          DateTime.fromMillisecondsSinceEpoch(i.at),
+          (i.body['mood'] as num?)?.toInt() ?? 0,
+          (i.body['anxiety'] as num?)?.toInt() ?? 0,
+          (i.body['sleep'] as num?)?.toInt() ?? 0,
+          (i.body['energy'] as num?)?.toInt() ?? 0,
+          '',
+        ));
+    final checkins = [...kept, ...recent.map(Checkin.fromRecord)].where((c) => c.created.isAfter(since)).toList()
+      ..sort((a, b) => b.created.compareTo(a.created));
+    return PatientHomeData(
+      pending: pending.map(Assignment.fromRecord).where((a) => a.available && !answered.contains(a.id)).toList(),
+      recent: checkins,
+      exercises: instruments.map(Instrument.fromRecord).where((i) => !i.isQuestionnaire && i.sendable).toList(),
+      offlineSince: offlineSince,
+    );
+  }
+
+  /// Signing out: what this phone kept for the account goes (unsent answers, the home screen's copy).
+  Future<void> forgetPatientCopies() async {
+    try {
+      await outbox.clear();
+    } catch (_) {}
+    try {
+      if (myId.isNotEmpty) await _storage.delete(key: _homeKey);
+    } catch (_) {}
+  }
 
   Future<List<Assignment>> myPending() async {
     final list = await pb.collection('assignments').getFullList(
@@ -642,14 +753,14 @@ class Api {
     return list.map(Assignment.fromRecord).where((a) => a.available).toList();
   }
 
-  Future<void> completeQuestionnaire(String assignmentId, Map<String, Object?> answers) =>
-      pb.send('/api/steady/assignments/$assignmentId/complete', method: 'POST', body: {'answers': answers});
+  Future<bool> completeQuestionnaire(String assignmentId, Map<String, Object?> answers, {String title = 'Questionnaire'}) =>
+      outbox.submit(OutboxItem(kind: 'questionnaire', id: OutboxItem.newId(), at: DateTime.now().millisecondsSinceEpoch, target: assignmentId, title: title, body: {'answers': answers}));
 
-  Future<void> completeExercise(String assignmentId, Map<String, Object?> result) =>
-      pb.send('/api/steady/assignments/$assignmentId/complete', method: 'POST', body: {'result': result});
+  Future<bool> completeExercise(String assignmentId, Map<String, Object?> result, {String title = 'Exercise'}) =>
+      outbox.submit(OutboxItem(kind: 'exercise', id: OutboxItem.newId(), at: DateTime.now().millisecondsSinceEpoch, target: assignmentId, title: title, body: {'result': result}));
 
-  Future<void> selfStart(String instrumentId, Map<String, Object?> result) =>
-      pb.send('/api/steady/self-start', method: 'POST', body: {'instrument': instrumentId, 'result': result});
+  Future<bool> selfStart(String instrumentId, Map<String, Object?> result, {String title = 'Exercise'}) =>
+      outbox.submit(OutboxItem(kind: 'selfstart', id: OutboxItem.newId(), at: DateTime.now().millisecondsSinceEpoch, target: instrumentId, title: title, body: {'result': result}));
 
   Future<void> uploadBiometrics(List<Map<String, Object>> days,
       {required String platform, required String source, required String algorithm}) async {
@@ -671,15 +782,19 @@ class Api {
   Future<PatientSummary> patientSummary(String patientId) async =>
       PatientSummary.fromJson(await pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/summary'));
 
-  Future<List<Checkin>> checkinsFor(String patientId, {int days = 14}) async {
+  Future<List<RecordModel>> _checkinRecords(String patientId, int days) async {
     final since = DateTime.now().toUtc().subtract(Duration(days: days)).toIso8601String().replaceFirst('T', ' ');
     final res = await pb.collection('checkins').getList(
           perPage: 200,
           sort: '-created',
           filter: pb.filter('patient = {:p} && created >= {:s}', {'p': patientId, 's': since}),
         );
-    return res.items.map(Checkin.fromRecord).toList();
+    return res.items;
   }
+
+  /// Newest answered first (one that waited on a phone arrives after later ones).
+  Future<List<Checkin>> checkinsFor(String patientId, {int days = 14}) async =>
+      (await _checkinRecords(patientId, days)).map(Checkin.fromRecord).toList()..sort((a, b) => b.created.compareTo(a.created));
 
   Future<List<Assignment>> assignmentsFor(String patientId) async {
     final res = await pb.collection('assignments').getList(
@@ -1049,4 +1164,24 @@ class _DeviceKeyClient extends http.BaseClient {
 
   @override
   void close() => _inner.close();
+}
+
+/// What the patient's home screen shows ([Api.patientHome]).
+class PatientHomeData {
+  final List<Assignment> pending;
+  final List<Checkin> recent;
+  final List<Instrument> exercises;
+
+  /// When the practice couldn't be reached: when the copy shown was kept. Null: fresh.
+  final DateTime? offlineSince;
+  const PatientHomeData({required this.pending, required this.recent, required this.exercises, this.offlineSince});
+}
+
+class _SecureOutboxStore implements OutboxStore {
+  final FlutterSecureStorage storage;
+  _SecureOutboxStore(this.storage);
+  @override
+  Future<String?> read(String key) => storage.read(key: key);
+  @override
+  Future<void> write(String key, String? value) => value == null ? storage.delete(key: key) : storage.write(key: key, value: value);
 }

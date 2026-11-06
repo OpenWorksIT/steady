@@ -419,9 +419,11 @@ class Checkin {
   final int mood, anxiety, sleep, energy;
   final DateTime created;
   Checkin(this.id, this.created, this.mood, this.anxiety, this.sleep, this.energy, this.note);
+  /// When it was answered: an answer kept on the phone while the practice couldn't be reached
+  /// arrives later than that (answeredAt), others when they arrived.
   factory Checkin.fromRecord(RecordModel r) => Checkin(
         r.id,
-        parsePbDate(r.data['created']) ?? DateTime.now(),
+        parsePbDate(r.data['answeredAt']) ?? parsePbDate(r.data['created']) ?? DateTime.now(),
         r.getIntValue('mood'),
         r.getIntValue('anxiety'),
         r.getIntValue('sleep'),

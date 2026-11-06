@@ -6,7 +6,10 @@ import '../widgets.dart';
 
 class DoneScreen extends StatelessWidget {
   final String message;
-  const DoneScreen({required this.message, super.key});
+
+  /// Kept on the phone to send later, rather than sent.
+  final bool kept;
+  const DoneScreen({required this.message, this.kept = false, super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(automaticallyImplyLeading: false),
@@ -19,7 +22,7 @@ class DoneScreen extends StatelessWidget {
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(color: context.sc.calmSoft, shape: BoxShape.circle),
-                  child: Icon(Icons.check, size: 36, color: context.sc.calm),
+                  child: Icon(kept ? Icons.schedule_send_outlined : Icons.check, size: 36, color: context.sc.calm),
                 ),
               ),
               const SizedBox(height: 16),

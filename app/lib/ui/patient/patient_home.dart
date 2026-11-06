@@ -6,6 +6,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 import '../../app_state.dart';
 import '../../models.dart';
+import '../../services/api.dart';
 import '../../services/push.dart';
 import '../../wearable/wearable_sync.dart';
 import '../settings_screen.dart';
@@ -16,13 +17,6 @@ import 'checkin_screen.dart';
 import 'history_screen.dart';
 import 'watch_screens.dart';
 import '../brand.dart';
-
-class _HomeData {
-  final List<Assignment> pending;
-  final List<Checkin> recent;
-  final List<Instrument> exercises;
-  _HomeData(this.pending, this.recent, this.exercises);
-}
 
 class PatientHome extends StatefulWidget {
   const PatientHome({super.key});
@@ -35,6 +29,9 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
   UnsubscribeFunc? _unsub;
   StreamSubscription<String>? _taps;
 
+  /// Answers waiting on the phone are tried again every two minutes while the app is open.
+  Timer? _retry;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +39,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final api = AppScope.api(context);
       _taps = PushService.instance.taps.listen((_) => _refresh());
+      _retry = Timer.periodic(const Duration(minutes: 2), (_) => _sendWaiting(quiet: true));
       _syncWatch();
       try {
         _unsub = await api.watchNotifications((n) {
@@ -58,6 +56,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _unsub?.call();
     _taps?.cancel();
+    _retry?.cancel();
     super.dispose();
   }
 
@@ -101,16 +100,23 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
     if (mounted) setState(() => _reloadKey = UniqueKey());
   }
 
-  Future<_HomeData> _load() async {
-    final api = AppScope.api(context);
-    final results = await Future.wait([api.myPending(), api.myCheckins(days: 7), api.instruments()]);
-    final instruments = results[2] as List<Instrument>;
-    return _HomeData(
-      results[0] as List<Assignment>,
-      results[1] as List<Checkin>,
-      instruments.where((i) => !i.isQuestionnaire && i.sendable).toList(),
-    );
+  /// Sends answers kept on the phone. [quiet]: from the timer, so only a change is shown.
+  Future<void> _sendWaiting({bool quiet = false}) async {
+    final outbox = AppScope.api(context).outbox;
+    if (outbox.waiting == 0) return;
+    final before = outbox.waiting;
+    final sent = await outbox.flush();
+    if (!mounted) return;
+    if (sent > 0) {
+      showSnack(context, sent == 1 ? 'Sent to your psychologist.' : '$sent answers sent to your psychologist.');
+      _refresh();
+    } else if (!quiet && outbox.waiting == before) {
+      showSnack(context, 'Steady still can\'t reach the practice. It keeps trying.');
+    }
   }
+
+  /// Sends anything waiting on the phone first; offline, the copy the phone kept last time.
+  Future<PatientHomeData> _load() => AppScope.api(context).patientHome(days: 7);
 
   Future<void> _open(Widget screen) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
@@ -129,7 +135,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
             overflow: TextOverflow.ellipsis, style: context.tt.labelLarge?.copyWith(color: context.sc.ink2, letterSpacing: 0.6))),
         actions: const [SettingsButton()],
       ),
-      body: BrandBackdrop(child: Loader<_HomeData>(
+      body: BrandBackdrop(child: Loader<PatientHomeData>(
         key: _reloadKey,
         load: _load,
         builder: (context, d, reload) {
@@ -141,6 +147,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
             children: [
               Text('$hello, $first.', style: context.tt.headlineSmall),
               const SizedBox(height: 16),
+              _Waiting(offlineSince: d.offlineSince, onSend: () => _sendWaiting()),
               if (checkedToday.isEmpty)
                 Card(
                   color: context.cs.primary,
@@ -313,6 +320,75 @@ class _Week extends StatelessWidget {
             );
           })),
       ]),
+    );
+  }
+}
+
+/// Answers kept on this phone, and whether the practice can be reached. Nothing when all is sent.
+class _Waiting extends StatelessWidget {
+  final DateTime? offlineSince;
+  final Future<void> Function() onSend;
+  const _Waiting({required this.offlineSince, required this.onSend});
+
+  @override
+  Widget build(BuildContext context) {
+    final outbox = AppScope.api(context).outbox;
+    return ListenableBuilder(
+      listenable: outbox,
+      builder: (context, _) {
+        final n = outbox.waiting;
+        final refused = outbox.refused;
+        if (offlineSince == null && n == 0 && refused.isEmpty) return const SizedBox.shrink();
+        final small = context.tt.bodyMedium?.copyWith(color: context.sc.ink2);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (offlineSince != null || n > 0)
+              Card(
+                color: context.sc.accentSoft,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(Icons.schedule_send_outlined, color: context.sc.ink2),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                            n == 0 ? 'Steady can\'t reach the practice right now' : n == 1 ? '1 answer waiting to send' : '$n answers waiting to send',
+                            style: context.tt.titleMedium),
+                      ),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(
+                      offlineSince != null
+                          ? 'You can still check in and do what\'s waiting. Your answers are kept on this phone and sent as soon as Steady can reach the practice. '
+                              'This screen is from ${relTime(offlineSince)}.'
+                          : 'They\'re kept on this phone and sent as soon as Steady can reach the practice.',
+                      style: small,
+                    ),
+                    if (n > 0) ...[
+                      const SizedBox(height: 10),
+                      BusyButton(label: 'Send now', onPressed: onSend),
+                    ],
+                  ]),
+                ),
+              ),
+            for (final r in refused)
+              Card(
+                color: context.sc.warnSoft,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${r.title} wasn\'t sent', style: context.tt.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(r.message, style: small),
+                    Align(alignment: Alignment.centerRight, child: TextButton(onPressed: outbox.clearRefused, child: const Text('OK'))),
+                  ]),
+                ),
+              ),
+          ]),
+        );
+      },
     );
   }
 }

@@ -7,6 +7,7 @@ import '../../app_state.dart';
 import '../../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'checkin_screen.dart' show keptOnPhone;
 import 'done_screen.dart';
 
 /// The right screen for an instrument. Without an assignmentId an exercise is self-started.
@@ -20,13 +21,11 @@ Widget activityScreenFor(Instrument i, {String? assignmentId}) {
 Future<void> _finishExercise(BuildContext context, Instrument i, String? assignmentId, Map<String, Object?> result) async {
   final api = AppScope.api(context);
   final nav = Navigator.of(context);
-  if (assignmentId != null) {
-    await api.completeExercise(assignmentId, result);
-  } else {
-    await api.selfStart(i.id, result);
-  }
+  final sent = assignmentId != null
+      ? await api.completeExercise(assignmentId, result, title: i.name)
+      : await api.selfStart(i.id, result, title: i.name);
   nav.pushReplacement(MaterialPageRoute(
-    builder: (_) => const DoneScreen(message: 'Well done. Your psychologist can see you finished this.'),
+    builder: (_) => DoneScreen(message: sent ? 'Well done. Your psychologist can see you finished this.' : 'Well done. $keptOnPhone', kept: !sent),
   ));
 }
 
@@ -69,8 +68,9 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     final nav = Navigator.of(context);
     final visible = _visible;
     final payload = {for (final it in visible) if (_answered(it)) it.id: _answers[it.id]};
-    await api.completeQuestionnaire(widget.assignmentId, payload);
-    nav.pushReplacement(MaterialPageRoute(builder: (_) => const DoneScreen(message: 'Your answers have been sent to your psychologist.')));
+    final sent = await api.completeQuestionnaire(widget.assignmentId, payload, title: widget.instrument.name);
+    nav.pushReplacement(MaterialPageRoute(
+        builder: (_) => DoneScreen(message: sent ? 'Your answers have been sent to your psychologist.' : keptOnPhone, kept: !sent)));
   }
 
   @override
