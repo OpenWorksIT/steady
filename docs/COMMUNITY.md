@@ -40,7 +40,7 @@ These hold for everyone, admins included.
    No case details that together could point to one person. The welcome post says this first.
 4. **Study data only as totals.** When practices run studies together, results are shared here
    only as aggregates (counts, averages), never as individual records. That work is for later.
-5. **OpenWorks IT sees three areas only:** Announcements, the Steady manual and Steady development. Everywhere else it
+5. **OpenWorks IT sees four areas only:** Announcements, the Steady manual, the Science section and Steady development. Everywhere else it
    sees only numbers (how many topics, posts and active members), never titles or text.
 
 Rules 1 and 2, and the outside-services part of rule 5, are enforced by the forum's settings,
@@ -54,7 +54,7 @@ welcome post and the "If someone posts patient information" steps below back the
 |---|---|---|---|
 | Announcements | Read and reply | No | Read, post and reply |
 | Steady manual (how to use Steady, with screenshots) | Read and reply | Read and reply | Read, post and reply |
-| The science (how each part of Steady works and why, with references) | Read and reply | No | Numbers only |
+| The science (how each part of Steady works and why, with references) | Read and reply | No | Read and reply |
 | Clinical practice | Read, post and reply | No | Numbers only |
 | Research and studies | Read, post and reply | No | Numbers only |
 | Questionnaires and tools | Read, post and reply | No | Numbers only |
@@ -373,9 +373,9 @@ Nobody is invited; nobody chooses a forum password.
 
 OpenWorks staff choose Community in Steady with their OpenWorks support account on the test
 server (marked `support` in the bridge, `STEADY_COMMUNITY_SUPPORT=yes` in its `.env`, their
-address on the OpenWorks list) and land in `openworks` only: Announcements, the Steady manual and
-Steady development. They don't see the Science section, Clinical practice, Research and studies,
-Questionnaires and tools or the Tea room. Their support accounts on practices' servers have no
+address on the OpenWorks list) and land in `openworks` only: Announcements, the Steady manual,
+the Science section and Steady development. They don't see Clinical practice, Research and
+studies, Questionnaires and tools or the Tea room. Their support accounts on practices' servers have no
 Community tab. OpenWorks' address is never in
 `DISCOURSE_DEVELOPER_EMAILS` (an address listed there keeps some developer powers even without
 admin).

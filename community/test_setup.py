@@ -470,6 +470,13 @@ class SidebarTest(unittest.TestCase):
             self.assertEqual(forum.settings["default_navigation_menu_categories"], "5|6|7")
             self.assertEqual(len(sent), 1)                       # the second run changes nothing
             self.assertEqual(sent[0]["update_existing_user"], "true")
+            # a category just opened to another group goes out and back in, so existing
+            # members' side menus get it (Discourse fills them only when the setting changes)
+            with redirect_stdout(io.StringIO()):
+                setup.ensure_sidebar(api, {"announcements": 5, "clinical-practice": 6, "research-and-studies": 7}, {"clinical-practice"})
+            self.assertEqual([s["default_navigation_menu_categories"] for s in sent[1:]], ["5|7", "5|6|7"])
+            self.assertTrue(all(s["update_existing_user"] == "true" for s in sent[1:]))
+            self.assertEqual(forum.settings["default_navigation_menu_categories"], "5|6|7")
         finally:
             srv.shutdown()
             srv.server_close()
@@ -637,10 +644,12 @@ class PracticeAdminsTest(unittest.TestCase):
             api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
             manual = next(c for c in setup.CATEGORIES if c["slug"] == "manual")
             out = io.StringIO()
+            opened = set()
             with redirect_stdout(out):
-                setup.ensure_categories(api, [manual], {"clinicians", "practice-admins", "openworks"})
+                setup.ensure_categories(api, [manual], {"clinicians", "practice-admins", "openworks"}, opened)
                 problems = setup.lock_other_categories(api, {"announcements", "manual"})
             self.assertEqual(problems, [], out.getvalue())
+            self.assertEqual(opened, {"manual"}, "opened to practice-admins: their side menus get it")
             self.assertEqual(forum.cats[6][2], {"clinicians": 2, "practice-admins": 2, "openworks": 1})
             self.assertEqual(forum.cats[7][2], {"clinicians": 1})
             self.assertEqual(forum.cats[4][2], {"clinicians": 1})   # General: as before
