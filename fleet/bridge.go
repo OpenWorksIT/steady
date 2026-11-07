@@ -93,7 +93,9 @@ func (s *Store) CommunityPractices() (*CommunityPractices, error) {
 }
 
 // writeBridge: the bridge's list, in its own format, sorted so it changes only when something
-// does. The bridge rereads it within seconds.
+// does. The bridge rereads it within seconds. A practice with nobody approved yet is left out:
+// nobody could come in through it, and the bridge refuses a practice without addresses, which
+// would set aside the whole list (every other practice with it).
 func (s *Store) writeBridge(cp *CommunityPractices) error {
 	if err := os.MkdirAll(s.path("bridge"), 0o700); err != nil {
 		return err
@@ -106,6 +108,9 @@ func (s *Store) writeBridge(cp *CommunityPractices) error {
 	sort.Strings(ids)
 	for _, id := range ids {
 		p := cp.Practices[id]
+		if len(p.Approved) == 0 {
+			continue
+		}
 		emails := append([]string{}, p.Approved...)
 		sort.Strings(emails)
 		out = append(out, bridgePractice{ID: p.ID, Name: p.Name, URL: p.URL, Key: p.Key, Emails: emails, Groups: p.Groups, Support: p.OpenWorks})

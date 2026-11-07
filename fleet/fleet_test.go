@@ -109,6 +109,7 @@ type fakeSteady struct {
 	noAudit  map[string]any // when set: no results, and this as the check's timer (host.auditService)
 	comm     map[string]any // when set: the server's community block
 	commSet  []map[string]any
+	commOld  bool // Steady 1.2.0: takes the fleet view's setting but still says off
 }
 
 func newFakeSteady(t *testing.T) *fakeSteady {
@@ -153,7 +154,9 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 			json.NewDecoder(r.Body).Decode(&b)
 			f.mu.Lock()
 			f.commSet = append(f.commSet, b)
-			if b["on"] == true {
+			if b["on"] == true && f.commOld {
+				// stored, but 1.2.0 couldn't read it
+			} else if b["on"] == true {
 				if f.comm == nil {
 					f.comm = map[string]any{"members": []any{}}
 				}
@@ -1244,5 +1247,57 @@ func TestCommunityDisagreements(t *testing.T) {
 		if v.Level != c.level || !strings.Contains(v.Note, c.note) {
 			t.Errorf("%v: %+v", c.data, v)
 		}
+	}
+}
+
+// A practice with nobody approved stays off the bridge's list: the bridge refuses a practice
+// without addresses, and would set aside every other practice with it (1.2.0 on VR, before its
+// server could read the fleet view's setting).
+func TestEmptyPracticeOffTheBridge(t *testing.T) {
+	app, _, steady, _, dir := setup(t)
+	t.Setenv("FLEET_ACTOR", "tiaan")
+	writeJSON(dir+"/community.json", Community{URL: "https://community.steadyapp.co.za", StatsKey: strings.Repeat("5a", 32), Signin: "https://signin.steadyapp.co.za"})
+	// another practice the fleet view already runs, with someone approved
+	err := app.store.withCommunity(func(cp *CommunityPractices) (bool, error) {
+		cp.Practices["test"] = &CommunityPractice{ID: "test", Name: "Test", URL: "https://test.steadyapp.co.za", Key: strings.Repeat("k", 43), OpenWorks: true, Approved: []string{"test@openworks.co.za"}}
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// this server is on Steady 1.2.0: it says off, with nobody
+	steady.mu.Lock()
+	steady.comm = map[string]any{"on": false, "fleet": true, "members": []any{}}
+	steady.commOld = true
+	steady.mu.Unlock()
+	var out strings.Builder
+	if err := communityCmd(app.store, []string{"127.0.0.1", "on", "--approve-all", "--yes"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"still says the community is off", "Update it, then run this again", "Nobody is approved yet, so the sign-in bridge doesn't list"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in:\n%s", want, out.String())
+		}
+	}
+	var bridge []bridgePractice
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 1 || bridge[0].ID != "test" {
+		t.Fatalf("bridge file: %+v", bridge)
+	}
+	// updated, the practice has its master psychologist in: on again, and on the list
+	steady.mu.Lock()
+	steady.comm = map[string]any{"on": true, "fleet": true, "members": []any{map[string]any{"email": "kempie@vrpsych.co.za", "name": "Dr Kempie", "role": "clinician"}}}
+	steady.commOld = false
+	steady.mu.Unlock()
+	out.Reset()
+	if err := communityCmd(app.store, []string{"127.0.0.1", "on", "--approve-all", "--yes"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "still says") || strings.Contains(out.String(), "Nobody is approved") || !strings.Contains(out.String(), "Approved now: kempie@vrpsych.co.za") {
+		t.Fatalf("second time:\n%s", out.String())
+	}
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 2 {
+		t.Fatalf("bridge file: %+v", bridge)
 	}
 }
