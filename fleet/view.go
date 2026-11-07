@@ -37,7 +37,7 @@ func str(v any) string {
 // Row is one server on the overview.
 type Row struct {
 	Index                     int
-	Name, URL, Domain         string
+	Name, URL, Domain, Short  string // Short: the name fleet.sh takes ("vr")
 	Level                     string // good, slow, struggling, down
 	Health                    string
 	Version, VersionNote      string
@@ -92,7 +92,7 @@ func bytesText(b float64) string {
 }
 
 func makeRow(i int, st *Status, now time.Time) Row {
-	r := Row{Index: i, Name: st.Server.Name, URL: st.Server.URL}
+	r := Row{Index: i, Name: st.Server.Name, URL: st.Server.URL, Short: st.Server.ShortName()}
 	r.Domain = strings.TrimPrefix(strings.TrimPrefix(st.Server.URL, "https://"), "http://")
 	r.Checked = ago(st.At, now)
 	if st.Err != "" || st.Data == nil {
@@ -120,7 +120,7 @@ func makeRow(i int, st *Status, now time.Time) Row {
 	}
 	// version: what it runs, as people read it, and whether a newer signed release is waiting
 	r.Version = versionText(d)
-	// the buttons need the server's in-app updates (deploy/ctl/install.sh)
+	// the commands need the server's in-app updates (deploy/ctl/install.sh)
 	r.CanAct = get(d, "version", "managed") == true
 	if b, ok := num(get(d, "version", "behind")); ok && b > 0 {
 		r.Behind = true
@@ -231,6 +231,8 @@ func facts(st *Status, now time.Time) []Fact {
 		{"Staff sign-in by email code", yesNo(get(d, "signIn", "linkedDevices"))},
 		{"Deletion requests waiting", intText(get(d, "counts", "deletionRequests"))},
 		{"Operator agreement", agreementText(get(d, "operatorAgreement"))},
+		{"Feedback waiting", feedbackText(d, now)},
+		{"OpenWorks support accounts", intText(get(d, "counts", "supportAccounts"))},
 	}
 	if lu, ok := d["lastUpdate"].(map[string]any); ok {
 		res := "worked"
@@ -247,6 +249,26 @@ func facts(st *Status, now time.Time) []Fact {
 		f = append(f, Fact{"Last restart", ago(parseTime(lr["at"]), now) + ", " + res})
 	}
 	return f
+}
+
+// feedbackText: how many reports wait and since when, never what they say (the practice reads
+// them in Settings > Practice; OpenWorks with deploy/feedback.sh on the server).
+func feedbackText(d map[string]any, now time.Time) string {
+	n := get(d, "counts", "feedbackNew")
+	if n == nil {
+		return "?"
+	}
+	if f, _ := n.(float64); f == 0 {
+		return "none"
+	}
+	t := intText(n) + " new"
+	if b, _ := get(d, "counts", "feedbackNewBugs").(float64); b > 0 {
+		t += fmt.Sprintf(" (%d bug report%s)", int(b), map[bool]string{true: "", false: "s"}[b == 1])
+	}
+	if at := parseTime(d["feedbackOldestNew"]); !at.IsZero() {
+		t += ", the oldest " + ago(at, now)
+	}
+	return t
 }
 
 func msText(v any) string {
@@ -494,7 +516,11 @@ type ChecksPage struct {
 	Passed    int
 }
 
-func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time) ChecksPage {
+func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time, cp ...*CommunityPractices) ChecksPage {
+	var runs *CommunityPractices
+	if len(cp) > 0 {
+		runs = cp[0]
+	}
 	var p ChecksPage
 	// OpenWorks' own services first: the fleet view and the sign-in bridge running other code
 	// than their release
@@ -533,6 +559,21 @@ func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time) ChecksPage {
 			sc.Checked, sc.Summary, sc.SummaryClass = row.Checked, "can't be reached", "bad"
 			p.Servers = append(p.Servers, sc.withBar())
 			continue
+		}
+		// feedback nobody has looked at for a week (counts only: never what it says)
+		if n, _ := get(st.Data, "counts", "feedbackNew").(float64); n > 0 {
+			if at := parseTime(st.Data["feedbackOldestNew"]); !at.IsZero() && now.Sub(at) > 7*24*time.Hour {
+				add("warn", "Feedback", fmt.Sprintf("%d feedback report(s) waiting, the oldest %s: the practice reads them in Settings > Practice; OpenWorks with sudo ./feedback.sh on the server", int(n), ago(at, now)), row.Checked)
+			}
+		}
+		// OpenWorks' own accounts aren't needed on a practice's server any more (the fleet resets passwords)
+		if n, _ := get(st.Data, "counts", "supportAccounts").(float64); n > 0 && st.Data["openworksServer"] != true {
+			add("warn", "Accounts", fmt.Sprintf("%d OpenWorks support account(s) on a practice's server: no longer needed, since passwords are reset from the fleet view. Stop each one there: sudo ./accounts.sh set <its email> active off", int(n)), row.Checked)
+		}
+		// the community: names waiting for OpenWorks' approval, and the fleet view and the server
+		// disagreeing about whether it's on
+		if v := makeServerCommunity(st, runs); v.Note != "" {
+			add(v.Level, "Community", v.Note, row.Checked)
 		}
 		// a practice server on an older signed release (a server following a branch is left alone)
 		if row.Behind && get(st.Data, "version", "signed") != false {
@@ -592,4 +633,42 @@ func (sc ServerChecks) withBar() ServerChecks {
 	sc.LookX = sc.FixW
 	sc.LookW = fmt.Sprintf("%.2f", pct(sc.Look))
 	return sc
+}
+
+// ServerCommunity: one server's part in the community, for its page and for Checks.
+type ServerCommunity struct {
+	On, Fleet bool     // on at the server; run from the fleet view (not .env)
+	Approved  int      // staff OpenWorks approved
+	Waiting   []Member // staff the practice put in, waiting for OpenWorks
+	Short     string
+	Level     string // warn or fail, with Note, when something wants doing
+	Note      string
+}
+
+func makeServerCommunity(st *Status, runs *CommunityPractices) ServerCommunity {
+	v := ServerCommunity{Short: st.Server.ShortName()}
+	if st.Err != "" || st.Data == nil || st.Data["community"] == nil {
+		return v
+	}
+	on, fleet, members := communityOf(st.Data)
+	v.On, v.Fleet = on, fleet
+	var pr *CommunityPractice
+	if runs != nil {
+		pr = runs.Practices[v.Short]
+	}
+	if pr != nil {
+		v.Approved = len(pr.Approved)
+		v.Waiting = pending(pr, members)
+	}
+	switch {
+	case pr != nil && !on:
+		v.Level, v.Note = "fail", "the fleet view runs this practice's community, but the server says it's off (a restored backup?): fleet community "+v.Short+" on"
+	case pr == nil && on && fleet:
+		v.Level, v.Note = "fail", "the server has a community key from the fleet view that the fleet view no longer runs: fleet community "+v.Short+" off, or on again"
+	case pr == nil && on:
+		v.Level, v.Note = "warn", "its community runs from .env lines and the bridge's config.json: move it to the fleet view with fleet community "+v.Short+" on --approve-all, then remove those lines and its entry"
+	case len(v.Waiting) > 0:
+		v.Level, v.Note = "warn", fmt.Sprintf("%d staff waiting for OpenWorks' approval: fleet community %s people", len(v.Waiting), v.Short)
+	}
+	return v
 }

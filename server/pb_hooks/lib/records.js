@@ -39,8 +39,8 @@ function patientRecord(app, p, fromMs, toMs, opts) {
   var asg = app.findRecordsByFilter("assignments", "patient = {:p} && status = 'done' && completedAt >= {:a} && completedAt <= {:b}", "completedAt", 20000, 0, { p: p.id, a: a, b: b });
   var pending = app.findRecordsByFilter("assignments", "patient = {:p} && status = 'pending'", "", 1000, 0, { p: p.id }).length;
 
-  var checkins = cks.map(function (r) {
-    var row = { at: iso(s.toMs(r, "created")), mood: r.getInt("mood"), anxiety: r.getInt("anxiety"), sleep: r.getInt("sleep"), energy: r.getInt("energy") };
+  var checkins = cks.slice().sort(function (x, y) { return s.answeredMs(x) - s.answeredMs(y); }).map(function (r) {
+    var row = { at: iso(s.answeredMs(r)), mood: r.getInt("mood"), anxiety: r.getInt("anxiety"), sleep: r.getInt("sleep"), energy: r.getInt("energy") };
     if (opts.notes !== false) row.note = r.getString("note");
     return row;
   });
@@ -97,7 +97,7 @@ function patientRecord(app, p, fromMs, toMs, opts) {
   });
 
   var flagCheckins = cks.map(function (r) {
-    return { ts: s.toMs(r, "created"), mood: r.getInt("mood"), anxiety: r.getInt("anxiety"), sleep: r.getInt("sleep"), energy: r.getInt("energy") };
+    return { ts: s.answeredMs(r), mood: r.getInt("mood"), anxiety: r.getInt("anxiety"), sleep: r.getInt("sleep"), energy: r.getInt("energy") };
   });
   var flags = core.reviewFlags(flagCheckins, rowsForFlags, Math.min(toMs, s.nowMs()));
 

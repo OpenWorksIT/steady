@@ -5,9 +5,13 @@ import '../../app_state.dart';
 import '../widgets.dart';
 import 'done_screen.dart';
 
-/// The four questions and a few words. [onSent] runs after the check-in is saved.
+/// What the patient is told when an answer was kept on the phone (the practice couldn't be reached).
+const keptOnPhone = 'Saved on this phone. Steady sends it to your psychologist as soon as it can reach the practice.';
+
+/// The four questions and a few words. [onSent] runs after the check-in is saved: [sent] is
+/// false when the practice couldn't be reached and it was kept on the phone to send later.
 class CheckinForm extends StatefulWidget {
-  final Future<void> Function() onSent;
+  final Future<void> Function(bool sent) onSent;
   final String sendLabel;
   final bool showCrisis;
   const CheckinForm({required this.onSent, this.sendLabel = 'Send to my psychologist', this.showCrisis = true, super.key});
@@ -34,14 +38,14 @@ class _CheckinFormState extends State<CheckinForm> {
   bool get _ready => _questions.every((q) => _scores[q.$1] != null);
 
   Future<void> _send() async {
-    await AppScope.api(context).addCheckin(
+    final sent = await AppScope.api(context).addCheckin(
       mood: _scores['mood']!,
       anxiety: _scores['anxiety']!,
       sleep: _scores['sleep']!,
       energy: _scores['energy']!,
       note: _note.text.trim(),
     );
-    await widget.onSent();
+    await widget.onSent(sent);
   }
 
   @override
@@ -84,9 +88,9 @@ class CheckinScreen extends StatelessWidget {
         appBar: AppBar(title: const Text('Check-in')),
         body: SafeArea(
           child: CheckinForm(
-            onSent: () async {
-              Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => const DoneScreen(message: 'Your check-in has been sent to your psychologist.')));
+            onSent: (sent) async {
+              Navigator.of(context).pushReplacement(MaterialPageRoute(
+                  builder: (_) => DoneScreen(message: sent ? 'Your check-in has been sent to your psychologist.' : keptOnPhone, kept: !sent)));
             },
           ),
         ),

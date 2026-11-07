@@ -30,18 +30,26 @@
 {{end}}</tbody></table></div></details>{{end}}
 {{end}}
 
-<h2>Actions</h2>
-{{if .Row.CanAct}}
-<div class="actions">
-<form method="post" action="/s/{{.Row.Index}}/action"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="check">
-<button class="secondary">Check for updates</button><span class="muted">Looks for a newer signed release. Changes nothing.</span></form>
-<form method="post" action="/s/{{.Row.Index}}/action"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="update">
-<label><span>To confirm, type <strong>{{.Row.Name}}</strong></span><input name="confirm" autocomplete="off" required></label>
-<button>Update</button><span class="muted">Saves a copy of the data, then installs the latest release signed by OpenWorks. A few minutes; patients may see "can't reach the server" briefly.</span></form>
-<form method="post" action="/s/{{.Row.Index}}/action"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="restart">
-<label><span>To confirm, type <strong>{{.Row.Name}}</strong></span><input name="confirm" autocomplete="off" required></label>
-<button class="danger">Restart Steady</button><span class="muted">Restarts Steady's containers on that server (not the whole server). Under a minute.</span></form>
-</div>
-{{else if .Row.Err}}<p class="muted">The buttons come back once the server answers.</p>{{else}}<p class="muted">In-app updates aren't set up on this server (sudo ./ctl/install.sh in its deploy folder), so the fleet view can only look.</p>{{end}}
+<h2 id="community">Community</h2>
+{{with .Community}}
+{{if .On}}<p>On{{if .Fleet}}, run from the fleet view{{else}}, from .env lines (not yet run from the fleet view){{end}}. {{.Approved}} staff approved{{with .Waiting}}, <strong>{{len .}} waiting for approval</strong>{{end}}.</p>
+{{else}}<p class="muted">Off.{{if $.Dev}} To switch it on: <code>sudo /opt/steady-ops/fleet/fleet.sh community {{.Short}} on</code>{{end}}</p>{{end}}
+{{if .Note}}<p class="{{if eq .Level "fail"}}error{{else}}warn{{end}}">{{.Note}}</p>{{end}}
+{{with .Waiting}}<div class="table"><table><thead><tr><th>Waiting</th><th>Email</th><th>Role</th></tr></thead><tbody>
+{{range .}}<tr><td>{{.Name}}</td><td>{{.Email}}</td><td>{{.Role}}</td></tr>
+{{end}}</tbody></table></div>
+{{if $.Dev}}<pre class="cmd">{{range .}}sudo /opt/steady-ops/fleet/fleet.sh community {{$.Community.Short}} approve {{.Email}}
+{{end}}</pre>{{end}}{{end}}
+{{end}}
+<h2 id="changes">Changes</h2>
+{{if .Dev}}
+<p class="muted">The fleet view only looks. Changes are made over SSH on vps1, and the log says who made them:</p>
+<pre class="cmd">sudo /opt/steady-ops/fleet/fleet.sh check {{.Row.Short}}     # looks for a newer signed release; changes nothing
+sudo /opt/steady-ops/fleet/fleet.sh update {{.Row.Short}}    # saves a copy of the data, then installs the latest signed release
+sudo /opt/steady-ops/fleet/fleet.sh restart {{.Row.Short}}   # restarts Steady's containers (not the whole server)</pre>
+{{if .Row.Err}}<p class="muted">They work once the server answers again.</p>{{else if not .Row.CanAct}}<p class="muted">In-app updates aren't set up on this server (<code>sudo ./ctl/install.sh</code> in its deploy folder), so these commands can't reach it yet.</p>{{end}}
+{{else}}
+<p class="muted">The fleet view only looks. OpenWorks' devs make changes to servers over SSH.</p>
+{{end}}
 </main>
 {{template "end"}}

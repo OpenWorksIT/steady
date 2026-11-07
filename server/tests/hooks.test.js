@@ -332,13 +332,18 @@ function makeRuntime(opts = {}) {
   function create(collection, auth, data) {
     const rec = new Record(collections[collection], {});
     Object.keys(data).forEach((k) => rec.set(k, data[k]));
-    const e = { auth, app, record: rec, collection: collections[collection], realIP: () => "127.0.0.1", next: () => app.save(rec) };
+    let answered = null;
+    const e = { auth, app, record: rec, collection: collections[collection], realIP: () => "127.0.0.1", next: () => app.save(rec),
+      requestInfo: () => ({ body: data || {} }),
+      json: (status, body) => { answered = { status, data: body }; return answered; } };
     try {
       if (hooks.createRequest[collection]) hooks.createRequest[collection](e); else app.save(rec);
     } catch (err) {
       if (err && err.status) return { status: err.status, error: err.message, data: err.data };
       throw err;
     }
+    // a hook that answered itself (an outbox's check-in sent twice) saved nothing
+    if (answered) return answered;
     return { status: 200, record: rec };
   }
 
@@ -509,6 +514,86 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   assert.equal(rt.call("POST", "/api/steady/self-start", { auth: pat, body: { instrument: box.id, result: {} } }).status, 403);
   assert.ok(rt.store.assignments.filter((a) => a.getString("patient") === pat.id && a.getString("status") === "pending").length === 0);
 });
+
+test("answers kept on the phone while offline arrive once, with the time they were given", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
+  const pat = rt.makeUser({ name: "Lee", role: "patient", clinician: doc.id, active: true, tzOffset: 120, email: "lee@example.org" });
+  const cid = "abcdefghij12345";
+
+  // a check-in answered 4 hours ago, sent now; then the same one sent again (the reply was lost)
+  const four = rt.now() - 4 * 3600e3;
+  const first = rt.create("checkins", pat, { patient: pat.id, mood: 2, anxiety: 3, sleep: 3, energy: 3, clientId: cid, waited: 4 * 3600 });
+  assert.equal(first.status, 200, JSON.stringify(first));
+  assert.equal(s_ms(first.record, "answeredAt"), four);
+  const again = rt.create("checkins", pat, { patient: pat.id, mood: 2, anxiety: 3, sleep: 3, energy: 3, clientId: cid, waited: 4 * 3600 + 2 });
+  assert.equal(again.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(again.data)), { id: first.record.id, duplicate: true });
+  assert.equal(rt.store.checkins.length, 1, "stored once");
+  const n = rt.store.notifications.filter((x) => x.getString("kind") === "checkin");
+  assert.equal(n.length, 1, "one notification");
+  assert.match(n[0].getString("body"), /answered 4 h before it arrived/);
+  // another patient's phone with the same id is a different check-in
+  const pat2 = rt.makeUser({ name: "Sam", role: "patient", clinician: doc.id, active: true, tzOffset: 120, email: "sam@example.org" });
+  assert.equal(rt.create("checkins", pat2, { patient: pat2.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, clientId: cid }).status, 200);
+  assert.equal(rt.store.checkins.length, 2);
+  // an id the app doesn't make is refused; so is a wait of more than 30 days; a negative one is ignored
+  assert.equal(rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, clientId: "Not-Ours" }).status, 400);
+  const old = rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, waited: 31 * 86400 });
+  assert.equal(old.status, 400);
+  assert.match(old.error, /more than 30 days/);
+  const odd = rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, waited: -50, answeredAt: "2020-01-01 00:00:00.000Z" });
+  assert.equal(odd.record.getString("answeredAt"), "", "the phone can't set the time directly");
+  // the psychologist's summary orders by when it was answered: the one from 4 hours ago isn't the latest
+  const sum = rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc });
+  assert.equal(sum.status, 200);
+  assert.equal(sum.data.lastCheckin.ts, rt.now());
+
+  // a questionnaire finished on the phone yesterday evening, sent this morning, sent twice
+  const phq = rt.store.instruments.find((r) => r.getString("key") === "phq9");
+  const as = rt.create("assignments", doc, { patient: pat.id, clinician: doc.id, instrument: phq.id, repeat: "daily", completionId: "zzzzzzzzzzzzzzz" });
+  assert.equal(as.status, 200);
+  assert.equal(as.record.getString("completionId"), "", "a psychologist can't set the phone's id");
+  const answers = { phq9_1: 1, phq9_2: 1, phq9_3: 0, phq9_4: 0, phq9_5: 0, phq9_6: 0, phq9_7: 0, phq9_8: 0, phq9_9: 0 };
+  const evening = rt.now() - 14 * 3600e3;
+  const body = { answers, clientId: "qqqqqqqqqqqqqqq", waited: 14 * 3600 };
+  const done = rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body });
+  assert.equal(done.status, 200, JSON.stringify(done));
+  assert.equal(s_ms(rt.app.findRecordById("assignments", as.record.id), "completedAt"), evening);
+  const dup = rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body });
+  assert.equal(dup.status, 200);
+  assert.equal(dup.data.duplicate, true);
+  assert.equal(rt.store.notifications.filter((x) => x.getString("kind") === "completed").length, 1);
+  assert.match(rt.store.notifications.find((x) => x.getString("kind") === "completed").getString("body"), /answered 14 h before it arrived/);
+  // a different finish of the same one is still refused
+  assert.equal(rt.call("POST", `/api/steady/assignments/${as.record.id}/complete`, { auth: pat, body: { answers, clientId: "rrrrrrrrrrrrrrr" } }).status, 400);
+  // the daily repeat counts from when it was answered: one daily instance, available from today
+  const next = rt.store.assignments.filter((a) => a.getString("instrument") === phq.id && a.getString("status") === "pending");
+  assert.equal(next.length, 1);
+  // withdrawn while the phone was offline: a clear answer, nothing saved
+  const as2 = rt.create("assignments", doc, { patient: pat.id, clinician: doc.id, instrument: phq.id });
+  rt.app.findRecordById("assignments", as2.record.id).set("status", "cancelled");
+  const gone = rt.call("POST", `/api/steady/assignments/${as2.record.id}/complete`, { auth: pat, body: { answers, clientId: "sssssssssssssss" } });
+  assert.equal(gone.status, 400);
+  assert.match(gone.error, /withdrew/);
+
+  // an exercise the patient started themselves, sent twice
+  const box = rt.store.instruments.find((r) => r.getString("key") === "box-breathing");
+  const ex = { instrument: box.id, result: { rounds: 4, seconds: 64 }, clientId: "bbbbbbbbbbbbbbb", waited: 3600 };
+  const s1 = rt.call("POST", "/api/steady/self-start", { auth: pat, body: ex });
+  assert.equal(s1.status, 200, JSON.stringify(s1));
+  const s2 = rt.call("POST", "/api/steady/self-start", { auth: pat, body: ex });
+  assert.equal(s2.status, 200);
+  assert.equal(s2.data.duplicate, true);
+  assert.equal(s2.data.id, s1.data.id);
+  assert.equal(rt.store.assignments.filter((a) => a.getString("instrument") === box.id).length, 1);
+  assert.equal(s_ms(rt.app.findRecordById("assignments", s1.data.id), "completedAt"), rt.now() - 3600e3);
+});
+
+function s_ms(rec, field) {
+  const v = rec.getString(field);
+  return v ? Date.parse(v.replace(" ", "T")) : 0;
+}
 
 test("expired invites are refused", () => {
   const rt = makeRuntime({ env: ENV });
@@ -2244,7 +2329,7 @@ test("community: a signed note for the sign-in bridge, for psychologists, practi
   const KEY = "k".repeat(20) + "-community-key-0123";
   const R = "/api/steady/community/sign-in";
   const SET = { STEADY_COMMUNITY_URL: "https://community.example.org", STEADY_COMMUNITY_SIGNIN: "https://Signin.Example.org/", STEADY_COMMUNITY_KEY: KEY };
-  const two = { totpEnabledAt: "2026-01-01 00:00:00.000Z", totpSecret: "JBSWY3DPEHPK3PXP" };
+  const two = { totpEnabledAt: "2026-01-01 00:00:00.000Z", totpSecret: "JBSWY3DPEHPK3PXP", community: true };
   const people = (rt) => ({
     doc: rt.makeUser(Object.assign({ name: "Dr Kempie", role: "clinician", active: true, email: "Kempie@Example.org" }, two)),
     sup: rt.makeUser(Object.assign({ name: "OpenWorks", role: "support", active: true, email: "it@example.org" }, two)),
@@ -2411,4 +2496,135 @@ test("changing your own email: the password, a code sent to the new address, the
   assert.match(quiet.call("POST", "/api/steady/me/email", { auth: q, body: { email: "q2@example.org", password: "pw" } }).error, /can't send email/);
   // and patients can't set the field themselves through the API
   assert.ok(/emailChange:isset = false/.test(String(rt.app.findCollectionByNameOrId("users").updateRule)), "the users update rule refuses emailChange");
+});
+
+test("fleet view: a staff password reset that only the person can finish, and feedback as counts only", () => {
+  const FLEET = "fleet-key-0123456789abcdefgh";
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: FLEET, STEADY_SMTP_HOST: "mail.test", STEADY_MAIL_FROM: "noreply@steadyapp.co.za" }) });
+  const master = rt.makeUser({ name: "Dr Master", role: "clinician", master: true, active: true, email: "master@example.org", passwordHash: "pw:m" });
+  const doc = rt.makeUser({ name: "Dr Two", role: "clinician", active: true, email: "two@example.org", passwordHash: "pw:old-password", totpSecret: "SECRET", totpEnabledAt: "2026-11-01 10:00:00.000Z" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "pat@example.org" });
+  rt.makeUser({ name: "OpenWorks support", role: "support", active: true, email: "support@openworks.co.za" });
+  rt.makeRecord("feedback", { kind: "bug", message: "a private message about a patient", status: "new", who: doc.id });
+  rt.makeRecord("feedback", { kind: "love", message: "lovely", status: "new", who: doc.id });
+  rt.makeRecord("feedback", { kind: "bug", message: "old", status: "done", who: doc.id });
+  const F = { "X-Steady-Fleet": FLEET };
+  const reset = (body, headers) => rt.call("POST", "/api/steady/fleet/reset", { headers: headers === undefined ? F : headers, body });
+
+  // the summary: how many reports wait, never what they say; OpenWorks' accounts counted
+  const sum = rt.call("GET", "/api/steady/fleet", { headers: F });
+  assert.equal(sum.status, 200);
+  assert.equal(sum.data.counts.feedbackNew, 2);
+  assert.equal(sum.data.counts.feedbackNewBugs, 1);
+  assert.ok(sum.data.feedbackOldestNew);
+  assert.equal(sum.data.counts.supportAccounts, 1);
+  assert.equal(sum.data.openworksServer, false);
+  assert.ok(!JSON.stringify(sum.data).includes("private message"), "no feedback text");
+
+  // only with the fleet key, only staff
+  assert.equal(reset({ email: "two@example.org" }, {}).status, 404);
+  assert.equal(reset({ email: "two@example.org" }, { "X-Steady-Fleet": "wrong-key-0123456789abcdefg" }).status, 404);
+  assert.equal(reset({ email: "nobody@example.org" }).status, 404);
+  assert.match(reset({ email: "pat@example.org" }).error, /Patients' passwords/);
+  assert.equal(pat.getBool("mustChangePassword"), false);
+
+  const before = rt.mails.length;
+  const r = reset({ email: "TWO@example.org", twoStep: true });
+  assert.equal(r.status, 200, JSON.stringify(r));
+  assert.ok(r.data.temporaryPassword && r.data.temporaryPassword.length >= 10);
+  assert.equal(r.data.emailedTo, "t***@example.org");
+  assert.equal(doc.getBool("mustChangePassword"), true);
+  assert.equal(doc.getBool("emailCodeNeeded"), true, "it finishes only with the emailed code");
+  assert.equal(doc.getString("totpSecret"), "", "two-step cleared on request");
+  const toPerson = rt.mails.slice(before).find((m) => m.to[0].address === "two@example.org" && /finish a password reset/.test(m.subject));
+  assert.ok(toPerson, "the code goes to the person");
+  assert.ok(!toPerson.text.includes(r.data.temporaryPassword), "never the temporary password by email");
+  const code = /^\s+(\d{6})$/m.exec(toPerson.text)[1];
+  assert.ok(rt.mails.slice(before).some((m) => m.to[0].address === "master@example.org" && /OpenWorks reset a password/.test(m.subject)), "the master psychologist is told");
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "fleet.account.reset-password" && a.getString("target").startsWith("user:" + doc.id)), "in the access log");
+
+  // the temporary password alone doesn't finish it; with the code it does
+  const tmp = r.data.temporaryPassword;
+  doc.setPassword(tmp);
+  const change = (emailCode) => rt.call("POST", "/api/steady/me/password", { auth: doc, body: { password: tmp, newPassword: "a brand new password", emailCode } });
+  assert.match(change("").error, /Enter the code/);
+  assert.match(change("000000").error, /didn't work/);
+  assert.equal(change(code).status, 200);
+  assert.equal(doc.getBool("mustChangePassword"), false);
+
+  // a server that can't send email refuses: the dev resets on the server instead
+  const quiet = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: FLEET }) });
+  quiet.makeUser({ name: "Dr Q", role: "clinician", active: true, email: "q@example.org" });
+  assert.match(quiet.call("POST", "/api/steady/fleet/reset", { headers: F, body: { email: "q@example.org" } }).error, /can't send email/);
+
+  // five an hour, then no more
+  for (let i = 0; i < 4; i++) assert.equal(reset({ email: "master@example.org" }).status, 200);
+  assert.equal(reset({ email: "master@example.org" }).status, 429);
+});
+
+test("community run from the fleet view: settings it sends, the master psychologist's switch, members for approval", () => {
+  const FLEET = "fleet-key-0123456789abcdefgh";
+  const KEY = "f".repeat(20) + "-fleet-community-key";
+  const R = "/api/steady/community/sign-in";
+  const F = { "X-Steady-Fleet": FLEET };
+  const two = { totpEnabledAt: "2026-01-01 00:00:00.000Z", totpSecret: "JBSWY3DPEHPK3PXP" };
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: FLEET }) });
+  const master = rt.makeUser(Object.assign({ name: "Dr Kempie", role: "clinician", master: true, active: true, email: "kempie@vrpsych.co.za" }, two));
+  const doc = rt.makeUser(Object.assign({ name: "Dr Two", role: "clinician", active: true, email: "two@vrpsych.co.za" }, two));
+  const adm = rt.makeUser(Object.assign({ name: "Front Desk", role: "admin", active: true, email: "desk@vrpsych.co.za" }, two));
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "pat@example.org" });
+  const set = (body, headers) => rt.call("POST", "/api/steady/fleet/community", { headers: headers === undefined ? F : headers, body });
+  const sum = () => rt.call("GET", "/api/steady/fleet", { headers: F }).data;
+  const on = { on: true, forum: "https://community.steadyapp.co.za", signin: "https://signin.steadyapp.co.za", key: KEY };
+
+  // nothing set: no community, no tab
+  assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "");
+  assert.equal(rt.call("POST", R, { auth: master }).status, 404);
+  assert.equal(sum().community.on, false);
+
+  // only the fleet key sets it, and only something that would work
+  assert.equal(set(on, {}).status, 404);
+  assert.equal(set(on, { "X-Steady-Fleet": "nope-nope-nope-nope-nope-nope" }).status, 404);
+  assert.equal(set(Object.assign({}, on, { key: "short" })).status, 400);
+  assert.equal(set(Object.assign({}, on, { signin: "http://signin.steadyapp.co.za" })).status, 400);
+  assert.equal(set(on).status, 200);
+  assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "https://community.steadyapp.co.za");
+  assert.equal(rt.call("GET", "/api/steady/config").data.communitySupport, false);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "fleet.community.on"));
+
+  // the master psychologist puts people in: until then, they're asked to ask
+  assert.match(rt.call("POST", R, { auth: doc }).error, /hasn't added you to the community/);
+  const sw = (who, user, value) => rt.call("POST", "/api/steady/practice/community", { auth: who, body: { user: user.id, on: value } });
+  assert.equal(sw(doc, doc, true).status, 403, "not every psychologist: the master");
+  assert.equal(sw(master, pat, true).status, 400, "staff only");
+  assert.equal(sw(master, doc, true).status, 200);
+  assert.equal(sw(master, master, true).status, 200);
+  assert.equal(sw(master, adm, true).status, 200);
+  assert.equal(doc.getBool("community"), true);
+  assert.equal(rt.call("POST", R, { auth: doc }).status, 200, "in: the note is signed with the fleet's key");
+  // nobody puts themselves in through the API
+  assert.match(String(rt.app.findCollectionByNameOrId("users").updateRule), /community:isset = false/);
+
+  // the fleet view sees who's in, to approve: names, emails and roles of staff only
+  const m = sum().community;
+  assert.equal(m.on, true);
+  assert.equal(m.fleet, true);
+  assert.deepEqual(m.members.map((x) => x.email).sort(), ["desk@vrpsych.co.za", "kempie@vrpsych.co.za", "two@vrpsych.co.za"]);
+  assert.ok(!JSON.stringify(m).includes("pat@example.org"));
+  assert.ok(!JSON.stringify(sum()).includes(KEY), "the key never comes back");
+
+  // taken out again: out of the members, and refused
+  assert.equal(sw(master, doc, false).status, 200);
+  assert.ok(!sum().community.members.some((x) => x.email === "two@vrpsych.co.za"));
+  assert.match(rt.call("POST", R, { auth: doc }).error, /hasn't added you/);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "practice.community" && a.getString("target").startsWith("user:" + doc.id)));
+
+  // OpenWorks' own server: marked by the fleet view, not .env
+  assert.equal(set(Object.assign({}, on, { openworks: true })).status, 200);
+  assert.equal(rt.call("GET", "/api/steady/config").data.communitySupport, true);
+  assert.equal(sum().openworksServer, true);
+  // switched off: gone, whatever .env says
+  assert.equal(set({ on: false }).status, 200);
+  assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "");
+  assert.equal(rt.call("POST", R, { auth: master }).status, 404);
 });

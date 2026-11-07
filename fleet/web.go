@@ -1,11 +1,10 @@
 // The fleet view's pages: sign-in (name, password, authenticator code), the overview of every
-// practice server, one server's detail with Check / Update / Restart, the checks, the audit log,
+// practice server, one server's detail (and, for devs, the SSH commands that change it), the checks, the audit log,
 // and OpenWorks' to-do list (todo_web.go).
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
 
 import (
-	"context"
 	"crypto/subtle"
 	"embed"
 	"html/template"
@@ -58,7 +57,6 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("POST /logout", a.signedIn(a.logout))
 	mux.HandleFunc("GET /{$}", a.signedIn(a.overview))
 	mux.HandleFunc("GET /s/{n}", a.signedIn(a.detail))
-	mux.HandleFunc("POST /s/{n}/action", a.signedIn(a.action))
 	mux.HandleFunc("GET /audit", a.signedIn(a.audit))
 	mux.HandleFunc("GET /checks", a.signedIn(a.checks))
 	mux.HandleFunc("GET /todo", a.signedIn(a.todo))
@@ -169,6 +167,8 @@ func (a *App) signedIn(h handler) http.HandlerFunc {
 			if u, err := a.store.User(s.User); err != nil || u == nil {
 				a.sessions.End(c.Value)
 				s = nil
+			} else {
+				s.Dev = u.IsDev()
 			}
 		}
 		if s == nil {
@@ -340,7 +340,9 @@ func (a *App) detail(w http.ResponseWriter, r *http.Request, s *Session) {
 	now := a.now()
 	msg := a.sessions.TakeFlash(s)
 	w.Header().Set("Refresh", "60; url=/s/"+strconv.Itoa(n)+"?auto=1")
-	a.render(w, "detail.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Row": makeRow(n, st, now), "Facts": facts(st, now), "Msg": msg})
+	cp, _ := a.store.CommunityPractices()
+	a.render(w, "detail.html", map[string]any{"User": s.User, "Dev": s.Dev, "CSRF": s.CSRF, "Row": makeRow(n, st, now), "Facts": facts(st, now), "Msg": msg,
+		"Community": makeServerCommunity(st, cp)})
 }
 
 // checks: every server's security and privacy checks, by severity (makeChecks).
@@ -348,40 +350,8 @@ func (a *App) checks(w http.ResponseWriter, r *http.Request, s *Session) {
 	sts, _ := a.poller.Snapshot()
 	now := a.now()
 	w.Header().Set("Refresh", "60; url=/checks?auto=1")
-	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, a.poller.CommunitySnapshot(), now)})
-}
-
-var actions = map[string]string{"check": "check for updates", "update": "install the latest signed release", "restart": "restart Steady"}
-
-func (a *App) action(w http.ResponseWriter, r *http.Request, s *Session) {
-	st, n, ok := a.server(r)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	back := "/s/" + strconv.Itoa(n)
-	act := r.PostFormValue("action")
-	what, known := actions[act]
-	if !known {
-		http.Error(w, "unknown action", http.StatusBadRequest)
-		return
-	}
-	if act != "check" && r.PostFormValue("confirm") != st.Server.Name {
-		a.sessions.SetFlash(s, "Type the practice's name exactly to "+what+".")
-		http.Redirect(w, r, back, http.StatusSeeOther)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-	defer cancel()
-	err := a.poller.Request(ctx, st.Server, act)
-	msg := "Asked " + st.Server.Name + " to " + what + ". The server does it within a minute; this page shows the result once it's done."
-	detail := "ok"
-	if err != nil {
-		msg, detail = "Couldn't ask "+st.Server.Name+": "+err.Error(), err.Error()
-	}
-	a.sessions.SetFlash(s, msg)
-	a.store.Audit(s.User, a.clientIP(r), act, st.Server.Name+": "+detail)
-	http.Redirect(w, r, back, http.StatusSeeOther)
+	cp, _ := a.store.CommunityPractices()
+	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, a.poller.CommunitySnapshot(), now, cp)})
 }
 
 func (a *App) audit(w http.ResponseWriter, r *http.Request, s *Session) {

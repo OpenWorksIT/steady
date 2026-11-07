@@ -23,7 +23,7 @@ function load(app, p, from, to) {
   var since = s.dateValue(Date.parse(reach + "T00:00:00Z") - tz * 60000).string();
   app.findRecordsByFilter("checkins", "patient = {:p} && created >= {:a}", "created", 20000, 0, { p: p.id, a: since })
     .forEach(function (r) {
-      var d = w.localDay(s.toMs(r, "created"), tz);
+      var d = w.localDay(s.answeredMs(r), tz);
       var o = sums[d] || (sums[d] = { n: 0, mood: 0, anxiety: 0, sleep: 0, energy: 0 });
       o.n++;
       ["mood", "anxiety", "sleep", "energy"].forEach(function (k) { o[k] += r.getInt(k); });

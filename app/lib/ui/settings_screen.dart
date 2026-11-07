@@ -48,7 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     final android = !kIsWeb && _isAndroid;
-    final practice = practiceItems(state.api);
+    final practice = practiceItems(state.api, community: state.config.communityUrl.isNotEmpty);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: SafeArea(
@@ -185,6 +185,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             OutlinedButton.icon(
               icon: const Icon(Icons.logout),
               onPressed: () async {
+                // answers kept on this phone (the practice couldn't be reached) go with the sign-out
+                final waiting = state.api.outbox.waiting;
+                if (waiting > 0) {
+                  final go = await showDialog<bool>(
+                    context: context,
+                    builder: (c) => AlertDialog(
+                      title: Text(waiting == 1 ? '1 answer hasn\'t been sent' : '$waiting answers haven\'t been sent'),
+                      content: const Text('Steady couldn\'t reach the practice yet. If you sign out now, they\'re deleted from this phone '
+                          'and your psychologist won\'t see them.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Stay signed in')),
+                        TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Sign out and delete them')),
+                      ],
+                    ),
+                  );
+                  if (go != true || !context.mounted) return;
+                }
                 // close every screen first: the one underneath becomes the sign-in screen
                 Navigator.of(context).popUntil((r) => r.isFirst);
                 await state.signOut();

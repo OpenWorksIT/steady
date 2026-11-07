@@ -162,6 +162,8 @@ class AppState extends ChangeNotifier {
     try {
       await forgetCommunity();
     } catch (_) {}
+    // a patient's answers still on the phone, and the home screen's copy
+    await api.forgetPatientCopies();
     api.signOut();
     notifyListeners();
   }

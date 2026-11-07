@@ -1140,7 +1140,10 @@ def _find_topic(api, external_id):
             if " HTTP 404" in str(err):
                 return None
             raise
+        # Discourse's redirect may already end in .json (/t/<slug>/<id>.json): add it once only
         path = urllib.parse.urlparse(loc).path.rstrip("/")
+        if path.endswith(".json"):
+            path = path[: -len(".json")]
         return api.get(path + ".json")
     return None
 
@@ -1252,8 +1255,9 @@ def _print_key(key):
     value = key.get("key")
     if not value:
         raise SetupError("The key was created but Discourse did not return it. Revoke it in Admin > API keys and make one by hand.")
-    print("\n  Activity-count key (shown once; put it in the fleet view's secrets, never in git):")
-    print(f"    DISCOURSE_STATS_KEY={value}\n")
+    print("\n  Activity-count key, shown once. It goes in the fleet view's community.json as")
+    print('  "statsKey", exactly as it stands on the next line (never in git):\n')
+    print(f"{value}\n")
 
 
 # --- plan without a server ------------------------------------------------------------

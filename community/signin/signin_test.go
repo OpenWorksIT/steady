@@ -569,3 +569,66 @@ func TestVersion(t *testing.T) {
 		t.Errorf("headers or extra: %v %s", w.Header(), w.Body.String())
 	}
 }
+
+// The practices the fleet view runs come from its own file: added to config.json's, replacing
+// one with the same id; a bad file leaves config.json's working; config.json may then list none.
+func TestPracticesFromTheFleet(t *testing.T) {
+	dir := t.TempDir()
+	fleetFile := filepath.Join(dir, "practices.json")
+	write := func(v any) {
+		b, _ := json.Marshal(v)
+		os.WriteFile(fleetFile, b, 0o600)
+		later := time.Now().Add(time.Duration(len(b)) * time.Second)
+		os.Chtimes(fleetFile, later, later)
+	}
+	m := settings()
+	f := NewConfigFile(writeConfig(t, m), fleetFile)
+	// no fleet file yet: config.json's two
+	if c, err := f.Get(); err != nil || len(c.Practices) != 2 || f.FleetErr() != nil {
+		t.Fatalf("no fleet file: %v %v", c, err)
+	}
+	// the fleet view runs "vr" now (a new key and list) and adds "koos"
+	write([]map[string]any{
+		{"id": "vr", "name": "VR Clinical Psychology", "url": "https://vr.example.org", "key": strings.Repeat("n", 40), "emails": []string{"kempie@vrpsych.example"}},
+		{"id": "koos", "name": "Koos Psychology", "url": "https://koos.example.org", "key": strings.Repeat("k", 40), "emails": []string{"koos@koospsych.example"}, "groups": []string{"practice-koos"}},
+	})
+	f.checked = time.Time{}
+	c, err := f.Get()
+	if err != nil || len(c.Practices) != 3 || f.FleetErr() != nil {
+		t.Fatalf("with the fleet's: %v %v %v", c, err, f.FleetErr())
+	}
+	byID := map[string]Practice{}
+	for _, p := range c.Practices {
+		byID[p.ID] = p
+	}
+	if byID["vr"].Key != strings.Repeat("n", 40) || strings.Join(byID["vr"].Emails, ",") != "kempie@vrpsych.example" || byID["test"].Key != testKey {
+		t.Fatalf("merged: %+v", byID)
+	}
+	// a fleet file that doesn't fit (the same address on two lists): config.json's alone, and why
+	write([]map[string]any{{"id": "koos", "name": "Koos", "url": "https://koos.example.org", "key": strings.Repeat("k", 40), "emails": []string{"tester@gmail.com"}}})
+	f.checked = time.Time{}
+	if c, err = f.Get(); err != nil || len(c.Practices) != 2 || f.FleetErr() == nil || !strings.Contains(f.FleetErr().Error(), "one list only") {
+		t.Fatalf("a bad fleet file: %v %v %v", c, err, f.FleetErr())
+	}
+	write("not a list")
+	f.checked = time.Time{}
+	if _, err = f.Get(); err != nil || f.FleetErr() == nil {
+		t.Fatalf("an unreadable fleet file should leave config.json working: %v %v", err, f.FleetErr())
+	}
+	// everything moved to the fleet view: config.json lists no practice of its own
+	m["practices"] = []map[string]any{}
+	g := NewConfigFile(writeConfig(t, m), fleetFile)
+	write([]map[string]any{{"id": "vr", "name": "VR", "url": "https://vr.example.org", "key": strings.Repeat("n", 40), "emails": []string{"kempie@vrpsych.example"}}})
+	if c, err = g.Get(); err != nil || len(c.Practices) != 1 {
+		t.Fatalf("config.json with none: %v %v", c, err)
+	}
+	// and with neither, nobody could sign in: refused
+	h := NewConfigFile(writeConfig(t, m), filepath.Join(dir, "missing.json"))
+	if _, err = h.Get(); err == nil || !strings.Contains(err.Error(), "runs none") {
+		t.Fatalf("neither: %v", err)
+	}
+	// without a fleet path, config.json must still list a practice (as before)
+	if _, err = NewConfigFile(writeConfig(t, m)).Get(); err == nil {
+		t.Fatal("config.json with no practice and no fleet file was accepted")
+	}
+}

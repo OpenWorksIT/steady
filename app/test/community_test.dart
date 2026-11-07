@@ -31,6 +31,12 @@ void main() {
     expect(tabMessage(null), isNull);
   });
 
+  test('a staff member in the community, as the server lists them', () {
+    expect(Person.fromJson({'id': 'a', 'name': 'Dr K', 'role': 'clinician', 'community': true}).community, isTrue);
+    expect(Person.fromJson({'id': 'b', 'name': 'Dr T', 'role': 'clinician'}).community, isFalse);
+    expect(Person.fromJson({'id': 'c', 'name': 'Desk', 'role': 'admin', 'community': 'yes'}).community, isFalse, reason: 'only true');
+  });
+
   test("OpenWorks support's tab: only on OpenWorks' own server", () {
     const forum = 'https://community.steadyapp.co.za';
     final practice = AppConfig.fromJson({'communityUrl': forum});

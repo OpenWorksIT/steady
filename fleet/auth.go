@@ -42,6 +42,19 @@ type User struct {
 	Iter     int    `json:"iter"`
 	TOTP     string `json:"totp"`     // base32 secret
 	LastStep int64  `json:"lastStep"` // the last TOTP step used, so a code works only once
+	// Role: "admin" watches, reads and reports; "dev" also sees the commands that change a
+	// server (run over SSH, never from the website). Empty: someone added before roles, a dev.
+	Role string `json:"role,omitempty"`
+}
+
+// IsDev: a dev's login (and anyone added before roles existed).
+func (u User) IsDev() bool { return u.Role == "dev" || u.Role == "" }
+
+func (u User) RoleName() string {
+	if u.IsDev() {
+		return "dev"
+	}
+	return "admin"
 }
 
 func randomBytes(n int) []byte {
@@ -133,6 +146,7 @@ func OTPAuthURI(u User) string {
 // the address, so nobody can put words on the page with a link).
 type Session struct {
 	User    string
+	Dev     bool // refreshed from users.json on every request
 	CSRF    string
 	Started time.Time
 	Seen    time.Time
