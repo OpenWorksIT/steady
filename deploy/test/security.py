@@ -1066,6 +1066,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
 
     operator_agreement(su, tag, adm, sup, doc2, patA)
     community_sign_in(su, tag, adm, sup, doc2, patA, doc1, d2, AD.id)
+    community_from_fleet(doc2)
 
     # ---- RADR, its explanations and reviews, and the psychologist's own daily words
     Q = "RADR"
@@ -1285,6 +1286,41 @@ def community_sign_in(su, tag, adm, sup, doc2, patA, master, d2, adm_id):
         check(G, f"{label} is refused", s in (401, 403), [s, r])
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": "action='account.community-sign-in'"})
     check(G, "each note is written to the access log", s == 200 and len(items(logs)) >= 3, logs)
+
+
+
+def community_from_fleet(doc2):
+    """Since 1.2 the fleet view switches the community on and off for a server, with the fleet
+    key (POST /api/steady/fleet/community), and its setting wins over the .env lines. Against the
+    real PocketBase: 1.2.0 read the stored setting wrongly and saw the community as off."""
+    G = "community from the fleet view"
+    fk = ENV.get("STEADY_FLEET_KEY", "")
+    old = ENV.get("STEADY_COMMUNITY_KEY", "")
+    if len(fk) < 16 or len(old) < 32:
+        return
+    F = {"X-Steady-Fleet": fk}
+    forum = ENV.get("STEADY_COMMUNITY_URL", "https://community.steady.test").rstrip("/").lower()
+    bridge = ENV.get("STEADY_COMMUNITY_SIGNIN", "https://signin.steady.test").rstrip("/").lower()
+    new = secrets.token_hex(20)
+    s, r = call("POST", "/api/steady/fleet/community", None, {"on": True, "forum": forum, "signin": bridge, "key": new, "openworks": True}, headers=F)
+    check(G, "the fleet view switches it on with its key", s == 200, [s, r])
+    s, cfg = call("GET", "/api/steady/config")
+    check(G, "and the app gets the Community tab", cfg.get("communityUrl") == forum and cfg.get("communitySupport") is True, [cfg.get("communityUrl"), cfg.get("communitySupport")])
+    s, r = call("POST", "/api/steady/community/sign-in", doc2, {})
+    q = urllib.parse.parse_qs(urllib.parse.urlsplit(r.get("url", "") if isinstance(r, dict) else "").query)
+    p, sig = q.get("p", [""])[0], q.get("s", [""])[0]
+    check(G, "notes are signed with the key the fleet view sent", s == 200 and hmac.compare_digest(hmac.new(new.encode(), p.encode(), hashlib.sha256).hexdigest(), sig), [s, r])
+    s, st = call("GET", "/api/steady/fleet", None, headers=F)
+    c = st.get("community", {}) if isinstance(st, dict) else {}
+    check(G, "the fleet view sees it on, run by the fleet view, with its members", s == 200 and c.get("on") is True and c.get("fleet") is True and len(c.get("members", [])) >= 1, [s, c])
+    check(G, "and never the key", new not in json.dumps(st) and old not in json.dumps(st), "key in the fleet summary")
+    s, r = call("POST", "/api/steady/fleet/community", None, {"on": False}, headers=F)
+    s2, cfg = call("GET", "/api/steady/config")
+    s3, r3 = call("POST", "/api/steady/community/sign-in", doc2, {})
+    check(G, "switched off: no Community tab and no notes", s == 200 and cfg.get("communityUrl") == "" and s3 == 404, [s, cfg.get("communityUrl"), s3])
+    # back as it was for the tests after this one (the .env key and addresses, now set by the fleet view)
+    s, r = call("POST", "/api/steady/fleet/community", None, {"on": True, "forum": forum, "signin": bridge, "key": old, "openworks": True}, headers=F)
+    check(G, "and on again", s == 200, [s, r])
 
 
 if __name__ == "__main__":
