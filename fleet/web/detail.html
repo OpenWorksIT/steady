@@ -30,6 +30,17 @@
 {{end}}</tbody></table></div></details>{{end}}
 {{end}}
 
+<h2 id="community">Community</h2>
+{{with .Community}}
+{{if .On}}<p>On{{if .Fleet}}, run from the fleet view{{else}}, from .env lines (not yet run from the fleet view){{end}}. {{.Approved}} staff approved{{with .Waiting}}, <strong>{{len .}} waiting for approval</strong>{{end}}.</p>
+{{else}}<p class="muted">Off.{{if $.Dev}} To switch it on: <code>sudo /opt/steady-ops/fleet/fleet.sh community {{.Short}} on</code>{{end}}</p>{{end}}
+{{if .Note}}<p class="{{if eq .Level "fail"}}error{{else}}warn{{end}}">{{.Note}}</p>{{end}}
+{{with .Waiting}}<div class="table"><table><thead><tr><th>Waiting</th><th>Email</th><th>Role</th></tr></thead><tbody>
+{{range .}}<tr><td>{{.Name}}</td><td>{{.Email}}</td><td>{{.Role}}</td></tr>
+{{end}}</tbody></table></div>
+{{if $.Dev}}<pre class="cmd">{{range .}}sudo /opt/steady-ops/fleet/fleet.sh community {{$.Community.Short}} approve {{.Email}}
+{{end}}</pre>{{end}}{{end}}
+{{end}}
 <h2 id="changes">Changes</h2>
 {{if .Dev}}
 <p class="muted">The fleet view only looks. Changes are made over SSH on vps1, and the log says who made them:</p>

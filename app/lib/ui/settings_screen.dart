@@ -48,7 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     final android = !kIsWeb && _isAndroid;
-    final practice = practiceItems(state.api);
+    final practice = practiceItems(state.api, community: state.config.communityUrl.isNotEmpty);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: SafeArea(

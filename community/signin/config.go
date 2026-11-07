@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -70,7 +71,11 @@ func origin(s string) string {
 }
 
 // validate checks the settings and tidies the addresses. The first problem found is returned.
-func (c *Config) validate() error {
+func (c *Config) validate() error { return c.validateWith(false) }
+
+// validateWith: noPractices allows config.json without practices of its own, when the fleet view
+// supplies them (the merged settings are checked again, with at least one).
+func (c *Config) validateWith(noPractices bool) error {
 	if c.URL = origin(c.URL); c.URL == "" {
 		return errors.New(`"url" must be the bridge's https address, like https://signin.steadyapp.co.za`)
 	}
@@ -80,7 +85,7 @@ func (c *Config) validate() error {
 	if len(c.ForumSecret) < minKey {
 		return fmt.Errorf(`"forumSecret" must be at least %d characters (signin newkey makes one)`, minKey)
 	}
-	if len(c.Practices) == 0 {
+	if len(c.Practices) == 0 && !noPractices {
 		return errors.New(`"practices" lists no practice, so nobody could sign in`)
 	}
 	seen := map[string]bool{}
@@ -243,17 +248,33 @@ func validEmail(e string) bool {
 }
 
 // ConfigFile reads the settings file, again whenever it changes, so a practice is added or
-// removed without a restart.
+// removed without a restart. With fleetPath, it also reads the practices the fleet view runs
+// (fleet/bridge.go writes them): those are added to config.json's, and replace one there with
+// the same id. If the fleet view's file is unreadable or doesn't fit, config.json's practices
+// carry on alone and FleetErr says why.
 type ConfigFile struct {
-	path    string
-	mu      sync.Mutex
-	stamp   string
-	cfg     *Config
-	err     error
-	checked time.Time
+	path, fleetPath string
+	mu              sync.Mutex
+	stamp           string
+	cfg             *Config
+	err, fleetErr   error
+	checked         time.Time
 }
 
-func NewConfigFile(path string) *ConfigFile { return &ConfigFile{path: path} }
+func NewConfigFile(path string, fleetPath ...string) *ConfigFile {
+	f := &ConfigFile{path: path}
+	if len(fleetPath) > 0 {
+		f.fleetPath = fleetPath[0]
+	}
+	return f
+}
+
+// FleetErr: why the fleet view's practices aren't in use, or nil.
+func (f *ConfigFile) FleetErr() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fleetErr
+}
 
 // Get returns the current settings, or why there are none.
 func (f *ConfigFile) Get() (*Config, error) {
@@ -269,15 +290,83 @@ func (f *ConfigFile) Get() (*Config, error) {
 		return nil, f.err
 	}
 	stamp := fmt.Sprintf("%d/%d", st.ModTime().UnixNano(), st.Size())
+	if f.fleetPath != "" {
+		if fs, ferr := os.Stat(f.fleetPath); ferr == nil {
+			stamp += fmt.Sprintf(" %d/%d", fs.ModTime().UnixNano(), fs.Size())
+		}
+	}
 	if stamp == f.stamp {
 		return f.cfg, f.err
 	}
 	f.stamp = stamp
-	f.cfg, f.err = loadConfig(f.path)
-	return f.cfg, f.err
+	f.fleetErr = nil
+	if f.fleetPath == "" {
+		f.cfg, f.err = loadConfig(f.path)
+		return f.cfg, f.err
+	}
+	base, err := loadConfigWith(f.path, true)
+	if err != nil {
+		f.cfg, f.err = nil, err
+		return nil, err
+	}
+	merged, ferr := withFleet(base, f.fleetPath)
+	if ferr != nil {
+		f.fleetErr = ferr
+		log.Printf("signin: the fleet view's practices aren't in use: %v", ferr)
+		merged = base
+	}
+	if len(merged.Practices) == 0 {
+		f.cfg, f.err = nil, fmt.Errorf(`%s: "practices" lists no practice, and the fleet view runs none, so nobody could sign in`, f.path)
+		return nil, f.err
+	}
+	f.cfg, f.err = merged, nil
+	return f.cfg, nil
 }
 
-func loadConfig(path string) (*Config, error) {
+// withFleet: config.json's settings with the fleet view's practices added (an id already in
+// config.json is replaced by the fleet view's), checked as one. No file: config.json's alone.
+func withFleet(base *Config, path string) (*Config, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return base, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("can't read %s: %w", path, err)
+	}
+	var fleet []Practice
+	dec := json.NewDecoder(strings.NewReader(string(b)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&fleet); err != nil {
+		return nil, fmt.Errorf("%s isn't valid: %w", path, err)
+	}
+	merged := *base
+	merged.Practices = nil
+	ids := map[string]bool{}
+	for _, p := range fleet {
+		ids[strings.ToLower(p.ID)] = true
+	}
+	for _, p := range base.Practices {
+		if !ids[strings.ToLower(p.ID)] {
+			merged.Practices = append(merged.Practices, p)
+		}
+	}
+	merged.Practices = append(merged.Practices, fleet...)
+	// validate() tidies its own copy of every list; keep config.json's untouched
+	merged.Practices = append([]Practice{}, merged.Practices...)
+	for i := range merged.Practices {
+		merged.Practices[i].Emails = append([]string{}, merged.Practices[i].Emails...)
+		merged.Practices[i].Groups = append([]string{}, merged.Practices[i].Groups...)
+	}
+	merged.OpenWorks = append([]string{}, base.OpenWorks...)
+	if err := merged.validate(); err != nil {
+		return nil, fmt.Errorf("with %s: %w", path, err)
+	}
+	return &merged, nil
+}
+
+func loadConfig(path string) (*Config, error) { return loadConfigWith(path, false) }
+
+func loadConfigWith(path string, noPractices bool) (*Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("can't read %s: %w", path, err)
@@ -288,7 +377,7 @@ func loadConfig(path string) (*Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("%s isn't valid: %w", path, err)
 	}
-	if err := c.validate(); err != nil {
+	if err := c.validateWith(noPractices); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &c, nil

@@ -110,7 +110,16 @@ func (p *Poller) PollAll(ctx context.Context) {
 		p.last[st.Server.URL] = st
 	}
 	p.mu.Unlock()
+	// staff a practice took out of the community come off the bridge's list
+	for _, st := range results {
+		if st.Err == "" && st.Data != nil {
+			p.store.reconcile(st.Server, st.Data)
+		}
+	}
 }
+
+// Status asks one server for its state now (GET /api/steady/fleet), for a dev's command.
+func (p *Poller) Status(ctx context.Context, sv Server) *Status { return p.fetch(ctx, sv) }
 
 // Run polls now and then every interval until ctx ends.
 // The forum's counts are asked for every tenth time.

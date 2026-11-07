@@ -67,6 +67,8 @@ func main() {
 		err = serverAction(store, cmd, args, os.Stdin, os.Stdout)
 	case "reset":
 		err = resetPassword(store, args, os.Stdin, os.Stdout)
+	case "community":
+		err = communityCmd(store, args, os.Stdin, os.Stdout)
 	case "passwd":
 		err = changeUser(store, name, true, false)
 	case "resettotp":
@@ -89,13 +91,18 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: fleet serve | users | adduser <name> [--dev] | setrole <name> admin|dev | passwd <name> | resettotp <name> | deluser <name>\n       fleet servers | check <server> | update <server> [--yes] | restart <server> [--yes]\n       fleet reset <server> <email> [--two-step] [--yes]")
+	fmt.Fprintln(os.Stderr, "usage: fleet serve | users | adduser <name> [--dev] | setrole <name> admin|dev | passwd <name> | resettotp <name> | deluser <name>\n       fleet servers | check <server> | update <server> [--yes] | restart <server> [--yes]\n       fleet reset <server> <email> [--two-step] [--yes]\n       fleet community [<server> on [--openworks] [--approve-all] [--group <g>] | off | people | approve <email>... | remove <email>...]")
 	os.Exit(2)
 }
 
 func serve(store *Store) error {
 	if _, err := store.Servers(); err != nil {
 		return err
+	}
+	// the sign-in bridge's folder (bridge.go), made by the fleet view itself, so it's the fleet
+	// view's to write: the bridge's compose mounts it read-only
+	if err := os.MkdirAll(store.path("bridge"), 0o700); err != nil {
+		fmt.Fprintln(os.Stderr, "fleet: can't make the sign-in bridge's folder:", err)
 	}
 	if u, err := store.Users(); err != nil {
 		return err

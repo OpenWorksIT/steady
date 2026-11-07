@@ -27,6 +27,9 @@ services:
     volumes:
       # config.json holds the forum's secret and each practice's key: readable by this alone
       - /var/lib/steady-signin:/data:ro
+      # the practices the fleet view runs (fleet/bridge.go writes them): its bridge folder only,
+      # never its servers.json with the fleet keys
+      - /var/lib/steady-fleet/bridge:/fleet:ro
     read_only: true
     mem_limit: 64m
     pids_limit: 64

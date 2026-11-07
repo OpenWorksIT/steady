@@ -148,6 +148,14 @@ void main() {
     expect(practiceSummary(practiceItems(state.api)), 'Library, people, audit report, feedback tickets and operator agreement');
   });
 
+  testWidgets("with a community, the master clinician also chooses who's in it", (tester) async {
+    final state = await _signedIn('clinician', master: true);
+    expect(practiceItems(state.api, community: true).map((p) => p.title), ['Library', 'People', 'Audit report', 'Community', 'Feedback tickets', 'Operator agreement']);
+    // not other psychologists, not the administrator
+    expect(practiceItems((await _signedIn('clinician')).api, community: true).map((p) => p.title), isNot(contains('Community')));
+    expect(practiceItems((await _signedIn('admin')).api, community: true).map((p) => p.title), isNot(contains('Community')));
+  });
+
   testWidgets('the practice admin keeps the audit report, feedback and the operator agreement; the people stay their first screen',
       (tester) async {
     await tester.pumpWidget(_app(await _signedIn('admin'), const PracticeScreen()));
