@@ -255,9 +255,11 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 			return fmt.Errorf("couldn't switch it on at %s: %v", sv.Name, err)
 		}
 		var approved []string
-		if hasFlag(args, "--approve-all") {
-			if st := p.Status(ctx, sv); st.Err == "" {
-				_, _, members := communityOf(st.Data)
+		serverOn := true
+		if st := p.Status(ctx, sv); st.Err == "" {
+			on, _, members := communityOf(st.Data)
+			serverOn = on
+			if hasFlag(args, "--approve-all") {
 				for _, m := range members {
 					approved = append(approved, m.Email)
 				}
@@ -284,6 +286,13 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 		fmt.Fprintf(out, "The community is on for %s. Its master psychologist adds staff in Settings > Practice > Community;\nthey show here to approve: fleet community %s people\n", sv.Name, id)
 		if len(approved) > 0 {
 			fmt.Fprintf(out, "Approved now: %s\n", strings.Join(approved, ", "))
+		}
+		if !serverOn {
+			fmt.Fprintf(out, "But %s still says the community is off: Steady before 1.2.1 can't read the fleet view's setting. Update it, then run this again.\n", sv.Name)
+		}
+		cp, _ := store.CommunityPractices()
+		if pr := cp.Practices[id]; pr == nil || len(pr.Approved) == 0 {
+			fmt.Fprintf(out, "Nobody is approved yet, so the sign-in bridge doesn't list %s until someone is.\n", sv.Name)
 		}
 		return nil
 	case "off":
