@@ -2,8 +2,13 @@
 
 One page for OpenWorks IT that shows every practice's Steady server: whether it's healthy, which
 version it runs and whether a newer signed release is waiting, how full its disk is, how old its
-newest backup is, and how many patients, staff and check-ins it has. Each server has three
-buttons: **Check for updates**, **Update** and **Restart Steady**.
+newest backup is, and how many patients, staff and check-ins it has.
+
+**The website only looks.** Since 1.2 nothing on it changes a practice's server: devs check for
+updates, update, restart and reset staff passwords with commands over SSH on vps1 (see
+"Changing a server"), behind SSH keys and sudo, and the fleet view's log says who ran each one.
+Two kinds of login: an **admin** watches, reads and keeps the To do list; a **dev** also sees the
+commands for each server on its page.
 
 It also shows each server's **security and privacy checks**, live: the server runs
 `deploy/audit-server.sh` every 6 hours and hands the results over with its status, so the
@@ -35,8 +40,11 @@ for, across the practice servers, the community, the apps, the releases and the 
 the monthly upkeep round. See "To do" below.
 
 It never shows anything about patients: the servers send only versions, health, counts, backup
-age and what their checks found. Sign-in takes a name, a password and a code from an
-authenticator app.
+age and what their checks found. **Feedback** shows as counts only (how many reports wait, how
+many are bug reports, since when), never what they say: they can hold screenshots of patients'
+screens, so they stay with the practice (Settings > Practice) and with OpenWorks on the server
+itself (`sudo ./feedback.sh`). Sign-in takes a name, a password and a code from an authenticator
+app.
 
 The code is in `fleet/` (Go, standard library only). It runs on OpenWorks' own server (vps1,
 beside Shap and the test server) at **fleet.steadyapp.co.za**, from a signed release in its own
@@ -44,10 +52,16 @@ folder, never on a practice's server.
 
 ## How it works
 
-- Every minute the fleet view asks each server for `GET /api/steady/fleet`, and the buttons send
-  `POST /api/steady/fleet/request`, both with that server's `STEADY_FLEET_KEY`. That key opens
-  those two routes and nothing else. (Not the monitor key: that one also reads feedback, which
-  can hold screenshots.)
+- Every minute the fleet view asks each server for `GET /api/steady/fleet`, and the commands send
+  `POST /api/steady/fleet/request` (check, update, restart) and `POST /api/steady/fleet/reset`
+  (a staff password), all with that server's `STEADY_FLEET_KEY`. That key opens those three
+  routes and nothing else. (Not the monitor key: that one also reads feedback, which can hold
+  screenshots.)
+- A password reset from the fleet is for staff only, and finishes only with **both** the
+  temporary password (the dev tells the person by phone) and a code the server emails to the
+  person. So the fleet key alone can't take an account over. The person and the practice's
+  master psychologists are emailed, and it's in the practice's access log. A server that can't
+  send email refuses; reset on the server with `accounts.sh` instead.
 - The server leaves the request for `deploy/ctl/steady-ctl.sh`, which does the work as root.
   **Update** first saves a copy of the data, then installs the newest release signed by
   OpenWorks (servers with `secrets/allowed_signers`). **Restart** restarts Steady's containers,
@@ -55,7 +69,8 @@ folder, never on a practice's server.
 - Without the right key, both routes answer 404, as if they weren't there.
 - After an update or restart, the server refuses another for 5 minutes (checks are fine).
 - The fleet view never follows a redirect, so a server's key can't be sent somewhere else.
-- Sign-ins (and failed ones) and every button press go to the fleet view's audit log.
+- Sign-ins (and failed ones) and every command (with who ran it, from sudo) go to the fleet
+  view's audit log. A reset is logged with the account, never the temporary password.
 
 ## On each practice server
 
@@ -65,7 +80,7 @@ folder, never on a practice's server.
    echo "STEADY_FLEET_KEY=$(openssl rand -base64 30 | tr '+/' '-_' | tr -d '=\n')" | sudo tee -a .env
    sudo docker compose up -d
    ```
-2. In-app updates must be set up (`sudo ./ctl/install.sh`), or the buttons can't do anything.
+2. In-app updates must be set up (`sudo ./ctl/install.sh`), or the commands can't do anything.
    It also installs the security and privacy check (`steady-audit.timer`, every 6 hours, and
    once after each update), whose results the fleet view shows. An update doesn't install new
    services by itself: run `sudo ./ctl/install.sh` again after any update that adds one (1.1.0
@@ -135,7 +150,7 @@ gets a Docker network of its own (`fleet-edge`) that only it and Shap's Caddy ar
    (14 characters or more) and prints the key for your authenticator app:
    ```bash
    cd /opt/steady-ops && sudo docker compose -f fleet/compose.yml up -d --build
-   sudo docker compose -f fleet/compose.yml run --rm fleet adduser <name>
+   sudo docker compose -f fleet/compose.yml run --rm fleet adduser <name> --dev   # or without --dev: an admin
    ```
 6. Once the community forum is up (docs/COMMUNITY.md), its numbers can show on the overview too.
    `/var/lib/steady-fleet/community.json`, same owner and mode as servers.json:
@@ -172,6 +187,60 @@ here.
 It is kept in `todo.json` in the data folder (same owner and mode as the rest). The first start
 fills it with the list as it stood in November 2026 (`fleet/web/todo-seed.json`); after that it
 is only what people add and change. A copy of `/var/lib/steady-fleet` keeps it with the rest.
+
+## Changing a server
+
+Over SSH on vps1, as a dev with sudo. Each command goes in the fleet view's log with who ran it.
+A server is named by the first part of its address (`vr` for vr.steadyapp.co.za), its full name
+or its address; `servers` lists them. Update, restart and reset ask you to type the short name
+first (or add `--yes`).
+
+```bash
+sudo /opt/steady-ops/fleet/fleet.sh servers
+sudo /opt/steady-ops/fleet/fleet.sh check vr       # looks for a newer signed release; changes nothing
+sudo /opt/steady-ops/fleet/fleet.sh update vr      # saves a copy of the data, installs the latest signed release
+sudo /opt/steady-ops/fleet/fleet.sh restart vr     # restarts Steady's containers, not the machine
+sudo /opt/steady-ops/fleet/fleet.sh reset vr thandi@vrpsych.co.za [--two-step]
+```
+
+`reset` shows a temporary password once: tell the person by phone, never by email or message.
+They also need the code Steady emails them (24 hours). `--two-step` also clears their
+authenticator (a lost phone) and unlocks an account they locked. Patients' passwords aren't
+reset from here: their psychologist does it, or they use the emailed code themselves.
+
+**The community** (docs/COMMUNITY.md, "Adding a practice"):
+
+```bash
+sudo /opt/steady-ops/fleet/fleet.sh community                       # every practice in it
+sudo /opt/steady-ops/fleet/fleet.sh community vr on [--group practice-vr] [--approve-all]
+sudo /opt/steady-ops/fleet/fleet.sh community test on --openworks   # OpenWorks' own server
+sudo /opt/steady-ops/fleet/fleet.sh community vr people             # who the practice put in, approved or waiting
+sudo /opt/steady-ops/fleet/fleet.sh community vr approve kempie@vrpsych.co.za
+sudo /opt/steady-ops/fleet/fleet.sh community vr remove someone@vrpsych.co.za
+sudo /opt/steady-ops/fleet/fleet.sh community vr off
+```
+
+The fleet view keeps this in `community-practices.json` and writes the bridge's list to
+`bridge/practices.json` (the bridge mounts that folder read-only, never `servers.json`). A
+server's page shows its community and who's waiting, with the command to approve each; Checks
+lists who's waiting, and anything the fleet view and the server disagree on.
+
+**Who can sign in to the website**, and as what:
+
+```bash
+sudo /opt/steady-ops/fleet/fleet.sh users
+sudo /opt/steady-ops/fleet/fleet.sh adduser anna            # an admin: watches, reads, keeps To do
+sudo /opt/steady-ops/fleet/fleet.sh adduser tiaan --dev     # a dev: also sees each server's commands
+sudo /opt/steady-ops/fleet/fleet.sh setrole anna dev
+```
+
+Accounts made before roles existed count as devs. Being a dev on the website only shows the
+commands; running them needs SSH to vps1 and sudo.
+
+**OpenWorks' own accounts on practice servers** aren't needed any more: updates and password
+resets come from here, and OpenWorks opens the community from the test server. Checks lists a
+practice server that still has one; stop it there with
+`sudo ./accounts.sh set support@openworks.co.za active off`.
 
 ## Updating the fleet view
 

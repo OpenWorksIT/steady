@@ -110,7 +110,16 @@ func (p *Poller) PollAll(ctx context.Context) {
 		p.last[st.Server.URL] = st
 	}
 	p.mu.Unlock()
+	// staff a practice took out of the community come off the bridge's list
+	for _, st := range results {
+		if st.Err == "" && st.Data != nil {
+			p.store.reconcile(st.Server, st.Data)
+		}
+	}
 }
+
+// Status asks one server for its state now (GET /api/steady/fleet), for a dev's command.
+func (p *Poller) Status(ctx context.Context, sv Server) *Status { return p.fetch(ctx, sv) }
 
 // Run polls now and then every interval until ctx ends.
 // The forum's counts are asked for every tenth time.
@@ -153,31 +162,62 @@ func (p *Poller) Snapshot() ([]*Status, string) {
 
 // Request asks a server to check for updates, update or restart (POST /api/steady/fleet/request).
 func (p *Poller) Request(ctx context.Context, sv Server, action string) error {
-	body, _ := json.Marshal(map[string]string{"action": action})
-	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(sv.URL, "/")+"/api/steady/fleet/request", bytes.NewReader(body))
+	_, err := p.post(ctx, sv, "/api/steady/fleet/request", map[string]any{"action": action})
+	return err
+}
+
+// ResetResult: what a server answers to a staff password reset from the fleet.
+type ResetResult struct {
+	TemporaryPassword string `json:"temporaryPassword"`
+	EmailedTo         string `json:"emailedTo"`
+	TwoStepCleared    bool   `json:"twoStepCleared"`
+	Account           struct {
+		Name string `json:"name"`
+		Role string `json:"role"`
+	} `json:"account"`
+}
+
+// Reset asks a server to reset a staff member's password (POST /api/steady/fleet/reset). The
+// person finishes it with the temporary password and a code the server emails them.
+func (p *Poller) Reset(ctx context.Context, sv Server, email string, twoStep bool) (*ResetResult, error) {
+	b, err := p.post(ctx, sv, "/api/steady/fleet/reset", map[string]any{"email": email, "twoStep": twoStep})
 	if err != nil {
-		return err
+		return nil, err
+	}
+	var r ResetResult
+	if json.Unmarshal(b, &r) != nil || r.TemporaryPassword == "" {
+		return nil, errors.New("the server's answer isn't one it would give")
+	}
+	return &r, nil
+}
+
+// post sends one fleet request with the server's fleet key, and gives back the answer's body.
+func (p *Poller) post(ctx context.Context, sv Server, path string, in map[string]any) ([]byte, error) {
+	body, _ := json.Marshal(in)
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(sv.URL, "/")+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Steady-Fleet", sv.FleetKey)
 	res, err := p.client.Do(req)
 	if err != nil {
-		return errors.New("can't reach the server: " + shortErr(err))
+		return nil, errors.New("can't reach the server: " + shortErr(err))
 	}
 	defer res.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 16384))
 	if res.StatusCode == 200 {
-		return nil
+		return b, nil
 	}
 	var e struct {
 		Message string `json:"message"`
 	}
 	_ = json.Unmarshal(b, &e)
-	if res.StatusCode == 404 {
-		return errors.New("the server doesn't accept this fleet key")
+	if res.StatusCode == 404 && e.Message == "Not found." {
+		return nil, errors.New("the server doesn't accept this fleet key")
 	}
 	if e.Message != "" {
-		return errors.New(e.Message)
+		return nil, errors.New(e.Message)
 	}
-	return fmt.Errorf("the server answered %d", res.StatusCode)
+	return nil, fmt.Errorf("the server answered %d", res.StatusCode)
 }

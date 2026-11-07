@@ -21,16 +21,57 @@ function origin(v) {
   return ORIGIN.test(s) ? s : "";
 }
 
+/** What the fleet view set for this server (settings "community"), or null. */
+function stored() {
+  try {
+    var r = $app.findFirstRecordByData("settings", "key", "community");
+    var raw = r.get("value");
+    var v = typeof raw === "string" ? JSON.parse(raw || "null") : JSON.parse(JSON.stringify(raw));
+    return v && typeof v === "object" ? v : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Saves what the fleet view sends (POST /api/steady/fleet/community). */
+function store(app, value) {
+  var r;
+  try {
+    r = app.findFirstRecordByData("settings", "key", "community");
+  } catch (_) {
+    r = new Record(app.findCollectionByNameOrId("settings"));
+    r.set("key", "community");
+  }
+  r.set("value", value);
+  app.save(r);
+}
+
 /** The bridge's address, the forum's and the shared key; null when this server isn't set up.
- *  support: OpenWorks' own server, where OpenWorks IT opens the community
- *  (STEADY_COMMUNITY_SUPPORT=yes: the test server only, the one the bridge marks "support"). */
+ *  support: OpenWorks' own server, where OpenWorks IT opens the community (the test server only).
+ *  From the fleet view since 1.2 (fleet community <server> on); the .env lines
+ *  (STEADY_COMMUNITY_SIGNIN, _URL, _KEY, _SUPPORT=yes) still work where the fleet view hasn't
+ *  set anything. fleet: true when the fleet view runs it. */
 function config() {
+  var st = stored();
+  if (st) {
+    if (st.on !== true) return null;
+    var fu = origin(st.signin), ff = origin(st.forum), fk = String(st.key || "");
+    if (!fu || !ff || fk.length < 32) return null;
+    return { url: fu, forum: ff, key: fk, support: st.openworks === true, fleet: true };
+  }
   var url = origin($os.getenv("STEADY_COMMUNITY_SIGNIN"));
   var forum = origin($os.getenv("STEADY_COMMUNITY_URL"));
   var key = String($os.getenv("STEADY_COMMUNITY_KEY") || "");
   if (!url || !forum || key.length < 32) return null;
   var support = String($os.getenv("STEADY_COMMUNITY_SUPPORT") || "").trim().toLowerCase() === "yes";
-  return { url: url, forum: forum, key: key, support: support };
+  return { url: url, forum: forum, key: key, support: support, fleet: false };
+}
+
+/** Staff the master psychologist has put in the community, for the fleet view to approve:
+ *  name, email and role only. */
+function members(app) {
+  return app.findRecordsByFilter("users", "role != 'patient' && role != 'support' && active = true && community = true", "email", 1000, 0, {})
+    .map(function (u) { return { email: String(u.email()).toLowerCase(), name: u.getString("name"), role: u.getString("role") }; });
 }
 
 /** Why this account may not open the community, or "" when it may: psychologists, practice
@@ -47,6 +88,9 @@ function refusal(user, s, cfg) {
   }
   if (!s.twoStepOn(user)) return "Set up two-step sign-in in Steady first (Settings > Two-step sign-in).";
   if (!user.email()) return "This account has no email address. Ask the practice to add one.";
+  if (role !== "support" && !user.getBool("community")) {
+    return "Your practice hasn't added you to the community yet. Ask your master psychologist (Settings > Practice > Community).";
+  }
   return "";
 }
 
@@ -73,4 +117,4 @@ function noteUrl(user, cfg, nowMs) {
   return cfg.url + "/enter?p=" + encodeURIComponent(body) + "&s=" + $security.hs256(body, cfg.key);
 }
 
-module.exports = { config: config, refusal: refusal, noteUrl: noteUrl, TTL_SECONDS: TTL_SECONDS, ACTION: ACTION };
+module.exports = { config: config, stored: stored, store: store, members: members, origin: origin, refusal: refusal, noteUrl: noteUrl, TTL_SECONDS: TTL_SECONDS, ACTION: ACTION };

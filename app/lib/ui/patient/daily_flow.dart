@@ -135,13 +135,13 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
       if (mounted) setState(() => _words = wordsForToday(q.where((x) => x.active).map((x) => x.text).toList()));
     } catch (_) {}
     try {
-      final r = await Future.wait([api.myPending(), api.myCheckins(days: 1)]);
+      // offline: the copy the phone kept, with answers waiting on it counted as done
+      final h = await api.patientHome(days: 1);
       final today = DateTime.now();
       if (!mounted) return;
       setState(() {
-        _pending = (r[0] as List<Assignment>).where((a) => a.instrument != null).toList();
-        _checkedInToday = (r[1] as List<Checkin>)
-            .any((c) => c.created.year == today.year && c.created.month == today.month && c.created.day == today.day);
+        _pending = h.pending.where((a) => a.instrument != null).toList();
+        _checkedInToday = h.recent.any((c) => c.created.year == today.year && c.created.month == today.month && c.created.day == today.day);
       });
     } catch (_) {/* the home screen shows everything anyway */}
   }
@@ -204,7 +204,13 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
           checkedIn: _checkedInToday,
           onTap: _tapCircle,
         ),
-      _Step.checkin => _CheckinStep(key: const ValueKey('checkin'), breath: _breath, onSent: () async => _afterCheckin()),
+      _Step.checkin => _CheckinStep(
+          key: const ValueKey('checkin'),
+          breath: _breath,
+          onSent: (sent) async {
+            if (!sent && mounted) showSnack(context, keptOnPhone);
+            _afterCheckin();
+          }),
       _Step.activity => _ActivityStep(
           key: ValueKey('activity$_index'),
           assignment: _pending[_index],
@@ -399,7 +405,7 @@ class _BreatheStep extends StatelessWidget {
 
 class _CheckinStep extends StatelessWidget {
   final Animation<double> breath;
-  final Future<void> Function() onSent;
+  final Future<void> Function(bool sent) onSent;
   const _CheckinStep({required this.breath, required this.onSent, super.key});
   @override
   Widget build(BuildContext context) => Column(children: [

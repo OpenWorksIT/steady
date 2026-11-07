@@ -136,6 +136,31 @@ Signing out ends every session the account has, on every device (`/api/steady/me
 so do a password change, removing a device, a reset, stopping or locking the account, and
 `accounts.sh rotate-sessions`.
 
+## No signal (1.2)
+
+A patient without signal (or while the practice's server restarts) can still use the phone app:
+
+- **The home screen and the calm start** show the copy the phone kept the last time it reached
+  the practice: what the psychologist sent, the week's moods (no notes) and the exercises, with a
+  card saying Steady can't reach the practice and how old the copy is.
+- **Check-ins, questionnaires and exercises** are kept on the phone when they can't be sent
+  (`app/lib/services/outbox.dart`). The patient is told "Saved on this phone. Steady sends it to
+  your psychologist as soon as it can reach the practice." A card on the home screen counts what's
+  waiting and has Send now.
+- **They're sent**, oldest first, when the home screen opens, when the app comes back to the
+  front, and every two minutes while it's open. Each carries the phone's own id for it, so one sent
+  twice (the reply was lost) is stored once, and how long it waited, so the practice files it at
+  the time it was given (`answeredAt` on check-ins, `completedAt` on activities). The
+  psychologist's notification says so ("answered 4 h before it arrived").
+- **The server can still say no**: a questionnaire the psychologist withdrew meanwhile, an account
+  that was stopped. Those are dropped, and the home screen says which one and why. A wait of more
+  than 30 days isn't filed. An expired session keeps everything until the patient signs in again.
+- **Kept safe**: secure storage, for that account only, at most 60 answers. Signing out deletes
+  them and the home screen's copy, and warns first if anything hasn't been sent.
+- **Limits**: a session lasts five days without reaching the server, so after that the patient
+  signs in again first. The check-in history screen needs the server. The web app keeps nothing:
+  a browser has no safe place for it, so it says it can't reach the server, as before.
+
 ## Notifications
 
 Every notification is titled "Steady" and says "New notification", on every phone. Nothing else

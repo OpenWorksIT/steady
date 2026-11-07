@@ -75,7 +75,7 @@ class _ChangeEmailScreenState extends State<ChangeEmailScreen> {
             Text(
                 staff
                     ? 'Sign-in codes and notices about your account go to this address.'
-                        '${state.config.communityUrl.isNotEmpty ? ' If you use the Community, ask OpenWorks IT to add the new address to your practice\'s list, or the Community won\'t let you in.' : ''}'
+                        '${state.config.communityUrl.isNotEmpty ? ' If you use the Community, OpenWorks IT approves the new address before you can open it again.' : ''}'
                     : 'Password-reset codes and messages about your account go to this address.',
                 style: TextStyle(color: context.sc.ink2)),
             const SizedBox(height: 18),

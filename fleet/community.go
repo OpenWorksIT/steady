@@ -40,6 +40,19 @@ var communityFields = []string{
 	"likes_7_days",
 }
 
+// isStatsKey: a Discourse API key, 64 hex characters (what setup.py --stats-account prints).
+func isStatsKey(k string) bool {
+	if len(k) != 64 {
+		return false
+	}
+	for _, c := range k {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // Community reads community.json; no file means no forum yet (nil, nil).
 func (s *Store) Community() (*Community, error) {
 	var c Community
@@ -52,8 +65,8 @@ func (s *Store) Community() (*Community, error) {
 	if !strings.HasPrefix(c.URL, "https://") {
 		return nil, fmt.Errorf("community.json: the url must start with https://")
 	}
-	if len(c.StatsKey) < 32 {
-		return nil, fmt.Errorf("community.json: statsKey looks too short")
+	if !isStatsKey(c.StatsKey) {
+		return nil, fmt.Errorf("community.json: statsKey must be the forum key alone, 64 letters and numbers (without DISCOURSE_STATS_KEY=)")
 	}
 	if c.Signin != "" && !strings.HasPrefix(c.Signin, "https://") {
 		return nil, fmt.Errorf("community.json: signin must start with https://")

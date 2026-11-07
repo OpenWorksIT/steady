@@ -21,6 +21,7 @@ th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink
 .pill.good{color:var(--good)}.pill.slow{color:var(--slow)}.pill.struggling,.pill.down{color:var(--bad)}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
 dt{color:var(--ink2)}dd{margin:0}
+pre.cmd{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:.85rem;line-height:1.6}
 .actions{display:flex;flex-direction:column;gap:14px}.actions form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
 .actions label{font-weight:400}
 .check{font-weight:600;text-decoration:none}.check.good{color:var(--good)}.check.warn{color:var(--slow)}.check.bad{color:var(--bad)}.check.muted{color:var(--ink2);font-weight:400}
