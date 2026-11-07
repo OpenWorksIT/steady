@@ -463,14 +463,17 @@ a community already open; new staff start switched off.
 ### Moving a practice from config.json to the fleet view
 
 VR and the test server were added by hand. Once the fleet view, the bridge and both servers run
-1.2:
+1.2.1 or later (1.2.0 servers can't read the fleet view's setting and say the community is off):
 
 ```bash
 sudo /opt/steady-ops/fleet/fleet.sh community test on --openworks --approve-all
 sudo /opt/steady-ops/fleet/fleet.sh community vr on --approve-all      # with --group practice-vr if it has one
 ```
 
-`--approve-all` approves everyone the practice has switched on now. The fleet view's entry
+`--approve-all` approves everyone the practice has switched on now; it says so if the server still
+says the community is off, or nobody is approved yet. A practice with nobody approved isn't on
+the bridge's list until someone is (the bridge refuses a practice without addresses, and with it
+the fleet view's whole list). The fleet view's entry
 replaces the one with the same id in `config.json` (`test`, `vr`), so forum accounts carry on
 (their ids start with the practice's id). Then take those entries out of `config.json` (keep
 `openworks` and the forum's settings), and the three `STEADY_COMMUNITY_*` lines (and

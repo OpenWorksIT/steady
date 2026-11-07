@@ -221,7 +221,8 @@ sudo /opt/steady-ops/fleet/fleet.sh community vr off
 ```
 
 The fleet view keeps this in `community-practices.json` and writes the bridge's list to
-`bridge/practices.json` (the bridge mounts that folder read-only, never `servers.json`). A
+`bridge/practices.json` (the bridge mounts that folder read-only, never `servers.json`), leaving
+out a practice with nobody approved yet. A
 server's page shows its community and who's waiting, with the command to approve each; Checks
 lists who's waiting, and anything the fleet view and the server disagree on.
 
