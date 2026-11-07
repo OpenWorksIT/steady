@@ -32,6 +32,8 @@ services:
       STEADY_COMMUNITY_URL: ${STEADY_COMMUNITY_URL:-https://community.steady.test}
       STEADY_COMMUNITY_SIGNIN: ${STEADY_COMMUNITY_SIGNIN:-https://signin.steady.test}
       STEADY_COMMUNITY_KEY: ${STEADY_COMMUNITY_KEY:-}
+      # the fleet view's key: security.py switches the community on and off as the fleet view does
+      STEADY_FLEET_KEY: ${STEADY_FLEET_KEY:-}
       # the test stack stands in for OpenWorks' own server, where OpenWorks support opens it
       STEADY_COMMUNITY_SUPPORT: ${STEADY_COMMUNITY_SUPPORT:-yes}
       # this PC's own scripts (start.sh, smoke.py) use the superuser API through the local port;
