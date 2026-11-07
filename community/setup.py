@@ -1255,8 +1255,9 @@ def _print_key(key):
     value = key.get("key")
     if not value:
         raise SetupError("The key was created but Discourse did not return it. Revoke it in Admin > API keys and make one by hand.")
-    print("\n  Activity-count key (shown once; put it in the fleet view's secrets, never in git):")
-    print(f"    DISCOURSE_STATS_KEY={value}\n")
+    print("\n  Activity-count key, shown once. It goes in the fleet view's community.json as")
+    print('  "statsKey", exactly as it stands on the next line (never in git):\n')
+    print(f"{value}\n")
 
 
 # --- plan without a server ------------------------------------------------------------

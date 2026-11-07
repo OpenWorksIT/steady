@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -140,6 +141,18 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 			f.requests = append(f.requests, b["action"])
 			f.mu.Unlock()
 			w.Write([]byte(`{"pending":"` + b["action"] + `"}`))
+		case r.URL.Path == "/api/steady/fleet/reset" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
+			var b map[string]any
+			json.NewDecoder(r.Body).Decode(&b)
+			f.mu.Lock()
+			f.requests = append(f.requests, fmt.Sprintf("reset %v %v", b["email"], b["twoStep"]))
+			f.mu.Unlock()
+			if b["email"] == "pat@example.org" {
+				w.WriteHeader(400)
+				w.Write([]byte(`{"message":"Patients' passwords are reset by their psychologist, or with the code Steady emails them."}`))
+				return
+			}
+			w.Write([]byte(`{"temporaryPassword":"Tmp-4821-quiet-otter","emailedTo":"t***@example.org","twoStepCleared":` + fmt.Sprint(b["twoStep"] == true) + `,"account":{"name":"Dr Two","role":"clinician"}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -179,7 +192,7 @@ func body(t *testing.T, res *http.Response) string {
 }
 
 func TestSignInAndPages(t *testing.T) {
-	_, site, steady, u, dir := setup(t)
+	app, site, steady, u, dir := setup(t)
 	c := client()
 
 	// signed out: pages go to the sign-in page
@@ -236,10 +249,10 @@ func TestSignInAndPages(t *testing.T) {
 		}
 	}
 
-	// actions need the CSRF token, and update/restart the practice's name typed out
+	// the website changes no server: the old action form is gone
 	res, _ = c.PostForm(site.URL+"/s/0/action", url.Values{"action": {"restart"}, "confirm": {"VR Clinical Psychology"}})
-	if res.StatusCode != 403 {
-		t.Fatalf("no csrf: %d", res.StatusCode)
+	if res.StatusCode != 404 && res.StatusCode != 405 {
+		t.Fatalf("a web action: %d", res.StatusCode)
 	}
 	body(t, res)
 	res, _ = c.Get(site.URL + "/s/0")
@@ -257,23 +270,26 @@ func TestSignInAndPages(t *testing.T) {
 	if strings.Contains(page, "<script>") {
 		t.Fatal("a check's text wasn't escaped")
 	}
-	i := strings.Index(page, `name="csrf" value="`)
-	csrf := page[i+len(`name="csrf" value="`):]
-	csrf = csrf[:strings.Index(csrf, `"`)]
-	res, _ = c.PostForm(site.URL+"/s/0/action", url.Values{"csrf": {csrf}, "action": {"restart"}, "confirm": {"wrong"}})
-	body(t, res)
-	res, _ = c.PostForm(site.URL+"/s/0/action", url.Values{"csrf": {csrf}, "action": {"restart"}, "confirm": {"VR Clinical Psychology"}})
-	if res.StatusCode != http.StatusSeeOther {
-		t.Fatalf("restart: %d", res.StatusCode)
+	// jane (added before roles: a dev) sees the commands to run over SSH, not buttons
+	if !strings.Contains(page, "sudo /opt/steady-ops/fleet/fleet.sh update 127.0.0.1") || strings.Contains(page, `action="/s/0/action"`) {
+		t.Fatal("the dev's server page lacks the SSH commands, or still has the buttons")
 	}
 	body(t, res)
-	res, _ = c.PostForm(site.URL+"/s/0/action", url.Values{"csrf": {csrf}, "action": {"check"}})
-	body(t, res)
-	res, _ = c.PostForm(site.URL+"/s/0/action", url.Values{"csrf": {csrf}, "action": {"rm"}})
-	if res.StatusCode != 400 {
-		t.Fatalf("unknown action: %d", res.StatusCode)
+	// changes happen over SSH (fleet.sh): a restart only once its short name is typed
+	t.Setenv("FLEET_ACTOR", "tiaan")
+	var out strings.Builder
+	if err := serverAction(app.store, "restart", []string{"127.0.0.1"}, strings.NewReader("wrong\n"), &out); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+		t.Fatalf("restart without confirming: %v", err)
 	}
-	body(t, res)
+	if err := serverAction(app.store, "restart", []string{"127.0.0.1"}, strings.NewReader("127.0.0.1\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverAction(app.store, "check", []string{"VR Clinical Psychology"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverAction(app.store, "update", []string{"nowhere"}, strings.NewReader(""), &out); err == nil || !strings.Contains(err.Error(), "fleet servers") {
+		t.Fatalf("an unknown server: %v", err)
+	}
 	steady.mu.Lock()
 	got := strings.Join(steady.requests, ",")
 	steady.mu.Unlock()
@@ -283,7 +299,7 @@ func TestSignInAndPages(t *testing.T) {
 
 	// the audit log has the sign-ins and actions
 	b, _ := os.ReadFile(dir + "/audit.log")
-	for _, want := range []string{"sign-in failed", "signed in", `"what":"restart"`, `"what":"check"`} {
+	for _, want := range []string{"sign-in failed", "signed in", `"what":"restart"`, `"what":"check"`, `"who":"tiaan (ssh)"`} {
 		if !strings.Contains(string(b), want) {
 			t.Fatalf("audit lacks %s", want)
 		}
@@ -560,7 +576,7 @@ func TestCommunityCountsOnly(t *testing.T) {
 	var gotKey string
 	forum := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotKey = r.Header.Get("Api-Key")
-		if r.URL.Path != "/about.json" || gotKey != strings.Repeat("s", 40) {
+		if r.URL.Path != "/about.json" || gotKey != strings.Repeat("5a", 32) {
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
@@ -573,13 +589,20 @@ func TestCommunityCountsOnly(t *testing.T) {
 		t.Fatal("no community.json should mean no forum")
 	}
 	p := NewPoller(s)
-	writeJSON(dir+"/community.json", Community{URL: "http://x", StatsKey: strings.Repeat("s", 40)})
+	// the key alone: not with its label, not cut short
+	for _, bad := range []string{"DISCOURSE_STATS_KEY=" + strings.Repeat("5a", 32), strings.Repeat("5a", 31), strings.Repeat("ZZ", 32)} {
+		writeJSON(dir+"/community.json", Community{URL: "https://community.example.org", StatsKey: bad})
+		if _, err := s.Community(); err == nil || !strings.Contains(err.Error(), "statsKey must be the forum key alone") {
+			t.Fatalf("%.24s...: %v", bad, err)
+		}
+	}
+	writeJSON(dir+"/community.json", Community{URL: "http://x", StatsKey: strings.Repeat("5a", 32)})
 	if st := p.fetchCommunity(context.Background()); st == nil || !strings.Contains(st.Err, "https") {
 		t.Fatalf("http forum: %+v", st)
 	}
 	tls := httptest.NewTLSServer(forum.Config.Handler)
 	defer tls.Close()
-	writeJSON(dir+"/community.json", Community{URL: tls.URL, StatsKey: strings.Repeat("s", 40)})
+	writeJSON(dir+"/community.json", Community{URL: tls.URL, StatsKey: strings.Repeat("5a", 32)})
 	p.client = tls.Client()
 	p.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	p.PollCommunity(context.Background())
@@ -595,7 +618,7 @@ func TestCommunityCountsOnly(t *testing.T) {
 		t.Fatal("kept more than numbers")
 	}
 	// a revoked key: the forum sends people to sign in
-	writeJSON(dir+"/community.json", Community{URL: tls.URL, StatsKey: strings.Repeat("r", 40)})
+	writeJSON(dir+"/community.json", Community{URL: tls.URL, StatsKey: strings.Repeat("e0", 32)})
 	p.PollCommunity(context.Background())
 	if st := p.CommunitySnapshot(); !strings.Contains(st.Err, "wasn't accepted") {
 		t.Fatalf("revoked key: %+v", st)
@@ -618,13 +641,14 @@ func TestOverviewShowsTheForum(t *testing.T) {
 func TestFormsOnlyFromThisSite(t *testing.T) {
 	_, site, steady, u, _ := setup(t)
 	c := signIn(t, site, u, time.Now())
-	res, _ := c.Get(site.URL + "/s/0")
+	res, _ := c.Get(site.URL + "/todo")
 	page := body(t, res)
 	i := strings.Index(page, `name="csrf" value="`)
 	csrf := page[i+len(`name="csrf" value="`):]
 	csrf = csrf[:strings.Index(csrf, `"`)]
 	post := func(site_ string) int {
-		req, _ := http.NewRequest("POST", site.URL+"/s/0/action", strings.NewReader(url.Values{"csrf": {csrf}, "action": {"check"}}.Encode()))
+		form := url.Values{"csrf": {csrf}, "title": {"Check the backups"}, "area": {"OpenWorks"}, "priority": {"soon"}, "status": {"todo"}}
+		req, _ := http.NewRequest("POST", site.URL+"/todo", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		if site_ != "" {
 			req.Header.Set("Sec-Fetch-Site", site_)
@@ -647,12 +671,7 @@ func TestFormsOnlyFromThisSite(t *testing.T) {
 			t.Fatalf("%q: %d", s, got)
 		}
 	}
-	steady.mu.Lock()
-	got := strings.Join(steady.requests, ",")
-	steady.mu.Unlock()
-	if got != "check,check" {
-		t.Fatalf("requests sent: %q", got)
-	}
+	_ = steady
 }
 
 func TestSignInQueueGivesUp(t *testing.T) {
@@ -959,5 +978,111 @@ func TestServerBehindIsListed(t *testing.T) {
 	}
 	if len(got) != 1 || !strings.Contains(got[0], "VR: runs 1.1.0, 3 change(s) behind the newest signed release (1.1.1)") {
 		t.Fatalf("behind: %v", got)
+	}
+}
+
+// An admin watches, reads and reports: the server page tells them devs make changes, and shows
+// no commands. Roles are set from the command line, and logged.
+func TestAdminsSeeNoCommands(t *testing.T) {
+	app, site, _, _, dir := setup(t)
+	admin := NewUser("anna", "a long enough password")
+	admin.Role = "admin"
+	if err := app.store.UpdateUsers(func(all []User) ([]User, error) { return append(all, admin), nil }); err != nil {
+		t.Fatal(err)
+	}
+	c := signIn(t, site, &admin, time.Now())
+	res, _ := c.Get(site.URL + "/s/0")
+	page := body(t, res)
+	if strings.Contains(page, "fleet.sh") || !strings.Contains(page, "OpenWorks' devs make changes to servers over SSH") {
+		t.Fatal("an admin sees the SSH commands, or not the note")
+	}
+	// made a dev: the commands show on the next page, without signing in again
+	t.Setenv("FLEET_ACTOR", "tiaan")
+	if err := setRole(app.store, "anna", "dev"); err != nil {
+		t.Fatal(err)
+	}
+	res, _ = c.Get(site.URL + "/s/0")
+	if !strings.Contains(body(t, res), "fleet.sh update") {
+		t.Fatal("a new dev doesn't see the commands")
+	}
+	if err := setRole(app.store, "anna", "root"); err == nil {
+		t.Fatal("a role that doesn't exist was set")
+	}
+	var out strings.Builder
+	if err := listUsers(app.store, &out); err != nil || !strings.Contains(out.String(), "jane                 dev") || !strings.Contains(out.String(), "anna                 dev") {
+		t.Fatalf("users: %v %q", err, out.String())
+	}
+	b, _ := os.ReadFile(dir + "/audit.log")
+	if !strings.Contains(string(b), `"detail":"anna: dev","ip":"ssh","what":"setrole","who":"tiaan (ssh)"`) {
+		t.Fatalf("setrole isn't logged: %s", b)
+	}
+}
+
+func TestShortNames(t *testing.T) {
+	for url, want := range map[string]string{
+		"https://vr.steadyapp.co.za": "vr", "https://Test.SteadyApp.co.za/": "test", "http://127.0.0.1:8090": "127.0.0.1",
+	} {
+		if got := (Server{URL: url}).ShortName(); got != want {
+			t.Errorf("%s: %q", url, got)
+		}
+	}
+}
+
+// A dev resets a staff password over SSH: confirmed by typing the server's short name, the
+// temporary password shown once, the account in the log but never the password.
+func TestResetOverSSH(t *testing.T) {
+	app, _, steady, _, dir := setup(t)
+	t.Setenv("FLEET_ACTOR", "tiaan")
+	var out strings.Builder
+	if err := resetPassword(app.store, []string{"127.0.0.1"}, strings.NewReader(""), &out); err == nil || !strings.Contains(err.Error(), "usage") {
+		t.Fatalf("no email: %v", err)
+	}
+	if err := resetPassword(app.store, []string{"127.0.0.1", "two@example.org"}, strings.NewReader("nope\n"), &out); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+		t.Fatalf("unconfirmed: %v", err)
+	}
+	out.Reset()
+	if err := resetPassword(app.store, []string{"127.0.0.1", "Two@Example.org", "--two-step"}, strings.NewReader("127.0.0.1\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Temporary password:  Tmp-4821-quiet-otter", "by phone", "emailed to t***@example.org", "Two-step sign-in was cleared"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+	if err := resetPassword(app.store, []string{"127.0.0.1", "pat@example.org", "--yes"}, strings.NewReader(""), &out); err == nil || !strings.Contains(err.Error(), "Patients' passwords") {
+		t.Fatalf("a patient: %v", err)
+	}
+	steady.mu.Lock()
+	got := strings.Join(steady.requests, ",")
+	steady.mu.Unlock()
+	if got != "reset Two@Example.org true,reset pat@example.org false" {
+		t.Fatalf("requests: %q", got)
+	}
+	b, _ := os.ReadFile(dir + "/audit.log")
+	if !strings.Contains(string(b), `two@example.org (two-step): ok`) || strings.Contains(string(b), "Tmp-4821") {
+		t.Fatalf("the log should name the account and never the password: %s", b)
+	}
+}
+
+// Feedback that has waited a week, and OpenWorks accounts left on a practice's server, are
+// listed to look at; OpenWorks' own server keeps its support account.
+func TestFeedbackAndSupportAccountsOnChecks(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	mk := func(name string, own bool, oldest time.Time) *Status {
+		return &Status{Server: Server{Name: name, URL: "https://" + strings.ToLower(name) + ".steadyapp.co.za"}, At: now, Data: map[string]any{
+			"counts":            map[string]any{"feedbackNew": 3.0, "feedbackNewBugs": 1.0, "supportAccounts": 1.0},
+			"feedbackOldestNew": oldest.Format(time.RFC3339), "openworksServer": own,
+			"audit": map[string]any{"at": now.Format(time.RFC3339), "items": []any{}}}}
+	}
+	p := makeChecks([]*Status{mk("VR", false, now.Add(-8*24*time.Hour)), mk("Test", true, now.Add(-2*24*time.Hour))}, nil, now)
+	var got []string
+	for _, it := range p.Look {
+		got = append(got, it.Server+" "+it.Section)
+	}
+	if strings.Join(got, ",") != "VR Feedback,VR Accounts" {
+		t.Fatalf("look: %v", got)
+	}
+	if f := feedbackText(mk("VR", false, now.Add(-8*24*time.Hour)).Data, now); f != "3 new (1 bug report), the oldest 8 days ago" {
+		t.Fatalf("feedback fact: %q", f)
 	}
 }
