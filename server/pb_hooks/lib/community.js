@@ -21,13 +21,14 @@ function origin(v) {
   return ORIGIN.test(s) ? s : "";
 }
 
-/** What the fleet view set for this server (settings "community"), or null. */
+/** What the fleet view set for this server (settings "community"), or null. Read as text: in
+ *  PocketBase a JSON field's get() gives its raw bytes, not the object (1.2.0 read it that way,
+ *  so a server the fleet view had switched on saw the community as off). */
 function stored() {
   try {
     var r = $app.findFirstRecordByData("settings", "key", "community");
-    var raw = r.get("value");
-    var v = typeof raw === "string" ? JSON.parse(raw || "null") : JSON.parse(JSON.stringify(raw));
-    return v && typeof v === "object" ? v : null;
+    var v = JSON.parse(r.getString("value") || "null");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : null;
   } catch (_) {
     return null;
   }

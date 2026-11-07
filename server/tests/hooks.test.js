@@ -64,7 +64,13 @@ function makeRuntime(opts = {}) {
     }
     // as PocketBase: no field checks (the demo data sets "created" itself)
     setRaw(k, v) { this.set(k, v); }
-    get(k) { return this.data[k]; }
+    get(k) {
+      const v = this.data[k];
+      // as PocketBase: a JSON field's get() is its raw bytes (types.JSONRaw), so hooks read JSON with getString
+      const f = collections[this.collectionName] && collections[this.collectionName].fields.getByName(k);
+      if (f && f.type === "json" && typeof v === "string") return Array.from(Buffer.from(v));
+      return v;
+    }
     getString(k) { const v = this.data[k]; return v === undefined || v === null ? "" : String(v); }
     getInt(k) { return parseInt(this.data[k] || 0, 10) || 0; }
     getFloat(k) { return parseFloat(this.data[k] || 0) || 0; }
