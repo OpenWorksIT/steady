@@ -476,8 +476,10 @@ the bridge's list until someone is (the bridge refuses a practice without addres
 the fleet view's whole list). The fleet view's entry
 replaces the one with the same id in `config.json` (`test`, `vr`), so forum accounts carry on
 (their ids start with the practice's id). Then take those entries out of `config.json` (keep
-`openworks` and the forum's settings), and the three `STEADY_COMMUNITY_*` lines (and
-`STEADY_COMMUNITY_SUPPORT`) out of each server's `.env`: what the fleet view set wins anyway.
+`openworks` and the forum's settings; `"practices": []` is fine once the fleet view runs them
+all), and the three `STEADY_COMMUNITY_*` lines (and `STEADY_COMMUNITY_SUPPORT`) out of each
+server's `.env`: what the fleet view set wins anyway. With nothing left in `config.json`, a
+fleet list the bridge can't use closes the community rather than falling back to old keys.
 `signin check` shows both lists, and warns if the fleet view's can't be used.
 
 ### By hand (before 1.2)
