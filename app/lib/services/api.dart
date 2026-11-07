@@ -177,6 +177,7 @@ class PatientStatus {
 class Person {
   final String id, name, role, email;
   final bool active, master, serverAdmin, twoStep;
+  final bool community; // staff the master psychologist put in Steady Community
   final String clinicianId, clinicianName;
   final DateTime? joinedAt;
   final String appBuild, appPlatform;
@@ -195,6 +196,7 @@ class Person {
     this.master = false,
     this.serverAdmin = false,
     this.twoStep = false,
+    this.community = false,
     this.clinicianId = '',
     this.clinicianName = '',
     this.joinedAt,
@@ -210,6 +212,7 @@ class Person {
       master: j['master'] == true,
       serverAdmin: j['serverAdmin'] == true,
       twoStep: j['twoStep'] == true,
+      community: j['community'] == true,
       clinicianId: '${c['id'] ?? ''}',
       clinicianName: '${c['name'] ?? ''}',
       joinedAt: fromMs(j['joinedAt']),
@@ -900,6 +903,12 @@ class Api {
       admins: list(res['admins']),
       serverBuild: '${res['serverBuild'] ?? ''}',
     );
+  }
+
+  /// The master psychologist puts a staff member in Steady Community, or takes them out.
+  Future<Person> setCommunity(String userId, bool on) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/practice/community', method: 'POST', body: {'user': userId, 'on': on});
+    return Person.fromJson(res);
   }
 
   /// Active psychologists (names only).

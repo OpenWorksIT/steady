@@ -2329,7 +2329,7 @@ test("community: a signed note for the sign-in bridge, for psychologists, practi
   const KEY = "k".repeat(20) + "-community-key-0123";
   const R = "/api/steady/community/sign-in";
   const SET = { STEADY_COMMUNITY_URL: "https://community.example.org", STEADY_COMMUNITY_SIGNIN: "https://Signin.Example.org/", STEADY_COMMUNITY_KEY: KEY };
-  const two = { totpEnabledAt: "2026-01-01 00:00:00.000Z", totpSecret: "JBSWY3DPEHPK3PXP" };
+  const two = { totpEnabledAt: "2026-01-01 00:00:00.000Z", totpSecret: "JBSWY3DPEHPK3PXP", community: true };
   const people = (rt) => ({
     doc: rt.makeUser(Object.assign({ name: "Dr Kempie", role: "clinician", active: true, email: "Kempie@Example.org" }, two)),
     sup: rt.makeUser(Object.assign({ name: "OpenWorks", role: "support", active: true, email: "it@example.org" }, two)),
@@ -2560,4 +2560,71 @@ test("fleet view: a staff password reset that only the person can finish, and fe
   // five an hour, then no more
   for (let i = 0; i < 4; i++) assert.equal(reset({ email: "master@example.org" }).status, 200);
   assert.equal(reset({ email: "master@example.org" }).status, 429);
+});
+
+test("community run from the fleet view: settings it sends, the master psychologist's switch, members for approval", () => {
+  const FLEET = "fleet-key-0123456789abcdefgh";
+  const KEY = "f".repeat(20) + "-fleet-community-key";
+  const R = "/api/steady/community/sign-in";
+  const F = { "X-Steady-Fleet": FLEET };
+  const two = { totpEnabledAt: "2026-01-01 00:00:00.000Z", totpSecret: "JBSWY3DPEHPK3PXP" };
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_FLEET_KEY: FLEET }) });
+  const master = rt.makeUser(Object.assign({ name: "Dr Kempie", role: "clinician", master: true, active: true, email: "kempie@vrpsych.co.za" }, two));
+  const doc = rt.makeUser(Object.assign({ name: "Dr Two", role: "clinician", active: true, email: "two@vrpsych.co.za" }, two));
+  const adm = rt.makeUser(Object.assign({ name: "Front Desk", role: "admin", active: true, email: "desk@vrpsych.co.za" }, two));
+  const pat = rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "pat@example.org" });
+  const set = (body, headers) => rt.call("POST", "/api/steady/fleet/community", { headers: headers === undefined ? F : headers, body });
+  const sum = () => rt.call("GET", "/api/steady/fleet", { headers: F }).data;
+  const on = { on: true, forum: "https://community.steadyapp.co.za", signin: "https://signin.steadyapp.co.za", key: KEY };
+
+  // nothing set: no community, no tab
+  assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "");
+  assert.equal(rt.call("POST", R, { auth: master }).status, 404);
+  assert.equal(sum().community.on, false);
+
+  // only the fleet key sets it, and only something that would work
+  assert.equal(set(on, {}).status, 404);
+  assert.equal(set(on, { "X-Steady-Fleet": "nope-nope-nope-nope-nope-nope" }).status, 404);
+  assert.equal(set(Object.assign({}, on, { key: "short" })).status, 400);
+  assert.equal(set(Object.assign({}, on, { signin: "http://signin.steadyapp.co.za" })).status, 400);
+  assert.equal(set(on).status, 200);
+  assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "https://community.steadyapp.co.za");
+  assert.equal(rt.call("GET", "/api/steady/config").data.communitySupport, false);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "fleet.community.on"));
+
+  // the master psychologist puts people in: until then, they're asked to ask
+  assert.match(rt.call("POST", R, { auth: doc }).error, /hasn't added you to the community/);
+  const sw = (who, user, value) => rt.call("POST", "/api/steady/practice/community", { auth: who, body: { user: user.id, on: value } });
+  assert.equal(sw(doc, doc, true).status, 403, "not every psychologist: the master");
+  assert.equal(sw(master, pat, true).status, 400, "staff only");
+  assert.equal(sw(master, doc, true).status, 200);
+  assert.equal(sw(master, master, true).status, 200);
+  assert.equal(sw(master, adm, true).status, 200);
+  assert.equal(doc.getBool("community"), true);
+  assert.equal(rt.call("POST", R, { auth: doc }).status, 200, "in: the note is signed with the fleet's key");
+  // nobody puts themselves in through the API
+  assert.match(String(rt.app.findCollectionByNameOrId("users").updateRule), /community:isset = false/);
+
+  // the fleet view sees who's in, to approve: names, emails and roles of staff only
+  const m = sum().community;
+  assert.equal(m.on, true);
+  assert.equal(m.fleet, true);
+  assert.deepEqual(m.members.map((x) => x.email).sort(), ["desk@vrpsych.co.za", "kempie@vrpsych.co.za", "two@vrpsych.co.za"]);
+  assert.ok(!JSON.stringify(m).includes("pat@example.org"));
+  assert.ok(!JSON.stringify(sum()).includes(KEY), "the key never comes back");
+
+  // taken out again: out of the members, and refused
+  assert.equal(sw(master, doc, false).status, 200);
+  assert.ok(!sum().community.members.some((x) => x.email === "two@vrpsych.co.za"));
+  assert.match(rt.call("POST", R, { auth: doc }).error, /hasn't added you/);
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "practice.community" && a.getString("target").startsWith("user:" + doc.id)));
+
+  // OpenWorks' own server: marked by the fleet view, not .env
+  assert.equal(set(Object.assign({}, on, { openworks: true })).status, 200);
+  assert.equal(rt.call("GET", "/api/steady/config").data.communitySupport, true);
+  assert.equal(sum().openworksServer, true);
+  // switched off: gone, whatever .env says
+  assert.equal(set({ on: false }).status, 200);
+  assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "");
+  assert.equal(rt.call("POST", R, { auth: master }).status, 404);
 });

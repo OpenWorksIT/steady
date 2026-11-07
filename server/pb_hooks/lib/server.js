@@ -145,6 +145,7 @@ function personRow(app, u, names) {
     row.master = u.getBool("master");
     row.serverAdmin = u.getBool("serverAdmin");
     row.twoStep = twoStepOn(u);
+    row.community = u.getBool("community");
   }
   row.app = { build: u.getString("appBuild"), platform: u.getString("appPlatform"), seenAt: toMs(u, "appSeenAt") };
   return row;

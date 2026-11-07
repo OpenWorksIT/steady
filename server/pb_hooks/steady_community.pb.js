@@ -29,3 +29,23 @@ routerAdd("POST", "/api/steady/community/sign-in", (e) => {
   e.response.header().set("Cache-Control", "no-store");
   return e.json(200, { url: C.noteUrl(e.auth, cfg, Date.now()) });
 }, $apis.requireAuth());
+
+// The master psychologist puts staff in the community, or takes them out (Settings > Practice >
+// Community). OpenWorks then approves each new name in the fleet view; taking someone out here
+// takes them off the bridge's list too.
+routerAdd("POST", "/api/steady/practice/community", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  s.requireSignedIn(e);
+  s.requireMaster(e);
+  const b = s.body(e);
+  let u = null;
+  try { u = $app.findRecordById("users", String(b.user || "")); } catch (_) { u = null; }
+  if (!u) throw new NotFoundError("No such account.");
+  const role = u.getString("role");
+  if (role !== "clinician" && role !== "admin") throw s.badRequest("The community is for the practice's psychologists and administrators.");
+  const on = b.on === true;
+  u.set("community", on);
+  $app.unsafeWithoutHooks().save(u);
+  s.audit($app, e, "practice.community", "user:" + u.id + (on ? " in" : " out"), "");
+  return e.json(200, s.personRow($app, u, null));
+}, $apis.requireAuth());

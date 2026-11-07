@@ -8,6 +8,7 @@
 //   GET  /api/steady/fleet           X-Steady-Fleet: STEADY_FLEET_KEY
 //   POST /api/steady/fleet/request   X-Steady-Fleet: STEADY_FLEET_KEY   {action: check|update|restart}
 //   POST /api/steady/fleet/reset     X-Steady-Fleet: STEADY_FLEET_KEY   {email, twoStep}
+//   POST /api/steady/fleet/community X-Steady-Fleet: STEADY_FLEET_KEY   {on, forum, signin, key, openworks}
 //
 // A reset from the fleet view (a dev, over SSH) is for staff only and finishes only with a code
 // emailed to the person: the dev gets a temporary password to tell them by phone, the code goes
@@ -78,6 +79,14 @@ routerAdd("GET", "/api/steady/fleet", (e) => {
     })(),
     // OpenWorks' own server (the test server), where OpenWorks support opens the community
     openworksServer: !!(require(`${__hooks}/lib/community.js`).config() || {}).support,
+    // the community: on or off, whether the fleet view runs it, and the staff the master
+    // psychologist has put in (name, email, role), for OpenWorks to approve. Never the key.
+    community: (() => {
+      const C = require(`${__hooks}/lib/community.js`);
+      const cfg = C.config();
+      if (!cfg) return { on: false, fleet: !!C.stored(), members: [] };
+      return { on: true, fleet: cfg.fleet, forum: cfg.forum, members: C.members($app) };
+    })(),
     version: {
       code: sum.code,
       managed: !!status,
@@ -190,4 +199,24 @@ routerAdd("POST", "/api/steady/fleet/reset", (e) => {
     emailedTo: require(`${__hooks}/lib/devices.js`).mask(u.email()),
     twoStepCleared: b.twoStep === true
   });
+});
+
+// The community for this server, as the fleet view sets it (fleet community <server> on|off).
+// The key is made by the fleet view and shared with the sign-in bridge; nothing to copy by hand.
+routerAdd("POST", "/api/steady/fleet/community", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  if (!s.fleetKeyOk(e)) throw new NotFoundError("Not found.");
+  const C = require(`${__hooks}/lib/community.js`);
+  const b = s.body(e);
+  if (b.on !== true) {
+    C.store($app, { on: false });
+    s.audit($app, e, "fleet.community.off", "fleet view", "");
+    return e.json(200, { on: false });
+  }
+  const forum = C.origin(b.forum), signin = C.origin(b.signin), key = String(b.key || "");
+  if (!forum || !signin) throw s.badRequest("forum and signin must be https:// addresses.");
+  if (key.length < 32 || key.length > 200) throw s.badRequest("The key must be 32 to 200 characters.");
+  C.store($app, { on: true, forum: forum, signin: signin, key: key, openworks: b.openworks === true });
+  s.audit($app, e, "fleet.community.on", "fleet view" + (b.openworks === true ? " (OpenWorks' own server)" : ""), "");
+  return e.json(200, { on: true, openworks: b.openworks === true, members: C.members($app).length });
 });

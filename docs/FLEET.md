@@ -208,6 +208,23 @@ They also need the code Steady emails them (24 hours). `--two-step` also clears 
 authenticator (a lost phone) and unlocks an account they locked. Patients' passwords aren't
 reset from here: their psychologist does it, or they use the emailed code themselves.
 
+**The community** (docs/COMMUNITY.md, "Adding a practice"):
+
+```bash
+sudo /opt/steady-ops/fleet/fleet.sh community                       # every practice in it
+sudo /opt/steady-ops/fleet/fleet.sh community vr on [--group practice-vr] [--approve-all]
+sudo /opt/steady-ops/fleet/fleet.sh community test on --openworks   # OpenWorks' own server
+sudo /opt/steady-ops/fleet/fleet.sh community vr people             # who the practice put in, approved or waiting
+sudo /opt/steady-ops/fleet/fleet.sh community vr approve kempie@vrpsych.co.za
+sudo /opt/steady-ops/fleet/fleet.sh community vr remove someone@vrpsych.co.za
+sudo /opt/steady-ops/fleet/fleet.sh community vr off
+```
+
+The fleet view keeps this in `community-practices.json` and writes the bridge's list to
+`bridge/practices.json` (the bridge mounts that folder read-only, never `servers.json`). A
+server's page shows its community and who's waiting, with the command to approve each; Checks
+lists who's waiting, and anything the fleet view and the server disagree on.
+
 **Who can sign in to the website**, and as what:
 
 ```bash
