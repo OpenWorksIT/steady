@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates the push relay secret and the monitor, fleet and community keys, and lets the push relay
+# Creates the push relay secret and the monitor and fleet keys, and lets the push relay
 # read its keys in secrets/: Apple's .p8 (iPhones) and Firebase's fcm.json (Android). Run it again after
 # copying either key in.
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -28,7 +28,6 @@ fi
 SECRET=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n')
 MONITOR=$(openssl rand -base64 30 | tr '+/' '-_' | tr -d '=\n')
 FLEET=$(openssl rand -base64 30 | tr '+/' '-_' | tr -d '=\n')
-COMMUNITY=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n')
 
 cat <<EOF
 
@@ -42,10 +41,6 @@ STEADY_FLEET_KEY=$FLEET
 STEADY_MONITOR_KEY and STEADY_FLEET_KEY can be added to an existing install at any time: then
 docker compose up -d. Give only STEADY_FLEET_KEY to OpenWorks IT's fleet view, see docs/FLEET.md.)
 
-For the community (only if this practice's psychologists use it, docs/COMMUNITY.md), also add
-these, with the same key as this practice's "key" in the community's sign-in bridge:
-
-STEADY_COMMUNITY_URL=https://community.steadyapp.co.za
-STEADY_COMMUNITY_SIGNIN=https://signin.steadyapp.co.za
-STEADY_COMMUNITY_KEY=$COMMUNITY
+The community needs nothing here: OpenWorks IT switches it on from the fleet view
+(fleet community <server> on, docs/COMMUNITY.md), which makes this practice's key.
 EOF
