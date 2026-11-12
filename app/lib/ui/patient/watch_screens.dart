@@ -151,8 +151,8 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
           children: [
             Text(
-              'Steady can read what your watch saves in $storeName and share a daily summary with your psychologist. '
-              'This is optional and you can stop at any time.',
+              'Steady doesn\'t measure anything itself. It reads what your watch has already saved in $storeName and shares '
+              'a daily summary with your psychologist. This is optional and you can stop at any time.',
               style: context.tt.bodyLarge,
             ),
             const SizedBox(height: 16),
