@@ -87,6 +87,7 @@ function refusal(user, s, cfg) {
   if (role === "support" && !(cfg && cfg.support)) {
     return "OpenWorks IT opens the community from its own server, not from a practice's.";
   }
+  if (s.reviewer && s.reviewer(user)) return "This is the app reviewers' account. The community is for the practice's own psychologists, so it doesn't open here.";
   if (!s.twoStepOn(user)) return "Set up two-step sign-in in Steady first (Settings > Two-step sign-in).";
   if (!user.email()) return "This account has no email address. Ask the practice to add one.";
   if (role !== "support" && !user.getBool("community")) {

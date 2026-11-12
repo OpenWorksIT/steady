@@ -192,9 +192,10 @@ routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
     }
   }
   G.succeeded($app, email);
-  // staff: only from a linked device; a new device gets a code by email first
+  // staff: only from a linked device; a new device gets a code by email first (not the app
+  // reviewers' account, which can't receive one: lib/server.js reviewer)
   const D = require(`${__hooks}/lib/devices.js`);
-  if (s.isStaff(u) && D.required()) {
+  if (s.isStaff(u) && D.required() && !s.reviewer(u)) {
     const d = D.parse(b.device);
     if (!d) throw new BadRequestError("Please update Steady to sign in.", { device: new ValidationError("update_app", "Please update Steady to sign in.") });
     const dev = D.find($app, u, d);
