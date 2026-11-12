@@ -61,6 +61,11 @@ flutter build appbundle --dart-define=STEADY_SERVER=https://steady.yourpractice.
 
 For a private practice app, Apple's **unlisted app distribution** keeps it off App Store search; request it after the first submission. Expect health-app review questions: have the privacy policy URL and the consent text ready. Google Play: complete the health apps declaration.
 
+Google Play's health policy (November 2026 review):
+- **Not a medical device.** The description has to say that Steady is not a medical device and doesn't diagnose, treat, cure or prevent any medical condition. The app says it too, on the sign-in screen and in Settings (`kNotMedicalDevice`, 1.2.3).
+- **Health Connect, one declaration per data type.** For heart rate, steps, sleep and blood oxygen, say what it's for, where it shows in the app and how it helps: the psychologist sees each as daily charts in the patient's record, and sleep, steps and resting heart rate in RADR. Ask only for the four types the app reads (`app/scripts/patch_android.py`).
+- **Reviewers see where it's used.** The data shows only on the psychologist's side, so give reviewers a psychologist's login with fictional patients as well as a patient's, both on the test server, never a practice's.
+
 ## Android settings
 
 `scripts/patch_android.py` applies these; if it can't, make them by hand in `android/app/build.gradle.kts`:
