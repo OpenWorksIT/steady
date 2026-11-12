@@ -292,6 +292,8 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady.pb.js"));
   run(path.join(HOOKS, "steady_practice.pb.js"));
   run(path.join(HOOKS, "steady_research.pb.js"));
+  // the test branch only (docs/REVIEWERS.md); before steady_health, whose timing middleware is last
+  run(path.join(HOOKS, "steady_reviewers.pb.js"));
   run(path.join(HOOKS, "steady_health.pb.js"));
   run(path.join(HOOKS, "steady_feedback.pb.js"));
   run(path.join(HOOKS, "steady_care.pb.js"));
@@ -2004,6 +2006,94 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
   assert.equal(rt.call("POST", `/api/steady/admin/people/${doc.id}/active`, { auth: master, body: { active: true } }).status, 403);
   // the mail settings never stay in PocketBase's settings (a settings save would store them)
   assert.ok(!rt.settings.smtp.password && !rt.settings.smtp.host);
+});
+
+test("app reviewers (test server only): a psychologist with fictional patients, no two-step or device code, nothing it can lock", () => {
+  const env = Object.assign({}, ENV, { STEADY_REQUIRE_2FA: "staff", STEADY_SUPERUSER_API: "open", STEADY_SMTP_HOST: "mail.test", STEADY_MAIL_FROM: "noreply@steadyapp.co.za" });
+  const su = { isSuperuser: () => true, getString: () => "", id: "" };
+  const phone = { key: "r".repeat(40), name: "Pixel", platform: "android" };
+
+  // without STEADY_REVIEWERS=on (every server but the test server) there is no such account
+  const off = makeRuntime({ env });
+  const no = off.call("POST", "/api/steady/ops/reviewer", { auth: su, body: { email: "review@openworks.co.za" } });
+  assert.equal(no.status, 400);
+  assert.match(no.error, /test server only/);
+
+  const rt = makeRuntime({ env: Object.assign({}, env, { STEADY_REVIEWERS: "on" }) });
+  const doc = rt.makeUser({ name: "Dr Real", role: "clinician", active: true, email: "dr@example.org" });
+  assert.equal(rt.call("POST", "/api/steady/ops/reviewer", { auth: doc, body: { email: "review@openworks.co.za" } }).status, 404, "the server's own tools only");
+  assert.match(rt.call("POST", "/api/steady/ops/reviewer", { auth: su, body: { email: "dr@example.org" } }).error, /isn't the reviewers'/);
+  const made = rt.call("POST", "/api/steady/ops/reviewer", { auth: su, body: { email: "Review@OpenWorks.co.za" } });
+  assert.equal(made.status, 200, JSON.stringify(made));
+  assert.equal(made.data.created, true);
+  assert.equal(made.data.account.reviewer, true);
+  assert.match(made.data.password, /^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/);
+  const rev = rt.app.findAuthRecordByEmail("users", "review@openworks.co.za");
+  assert.equal(rev.getString("role"), "clinician");
+  assert.equal(rev.getBool("master"), false);
+  assert.equal(rev.getBool("mustChangePassword"), false, "the next reviewer uses the same password");
+  assert.ok(rev.getString("totpEnabledAt"), "the app doesn't send them to set up two-step");
+  assert.equal(rev.getString("totpSecret"), "");
+  assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "ops.reviewer.create"));
+  assert.equal(made.data.password.length, 14);
+  assert.ok(!rt.store.auditlog.some((a) => JSON.stringify(a.data || {}).indexOf(made.data.password) >= 0), "the password is never in the audit log");
+
+  // signs in with the password alone: no code, no emailed device code
+  const signIn = (password) => rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "review@openworks.co.za", password, device: phone } });
+  assert.equal(signIn("wrong-password").status, 400);
+  const r = signIn(made.data.password);
+  assert.equal(r.status, 200, JSON.stringify(r));
+  assert.equal(r.data.linkDevice, undefined);
+  assert.equal(r.data.token, "token-for-" + rev.id);
+  assert.equal(rt.mails.length, 0);
+  // a real psychologist still gets the emailed code on a new device
+  doc.setPassword("doctor-password"); rt.app.save(doc);
+  assert.equal(rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "dr@example.org", password: "doctor-password", device: phone } }).data.linkDevice, true);
+
+  // the fictional patients are its own; a real psychologist's patients aren't
+  rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "p@example.org" });
+  const demo = rt.call("POST", "/api/steady/ops/demo", { auth: su, body: { clinician: "review@openworks.co.za" } });
+  assert.equal(demo.status, 200, JSON.stringify(demo));
+  const ov = rt.call("GET", "/api/steady/overview", { auth: rt.app.findRecordById("users", rev.id) });
+  assert.equal(ov.status, 200, JSON.stringify(ov));
+  assert.equal(ov.data.patients.length, 3);
+  assert.ok(ov.data.patients.every((p) => p.name !== "Pat"));
+
+  // nothing it can change to lock the next reviewer out, and no community
+  const fresh = rt.app.findRecordById("users", rev.id);
+  const mw = (p, auth) => {
+    let passed = false;
+    try {
+      rt.hooks.middleware.forEach((m) => m({ auth, request: { url: { path: p, query: () => ({ get: () => "" }) }, remoteAddr: "172.18.0.5:5000" }, response: { header: () => new Map() }, status: () => 200, next() { passed = true; } }));
+    } catch (err) { return err.message; }
+    return passed ? "passed" : "";
+  };
+  for (const p of ["/api/steady/me/password", "/api/steady/me/email", "/api/steady/me/email/confirm", "/api/steady/me/two-step/start", "/api/steady/me/two-step/off", "/api/steady/me/delete-request"]) {
+    assert.match(mw(p, fresh), /next reviewer can sign in/, p);
+    assert.equal(mw(p, rt.app.findRecordById("users", doc.id)), "passed", "only the reviewers' account: " + p);
+  }
+  assert.equal(mw("/api/steady/overview", fresh), "passed");
+  const withForum = makeRuntime({ env: Object.assign({}, env, { STEADY_REVIEWERS: "on", STEADY_COMMUNITY_URL: "https://community.example.org",
+    STEADY_COMMUNITY_SIGNIN: "https://signin.example.org", STEADY_COMMUNITY_KEY: "k".repeat(40) }) });
+  const inForum = withForum.makeUser({ name: "App reviewer", role: "clinician", demo: true, community: true, active: true, email: "review@openworks.co.za", totpEnabledAt: "2026-11-12 08:00:00.000Z" });
+  const refused = withForum.call("POST", "/api/steady/community/sign-in", { auth: inForum });
+  assert.equal(refused.status, 403, JSON.stringify(refused));
+  assert.match(refused.error, /reviewers' account/);
+
+  // a new password each run; --remove stops it
+  const again = rt.call("POST", "/api/steady/ops/reviewer", { auth: su, body: { email: "review@openworks.co.za" } });
+  assert.equal(again.data.created, false);
+  assert.notEqual(again.data.password, made.data.password);
+  assert.equal(signIn(made.data.password).status, 400, "the old password no longer works");
+  const stop = rt.call("POST", "/api/steady/ops/reviewer", { auth: su, body: { email: "review@openworks.co.za", remove: true } });
+  assert.equal(stop.data.stopped, true);
+  assert.equal(signIn(again.data.password).status, 400);
+
+  // the switch off again (the account left behind on a server without it): a normal psychologist,
+  // who needs two-step like everyone else
+  const back = makeRuntime({ env });
+  const left = back.makeUser({ name: "App reviewer", role: "clinician", demo: true, active: true, email: "review@openworks.co.za", passwordHash: "pw:x", totpEnabledAt: "2026-11-12 08:00:00.000Z" });
+  assert.equal(back.call("GET", "/api/steady/overview", { auth: left }).status, 403);
 });
 
 test("1.0 hardening: patients never get scores, wrong tries rest the account, link codes are capped", () => {

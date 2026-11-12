@@ -82,7 +82,17 @@ function requireMaster(e) {
 }
 
 /* Two-step sign-in is required for staff unless STEADY_REQUIRE_2FA=off. */
+/** The app stores' reviewers' psychologist account (accounts.sh reviewer, steady_reviewers.pb.js):
+ *  a psychologist marked demo, on a server that allows it (STEADY_REVIEWERS=on). It signs in with
+ *  its password alone, so Apple's and Google's reviewers can see the psychologist's side with
+ *  fictional patients. The test branch only: OpenWorks' test server, never a practice's. */
+function reviewer(rec) {
+  return !!rec && typeof rec.getBool === "function" && rec.getString("role") === "clinician" && rec.getBool("demo") &&
+    env("STEADY_REVIEWERS", "off") === "on";
+}
+
 function twoStepRequired(rec) {
+  if (reviewer(rec)) return false;
   var mode = env("STEADY_REQUIRE_2FA", "staff");
   if (mode === "off") return false;
   if (mode === "all") return true;
@@ -146,6 +156,7 @@ function personRow(app, u, names) {
     row.serverAdmin = u.getBool("serverAdmin");
     row.twoStep = twoStepOn(u);
     row.community = u.getBool("community");
+    if (reviewer(u)) row.reviewer = true;
   }
   row.app = { build: u.getString("appBuild"), platform: u.getString("appPlatform"), seenAt: toMs(u, "appSeenAt") };
   return row;
@@ -677,6 +688,7 @@ module.exports = {
   twoStepOn: twoStepOn,
   needsTwoStep: needsTwoStep,
   tempPassword: tempPassword,
+  reviewer: reviewer,
   resetPassword: resetPassword,
   personRow: personRow,
   clinicianName: clinicianName,

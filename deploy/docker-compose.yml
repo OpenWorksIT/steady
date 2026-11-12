@@ -96,6 +96,8 @@ services:
       STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
       # test servers only: the demo patients get a new day every night (accounts.sh demo-patients)
       STEADY_DEMO_DAILY: ${STEADY_DEMO_DAILY:-}
+      # the app stores' reviewers' account (docs/REVIEWERS.md): OpenWorks' test server only
+      STEADY_REVIEWERS: ${STEADY_REVIEWERS:-off}
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data
