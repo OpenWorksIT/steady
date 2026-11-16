@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../app_state.dart';
 import '../../wearable/wearable_sync.dart';
 import '../theme.dart';
+import '../wearable/wearable_views.dart';
 import '../widgets.dart';
 
 /// Home-screen card: connect a watch, or see when it last synced.
@@ -73,7 +74,7 @@ class _WatchCardState extends State<WatchCard> {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('Connect your watch', style: context.tt.titleMedium),
-                  Text('Optional. Share heart rate, sleep and steps with your psychologist.',
+                  Text('Optional. Share heart rate, sleep, steps and blood oxygen with your psychologist.',
                       style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
                 ]),
               ),
@@ -84,22 +85,50 @@ class _WatchCardState extends State<WatchCard> {
       );
     }
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
-        child: Row(children: [
-          const Glyph(Icons.watch, calm: true),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Watch data shared', style: context.tt.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-              Text(_last == null ? 'Not synced yet' : 'Last synced ${relTime(_last)}',
-                  style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
-            ]),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyWatchDataScreen())),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+          child: Row(children: [
+            const Glyph(Icons.watch, calm: true),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Watch data shared', style: context.tt.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                Text('${_last == null ? 'Not synced yet' : 'Last synced ${relTime(_last)}'}. Tap to see it.',
+                    style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
+              ]),
+            ),
+            _syncing
+                ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5)))
+                : IconButton(tooltip: 'Sync now', onPressed: _sync, icon: const Icon(Icons.sync)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// The patient's own watch data (1.2.4): the daily summaries they shared, the same charts their
+/// psychologist sees. From the watch card on the home screen and from Settings.
+class MyWatchDataScreen extends StatelessWidget {
+  const MyWatchDataScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final storeName = WearableSync.instance.store?.name ?? 'your phone\'s health app';
+    return Scaffold(
+      appBar: AppBar(title: const Text('Your watch data')),
+      body: SafeArea(
+        child: WearableTab.own(
+          header: Text(
+            'The daily summaries you shared from your watch: heart rate, sleep, steps and blood oxygen. Your psychologist '
+            'sees the same, to follow how you are doing between sessions. Steady reads them from $storeName and doesn\'t '
+            'measure anything itself. The shaded band is your own usual range.',
+            style: TextStyle(color: context.sc.ink2),
           ),
-          _syncing
-              ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5)))
-              : IconButton(tooltip: 'Sync now', onPressed: _sync, icon: const Icon(Icons.sync)),
-        ]),
+        ),
       ),
     );
   }
@@ -166,6 +195,7 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
             Text('How it is used', style: context.tt.titleMedium),
             const SizedBox(height: 6),
             bullet('Only daily totals and averages leave your phone, not every reading.'),
+            bullet('You can see what you shared too: tap the watch card on your home screen.'),
             bullet('Up to the last 30 days are shared when you connect, then new days as you use Steady.'),
             bullet('Your psychologist at $practice can see it, and a colleague there if your psychologist shares your record with them '
                 '(for example while they are away). It helps them understand how you are doing between sessions, and may be used, '
