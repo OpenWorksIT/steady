@@ -86,17 +86,18 @@ void main() {
   });
 
   testWidgets('the page says what each kind of watch data is for, where it shows, and the privacy notice', (tester) async {
+    // a screen tall enough for the whole page, so the list builds all of it
+    tester.view.physicalSize = const Size(800, 8000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(MaterialApp(theme: buildTheme(Brightness.light), home: const HealthDataUseScreen()));
     expect(healthDataUses.map((u) => u.$1), ['Heart rate', 'Sleep', 'Steps', 'Blood oxygen']);
     expect(find.textContaining('optional, and you can stop'), findsOneWidget);
     for (final (title, body) in healthDataUses) {
-      // a scrolling list builds what's on screen: scroll each one in
-      await tester.scrollUntilVisible(find.text(title), 200);
       expect(find.text(title), findsOneWidget);
       expect(body, contains('psychologist'), reason: '$title: who it helps');
       expect(body, contains('You'), reason: '$title: the patient sees it too');
     }
-    await tester.scrollUntilVisible(find.text(privacyNoticeTitle), 300);
     expect(find.text(privacyNoticeTitle), findsOneWidget);
   });
 
