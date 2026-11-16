@@ -20,6 +20,7 @@ import 'clinician/server_updates_screen.dart';
 import 'update_notice.dart';
 import 'source_link.dart';
 import 'patient/delete_account_screen.dart';
+import 'patient/watch_screens.dart';
 import 'theme.dart';
 import 'clinician/patient_care.dart';
 import 'practice/audit_screen.dart' show ServerHealthScreen;
@@ -81,6 +82,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text('Watch data', style: context.tt.titleMedium),
               const SizedBox(height: 4),
               Text('Your daily watch summaries are shared with your psychologist.', style: TextStyle(color: context.sc.ink2)),
+              TextButton(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyWatchDataScreen())),
+                child: const Text('See your watch data'),
+              ),
               TextButton(
                 onPressed: () async {
                   final messenger = ScaffoldMessenger.of(context);

@@ -63,8 +63,9 @@ For a private practice app, Apple's **unlisted app distribution** keeps it off A
 
 Google Play's health policy (November 2026 review):
 - **Not a medical device.** The description has to say that Steady is not a medical device and doesn't diagnose, treat, cure or prevent any medical condition. The app says it too, on the sign-in screen and in Settings (`kNotMedicalDevice`, 1.2.3).
-- **Health Connect, one declaration per data type.** For heart rate, steps, sleep and blood oxygen, say what it's for, where it shows in the app and how it helps: the psychologist sees each as daily charts in the patient's record, and sleep, steps and resting heart rate in RADR. Ask only for the four types the app reads (`app/scripts/patch_android.py`).
-- **Reviewers see where it's used.** The data shows only on the psychologist's side, so give reviewers a psychologist's login with fictional patients as well as a patient's, both on the test server, never a practice's.
+- **Health Connect, one declaration per data type.** For heart rate, steps, sleep and blood oxygen, say what it's for, where it shows in the app and how it helps the patient, framed as medical care (direct care with their own psychologist): the patient sees each in Your watch data (1.2.4), and the psychologist as daily charts in the patient's record, and sleep, steps and resting heart rate in RADR. Ask only for the four types the app reads (`app/scripts/patch_android.py`). The second review (16 Nov 2026) turned down declarations that named only the psychologist's side.
+- **The person who shares it sees it.** Since 1.2.4 the patient sees the watch data they shared (`MyWatchDataScreen`, from the watch card and Settings), and Health Connect's "why does Steady need this" opens `ui/health_data_use.dart` (each data type: what, where, why; then the privacy notice) instead of the sign-in screen. Keep that page, the consent screen and the declarations saying the same.
+- **Reviewers see where it's used.** Give reviewers a psychologist's login with fictional patients as well as a patient's, both on the test server, never a practice's.
 
 ## Android settings
 

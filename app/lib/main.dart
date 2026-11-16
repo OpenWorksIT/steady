@@ -27,6 +27,7 @@ import 'ui/practice/admin_shell.dart';
 import 'ui/practice/operator_agreement_screen.dart';
 import 'ui/practice/support_shell.dart';
 import 'ui/calm.dart';
+import 'ui/health_data_use.dart';
 import 'ui/theme.dart';
 import 'ui/update_notice.dart';
 
@@ -44,6 +45,8 @@ Future<void> main() async {
   };
   await state.loadLocal();
   runApp(AppScope(state: state, child: const SteadyApp()));
+  // Health Connect asking why Steady reads its data opens the page that says (Android)
+  HealthDataUse.listen(SteadyApp.navigatorKey);
   // staff in a browser: the session lasts while the tab is open, renewed in the background
   TabSession(state, navigatorKey: SteadyApp.navigatorKey).start();
   await state.start();

@@ -97,9 +97,15 @@ class _MiniRow extends StatelessWidget {
 
 /// The Wearable tab.
 class WearableTab extends StatefulWidget {
-  final String patientId;
+  /// Whose data: null is the signed-in patient's own (1.2.4, [WearableTab.own]).
+  final String? patientId;
   final WearableMetric? initialMetric;
-  const WearableTab({required this.patientId, this.initialMetric, super.key});
+  /// Shown above the charts: the patient's own view says what they're looking at.
+  final Widget? header;
+  const WearableTab({required String this.patientId, this.initialMetric, super.key}) : header = null;
+  const WearableTab.own({this.header, super.key})
+      : patientId = null,
+        initialMetric = null;
   @override
   State<WearableTab> createState() => _WearableTabState();
 }
@@ -124,7 +130,11 @@ class _WearableTabState extends State<WearableTab> with AutomaticKeepAliveClient
   Future<Biometrics> _load() {
     final today = dateOnly(DateTime.now());
     final end = _period.end.isAfter(today) ? today : _period.end;
-    return AppScope.api(context).patientBiometrics(widget.patientId, from: dayKey(_period.start), to: dayKey(end));
+    final api = AppScope.api(context);
+    final id = widget.patientId;
+    return id == null
+        ? api.myBiometrics(from: dayKey(_period.start), to: dayKey(end))
+        : api.patientBiometrics(id, from: dayKey(_period.start), to: dayKey(end));
   }
 
   void _setPeriod(Period p) => setState(() {
@@ -163,6 +173,7 @@ class _WearableTabState extends State<WearableTab> with AutomaticKeepAliveClient
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
+          if (widget.header case final h?) ...[h, const SizedBox(height: 12)],
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: SegmentedButton<Span>(
