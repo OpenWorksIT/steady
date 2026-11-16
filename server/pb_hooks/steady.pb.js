@@ -651,27 +651,19 @@ routerAdd("GET", "/api/steady/patients/{id}/biometrics", (e) => {
   const w = require(`${__hooks}/lib/wearable.js`);
   s.requireRole(e, "clinician");
   const p = s.viewablePatient($app, e.auth.id, e.request.pathValue("id")).patient;
-  const q = e.requestInfo().query || {};
-  const today = w.localDay(s.nowMs(), p.getInt("tzOffset") || 120);
-  const to = w.validDay(String(q.to || "")) ? String(q.to) : today;
-  let from = w.validDay(String(q.from || "")) ? String(q.from) : w.addDays(to, -27);
-  if (from > to) throw s.badRequest("from must be before to.");
-  if (from < w.addDays(to, -400)) from = w.addDays(to, -400);
-  const recs = $app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:a} && day <= {:b}", "day", 1000, 0,
-    { p: p.id, a: w.addDays(from, -w.BASELINE_WINDOW), b: to });
-  const byDay = {};
-  recs.forEach((r) => { byDay[r.getString("day")] = s.readJson(r, "values") || {}; });
-  const days = Object.keys(byDay).filter((d) => d >= from && d <= to).sort().map((d) => ({ day: d, values: byDay[d] }));
-  s.audit($app, e, "patient.biometrics", "user:" + p.id + " " + from + ".." + to, p.id, true);
-  return e.json(200, {
-    from: from,
-    to: to,
-    connected: s.toMs(p, "wearableConsentAt") > 0,
-    days: days,
-    baseline: w.baselines(byDay, from, to),
-    baselineWindow: w.BASELINE_WINDOW,
-    baselineMin: w.BASELINE_MIN
-  });
+  const out = w.view($app, s, p, e.requestInfo().query || {});
+  s.audit($app, e, "patient.biometrics", "user:" + p.id + " " + out.from + ".." + out.to, p.id, true);
+  return e.json(200, out);
+}, $apis.requireAuth());
+
+// The patient's own watch data (1.2.4): the daily summaries they shared, as their psychologist
+// sees them. Only their own; what was shared stays theirs to see after they stop sharing.
+routerAdd("GET", "/api/steady/me/biometrics", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const w = require(`${__hooks}/lib/wearable.js`);
+  s.requireRole(e, "patient");
+  const p = $app.findRecordById("users", e.auth.id);
+  return e.json(200, w.view($app, s, p, e.requestInfo().query || {}));
 }, $apis.requireAuth());
 
 /* =====================================================================

@@ -714,6 +714,15 @@ test("wearable: consent gates uploads, values merge, clinician sees baselines", 
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/biometrics`, { auth: other }).status, 404);
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/biometrics`, { auth: pat }).status, 403);
 
+  // 1.2.4: the patient sees their own, exactly as their psychologist does (Google Play wants the
+  // person who shares it to see it); only their own, and staff use the route above
+  const mine = rt.call("GET", "/api/steady/me/biometrics", { auth: pat, query: { from: "2026-10-09", to: "2026-10-15" } });
+  assert.equal(mine.status, 200, JSON.stringify(mine));
+  assert.deepEqual(JSON.parse(JSON.stringify(mine.data)), JSON.parse(JSON.stringify(g.data)));
+  assert.equal(rt.call("GET", "/api/steady/me/biometrics", { auth: pat }).data.from, "2026-09-18");
+  assert.equal(rt.call("GET", "/api/steady/me/biometrics", { auth: doc }).status, 403);
+  assert.equal(rt.call("GET", "/api/steady/me/biometrics", { auth: pat, query: { from: "2026-10-15", to: "2026-10-09" } }).status, 400);
+
   // overview shows a small wearable summary
   const ov = rt.call("GET", "/api/steady/overview", { auth: doc });
   assert.deepEqual(ov.data.patients[0].wearable, { connected: true, days14: 14, lastDay: "2026-10-15" });
@@ -723,6 +732,16 @@ test("wearable: consent gates uploads, values merge, clinician sees baselines", 
   assert.equal(up({ days: [{ day: "2026-10-15", values: { steps: 1 } }] }).status, 403);
   assert.equal(rt.store.biometrics.length, 21);
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "consent.wearable.withdrawn"));
+  // what they shared stays theirs to see
+  const after = rt.call("GET", "/api/steady/me/biometrics", { auth: rt.app.findRecordById("users", pat.id) });
+  assert.equal(after.status, 200);
+  assert.equal(after.data.connected, false);
+  assert.ok(after.data.days.length > 0);
+  const pat2 = rt.makeUser({ name: "Other patient", role: "patient", clinician: doc.id, active: true, email: "p2@example.org" });
+  const theirs = rt.call("GET", "/api/steady/me/biometrics", { auth: pat2 });
+  assert.equal(theirs.status, 200);
+  assert.equal(theirs.data.days.length, 0, "nobody else's days");
+  assert.equal(theirs.data.connected, false);
 });
 
 test("security: stopping an account ends its sessions; consent and settings are locked down", () => {

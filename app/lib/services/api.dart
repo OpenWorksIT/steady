@@ -822,6 +822,15 @@ class Api {
     return Biometrics.fromJson(res);
   }
 
+  /// The signed-in patient's own watch data (1.2.4), the same as their psychologist sees.
+  Future<Biometrics> myBiometrics({String? from, String? to}) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/me/biometrics', query: {
+      'from': ?from,
+      'to': ?to,
+    });
+    return Biometrics.fromJson(res);
+  }
+
   Future<void> assign({required String patientId, required String instrumentId, String note = '', String repeat = 'once'}) async {
     await pb.collection('assignments').create(body: {
       'patient': patientId,

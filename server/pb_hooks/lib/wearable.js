@@ -124,7 +124,34 @@ function baselines(byDay, from, to, metrics) {
   return out;
 }
 
+/** What the watch charts show for one patient: the daily values from..to (the last 28 days when
+ *  not given, 400 at most) and their own usual range for each day. The psychologist's Wearable
+ *  tab and, since 1.2.4, the patient's own watch data both show this. */
+function view(app, s, p, q) {
+  var today = localDay(s.nowMs(), p.getInt("tzOffset") || 120);
+  var to = validDay(String(q.to || "")) ? String(q.to) : today;
+  var from = validDay(String(q.from || "")) ? String(q.from) : addDays(to, -27);
+  if (from > to) throw s.badRequest("from must be before to.");
+  if (from < addDays(to, -400)) from = addDays(to, -400);
+  var recs = app.findRecordsByFilter("biometrics", "patient = {:p} && day >= {:a} && day <= {:b}", "day", 1000, 0,
+    { p: p.id, a: addDays(from, -BASELINE_WINDOW), b: to });
+  var byDay = {};
+  recs.forEach(function (r) { byDay[r.getString("day")] = s.readJson(r, "values") || {}; });
+  var days = Object.keys(byDay).filter(function (d) { return d >= from && d <= to; }).sort()
+    .map(function (d) { return { day: d, values: byDay[d] }; });
+  return {
+    from: from,
+    to: to,
+    connected: s.toMs(p, "wearableConsentAt") > 0,
+    days: days,
+    baseline: baselines(byDay, from, to),
+    baselineWindow: BASELINE_WINDOW,
+    baselineMin: BASELINE_MIN
+  };
+}
+
 module.exports = {
+  view: view,
   METRICS: METRICS,
   BASELINE_WINDOW: BASELINE_WINDOW,
   BASELINE_MIN: BASELINE_MIN,
