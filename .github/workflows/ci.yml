@@ -248,6 +248,7 @@ jobs:
           python3 scripts/patch_android.py 2>&1 | tee ../patch.txt
           grep -q 'Theme.AppCompat' android/app/src/main/res/values/styles.xml || { echo "::error title=patch_android::LaunchTheme isn't AppCompat"; exit 1; }
           grep -q 'default_notification_icon' android/app/src/main/AndroidManifest.xml || { echo "::error title=patch_android::no notification icon for Firebase"; exit 1; }
+          grep -rq 'steady/healthdata' android/app/src/main/kotlin || { echo "::error title=patch_android::MainActivity doesn't open the page Health Connect's 'why' link asks for"; exit 1; }
           flutter build apk --debug --target-platform android-arm64 \
             --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
             --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" 2>&1 | tee ../apk.txt || { echo "::error title=flutter build apk::$(sed 's/%/%25/g' ../apk.txt | tail -c 60000 | awk '{printf "%s%%0A", $0}')"; exit 1; }

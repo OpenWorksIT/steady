@@ -40,7 +40,8 @@ HEALTH_PERMISSIONS = [
 ]
 
 DESUGAR_VERSION = "2.1.4"
-MAIN_ACTIVITY = """import android.os.Build
+MAIN_ACTIVITY = """import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -48,6 +49,18 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterFragmentActivity() {
+    // Health Connect asking why Steady reads its data (its permission screen's privacy link, or
+    // Android 14's permission usage) opens Steady's page on it (ui/health_data_use.dart)
+    private var healthData: MethodChannel? = null
+    private fun asksWhy(i: Intent?) = i?.action == "androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" ||
+        i?.action == "android.intent.action.VIEW_PERMISSION_USAGE"
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (asksWhy(intent)) healthData?.invokeMethod("show", null)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // The app switcher shows a blank picture of Steady, for everyone. Android 13 and later
@@ -58,6 +71,11 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        healthData = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "steady/healthdata").also { ch ->
+            ch.setMethodCallHandler { call, result ->
+                if (call.method == "opened") result.success(asksWhy(intent)) else result.notImplemented()
+            }
+        }
         // practice staff: no screenshots or screen recording either (ui/auth/screen_lock.dart)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "steady/secure").setMethodCallHandler { call, result ->
             if (call.method == "set") {
@@ -235,8 +253,9 @@ def main():
         new = re.sub(r":\s*FlutterActivity\(\)", ": FlutterFragmentActivity()", new)
         # a blank app-switcher picture for everyone; staff screens can't be screenshotted or
         # recorded (FLAG_SECURE, switched on by the app for practice staff; ui/auth/screen_lock.dart).
-        # Rewritten when it's an older copy of Steady's MainActivity.
-        if "setRecentsScreenshotEnabled" not in new:
+        # Health Connect asking why opens Steady's page on it (1.2.4). Rewritten when it's an
+        # older copy of Steady's MainActivity.
+        if "steady/healthdata" not in new:
             pkg = re.search(r"^package\s+[\w.]+", new, re.M)
             if not pkg:
                 fail("couldn't find the package line in MainActivity.kt")
