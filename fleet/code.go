@@ -28,7 +28,10 @@ var (
 // BridgeStatus is the sign-in bridge's last answer to GET /version.
 type BridgeStatus struct {
 	URL, Version, Code, Err string
-	At                      time.Time
+	// SetAside: addresses the bridge took off the fleet view's list because its config.json lists
+	// them too (1.2.6; a count only, never which)
+	SetAside int
+	At       time.Time
 }
 
 func (p *Poller) fetchBridge(ctx context.Context, url string) *BridgeStatus {
@@ -54,12 +57,18 @@ func (p *Poller) fetchBridge(ctx context.Context, url string) *BridgeStatus {
 		st.Err = fmt.Sprintf("the sign-in bridge answered %d", res.StatusCode)
 		return st
 	}
-	var v struct{ Version, Code string }
+	var v struct {
+		Version, Code string
+		SetAside      int `json:"setAside"`
+	}
 	if json.Unmarshal(body, &v) != nil {
 		st.Err = "the sign-in bridge's answer isn't one it would give"
 		return st
 	}
 	st.Version, st.Code = clip(v.Version, 40), clip(v.Code, 40)
+	if v.SetAside > 0 {
+		st.SetAside = min(v.SetAside, 9999)
+	}
 	return st
 }
 
@@ -144,6 +153,18 @@ func ownServices(sts []*Status, cst *CommunityStatus) []OwnService {
 		bridge.Fix = rebuild
 	default:
 		bridge.Level, bridge.Runs, bridge.Note = "good", b.Version+" (code "+b.Code+")", "the same code as the fleet view's release"
+	}
+	// one address, one practice: an address the fleet view approved that the bridge's own
+	// config.json lists too (OpenWorks support, or a practice still there) signs in only
+	// through config.json's list
+	if b != nil && b.Err == "" && b.SetAside > 0 {
+		note := fmt.Sprintf("it set aside %d address(es) the fleet view approved that its config.json lists too: signin check says which; take each off one of the lists", b.SetAside)
+		if bridge.Level == "good" {
+			bridge.Level, bridge.Note = "warn", note
+			bridge.Fix = "cd /opt/steady-ops && sudo docker compose -f community/signin/compose.yml run --rm --no-deps signin check"
+		} else {
+			bridge.Note += "; and " + note
+		}
 	}
 	return append(out, bridge)
 }

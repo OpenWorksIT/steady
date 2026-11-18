@@ -36,10 +36,10 @@
 {{else}}<p class="muted">Off.{{if $.Dev}} To switch it on: <code>sudo /opt/steady-ops/fleet/fleet.sh community {{.Short}} on</code>{{end}}</p>{{end}}
 {{if .Note}}<p class="{{if eq .Level "fail"}}error{{else}}warn{{end}}">{{.Note}}</p>{{end}}
 {{with .Waiting}}<div class="table"><table><thead><tr><th>Waiting</th><th>Email</th><th>Role</th></tr></thead><tbody>
-{{range .}}<tr><td>{{.Name}}</td><td>{{.Email}}</td><td>{{.Role}}</td></tr>
+{{range .}}<tr><td>{{.Name}}</td><td>{{.Email}}{{with .Elsewhere}}<br><span class="warn">approved at {{range $i, $e := .}}{{if $i}}, {{end}}{{$e}}{{end}}: one address, one practice, so it can't be approved here too</span>{{end}}</td><td>{{.Role}}</td></tr>
 {{end}}</tbody></table></div>
-{{if $.Dev}}<pre class="cmd">{{range .}}sudo /opt/steady-ops/fleet/fleet.sh community {{$.Community.Short}} approve {{.Email}}
-{{end}}</pre>{{end}}{{end}}
+{{if $.Dev}}<pre class="cmd">{{range .}}{{if not .Elsewhere}}sudo /opt/steady-ops/fleet/fleet.sh community {{$.Community.Short}} approve {{.Email}}
+{{end}}{{end}}</pre>{{end}}{{end}}
 {{end}}
 <h2 id="changes">Changes</h2>
 {{if .Dev}}

@@ -460,6 +460,30 @@ server"). Nothing is copied by hand: no key, no `.env` lines, no `config.json` e
 Everyone on a practice's staff when it updates to 1.2 starts switched on, so nothing changes for
 a community already open; new staff start switched off.
 
+### One address, one practice
+
+Each address comes into the community through one practice only. If two practices could both
+vouch for the same address, the bridge couldn't tell which practice the person belongs to, and
+either practice could sign them in as the other's psychologist. Addresses are compared in lower
+case, so `Kempie@VRpsych.co.za` and `kempie@vrpsych.co.za` are the same address.
+
+- **`approve` refuses** an address another practice has approved, and says which. If the person
+  has moved to this practice, take them off the other first (`fleet.sh community <other> remove
+  <email>`), then approve them here. If they work at both, the second practice puts them in
+  with another address (their address at that practice).
+- **`on --approve-all`** approves everyone else and leaves such an address waiting, with a line
+  saying why. `people` and the server's page in the fleet view mark it ("approved at vr"), and
+  the page offers no approve command for it.
+- **An address approved at two practices already** (from before 1.2.6, or a hand-edited
+  file) goes on neither practice's list in the bridge's file, so it signs in through neither.
+  Everyone else carries on. Checks shows it as something to fix until a dev removes it at one.
+- **The bridge** checks again when it merges the fleet view's list with its own `config.json`.
+  An address on the fleet view's list that `config.json` lists too (an OpenWorks support
+  address, or a practice still there) comes off the fleet view's practice, and `config.json`'s
+  list keeps it. Before 1.2.6 a clash like that set aside the fleet view's whole list, and
+  every practice with it. The fleet view's overview shows how many addresses the bridge set
+  aside, and `signin check` says which.
+
 ### Moving a practice from config.json to the fleet view
 
 VR and the test server were added by hand. Once the fleet view, the bridge and both servers run
@@ -470,17 +494,18 @@ sudo /opt/steady-ops/fleet/fleet.sh community test on --openworks --approve-all
 sudo /opt/steady-ops/fleet/fleet.sh community vr on --approve-all      # with --group practice-vr if it has one
 ```
 
-`--approve-all` approves everyone the practice has switched on now; it says so if the server still
-says the community is off, or nobody is approved yet. A practice with nobody approved isn't on
-the bridge's list until someone is (the bridge refuses a practice without addresses, and with it
-the fleet view's whole list). The fleet view's entry
+`--approve-all` approves everyone the practice has switched on now, except an address another
+practice has approved ("One address, one practice"); it says so if the server still says the
+community is off, or nobody is approved yet. A practice with nobody approved isn't on the
+bridge's list until someone is. The fleet view's entry
 replaces the one with the same id in `config.json` (`test`, `vr`), so forum accounts carry on
 (their ids start with the practice's id). Then take those entries out of `config.json` (keep
 `openworks` and the forum's settings; `"practices": []` is fine once the fleet view runs them
 all), and the three `STEADY_COMMUNITY_*` lines (and `STEADY_COMMUNITY_SUPPORT`) out of each
 server's `.env`: what the fleet view set wins anyway. With nothing left in `config.json`, a
 fleet list the bridge can't use closes the community rather than falling back to old keys.
-`signin check` shows both lists, and warns if the fleet view's can't be used.
+`signin check` shows both lists, warns if the fleet view's can't be used, and lists any address
+it took off the fleet view's list for being on another list too.
 
 ### By hand (before 1.2)
 
