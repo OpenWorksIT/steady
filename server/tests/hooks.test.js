@@ -890,73 +890,95 @@ function distDirs() {
   return { pub, ctl };
 }
 
-test("dist: the invite page offers the Android app, and iPhones go to the web app", () => {
+test("dist (1.2.5): invites send Android phones to Google Play and iPhones to the App Store; no APK on a practice's server", () => {
   const { pub, ctl } = distDirs();
   const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_PRACTICE_NAME: "VR <Clinical> & Co" }) });
   const android = { "User-Agent": "Mozilla/5.0 (Linux; Android 15; SM-S921B) Chrome/130" };
+  const iphone = { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)" };
+  const PLAY = "https://play.google.com/store/apps/details?id=za.co.openworks.steady";
+  const APPSTORE = "https://apps.apple.com/za/app/steady-check-in/id6827262084";
 
-  // no build on the server yet
+  // no build information on the server yet
   assert.equal(rt.call("GET", "/api/steady/config").data.app, null);
   let page = rt.call("GET", "/join", { query: { invite: "abcd-2345" }, headers: android });
   assert.equal(page.status, 200);
-  assert.match(page.html, /isn't available for download here yet/);
+  assert.ok(page.html.includes('href="' + PLAY + '"'), "Google Play");
   assert.match(page.html, /VR &lt;Clinical&gt; &amp; Co/);
-  assert.equal(rt.call("GET", "/download/steady.apk").status, 404);
-
-  // CI put a build there
-  fs.mkdirSync(path.join(pub, "download"));
-  fs.writeFileSync(path.join(pub, "download", "steady.apk"), Buffer.alloc(3 * 1048576));
-  fs.writeFileSync(path.join(pub, "download", "version.json"), JSON.stringify({ build: "abc1234", date: "2026-10-21T08:00:00Z" }));
-  const app = rt.call("GET", "/api/steady/config").data.app;
-  assert.equal(app.build, "abc1234");
-  assert.equal(app.apk, "/download/steady.apk");
-  assert.equal(app.sizeMB, 3);
-  assert.equal(app.updatable, false, "a build without the permanent key mustn't trigger update prompts");
-  assert.equal(app.version, "", "builds from before versions have none");
-  fs.writeFileSync(path.join(pub, "download", "version.json"), JSON.stringify({ build: "abc1234", version: "1.1.0 test 23<b>", date: "x", signing: "release" }));
-  assert.equal(rt.call("GET", "/api/steady/config").data.app.updatable, true);
-  assert.equal(rt.call("GET", "/api/steady/config").data.app.version, "1.1.0 test 23b", "the version as people read it, nothing else");
-  page = rt.call("GET", "/join", { query: { invite: "abcd-2345" }, headers: android });
-  assert.match(page.html, /version 1\.1\.0 test 23b/);
-  assert.match(page.html, /href="\/download\/steady.apk"/);
   assert.match(page.html, /ABCD-2345/);
   assert.match(page.html, /href="\/\?invite=ABCD2345"/);
   assert.ok(!/<script/i.test(page.html), "no scripts: the content security policy forbids them");
 
-  // iPhone or computer: the web app, code filled in; junk codes are dropped
-  const iphone = rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)" } });
-  assert.deepEqual([iphone.status, iphone.location], [302, "/?invite=ABCD2345"]);
-  const junk = rt.call("GET", "/join", { query: { invite: "<script>" }, headers: {} });
-  assert.equal(junk.location, "/");
-
+  // CI's web build says which build it is, and an APK left from before 1.2.5 is never offered
+  fs.mkdirSync(path.join(pub, "download"));
+  fs.writeFileSync(path.join(pub, "download", "version.json"), JSON.stringify({ build: "abc1234", version: "1.2.5", date: "x", signing: "release" }));
+  let app = rt.call("GET", "/api/steady/config").data.app;
+  assert.equal(app.build, "abc1234", "copies installed from this server before still see there's a newer one");
+  assert.equal(app.apk, "/download/steady.apk");
+  assert.equal(app.sizeMB, 0);
+  assert.equal(app.updatable, true);
+  fs.writeFileSync(path.join(pub, "download", "steady.apk"), Buffer.alloc(3 * 1048576));
+  page = rt.call("GET", "/join", { query: { invite: "abcd-2345" }, headers: android });
+  assert.ok(!page.html.includes("/download/steady.apk"), "no download on a practice's server");
+  assert.ok(!/test build/.test(page.html));
+  // ... and the download address says Steady is on Google Play (an old copy's update opens it)
   const dl = rt.call("GET", "/download/steady.apk");
-  assert.equal(dl.headers["Content-Type"], "application/vnd.android.package-archive");
-  assert.match(dl.headers["Content-Disposition"], /steady\.apk/);
+  assert.equal(dl.status, 200);
+  assert.match(dl.html, /Steady is on Google Play/);
+  assert.ok(dl.html.includes('href="' + PLAY + '"'));
+  assert.ok(dl.html.includes('href="' + APPSTORE + '"'));
+  assert.match(dl.html, /uninstall Steady first/);
+  assert.ok(!/<script/i.test(dl.html));
+  assert.equal(dl.headers["Content-Type"], undefined, "a page, not the APK");
+
+  // iPhones: the App Store (no longer the web app); computers: the web app; junk codes dropped
+  page = rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: iphone });
+  assert.equal(page.status, 200);
+  assert.ok(page.html.includes('href="' + APPSTORE + '"'));
+  assert.match(page.html, /Get Steady on the App Store/);
+  assert.ok(!/TestFlight/.test(page.html));
+  assert.deepEqual([rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: {} }).status,
+    rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: {} }).location], [302, "/?invite=ABCD2345"]);
+  assert.equal(rt.call("GET", "/join", { query: { invite: "<script>" }, headers: {} }).location, "/");
+
+  // the test server (STEADY_TRACK=test) keeps its own build for testing, next to Google Play
+  const t = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_TRACK: "test" }) });
+  page = t.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: android });
+  assert.ok(page.html.includes('href="' + PLAY + '"'));
+  assert.match(page.html, /Download this server's test build<\/a> \(3 MB, version 1\.2\.5\)/);
+  const apk = t.call("GET", "/download/steady.apk");
+  assert.equal(apk.headers["Content-Type"], "application/vnd.android.package-archive");
+  assert.match(apk.headers["Content-Disposition"], /steady\.apk/);
+  fs.rmSync(path.join(pub, "download", "steady.apk"));
+  assert.equal(t.call("GET", "/download/steady.apk").status, 404);
+  assert.ok(!/test build/.test(t.call("GET", "/join", { headers: android }).html), "no file, no link");
 });
 
-test("dist: with an iOS link set, iPhones get TestFlight steps; bad links are ignored", () => {
+test("dist: an iOS link in STEADY_IOS_URL: TestFlight only on the test server, other App Store links anywhere, junk ignored", () => {
   const { pub, ctl } = distDirs();
   const iphone = { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)" };
   const tf = "https://testflight.apple.com/join/AbC123xY";
-  let rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_IOS_URL: tf }) });
-  let page = rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: iphone });
+  const APPSTORE = "https://apps.apple.com/za/app/steady-check-in/id6827262084";
+  const at = (env) => makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl }, env) }).call("GET", "/join", { query: { invite: "ABCD2345" }, headers: iphone });
+
+  let page = at({ STEADY_IOS_URL: tf, STEADY_TRACK: "test" });
   assert.equal(page.status, 200);
   assert.match(page.html, /TestFlight app/);
   assert.ok(page.html.includes('href="' + tf + '"'));
   assert.match(page.html, /ABCD-2345/);
   assert.ok(!/<script/i.test(page.html));
-  // computers still go straight to the web app
-  assert.equal(rt.call("GET", "/join", { query: { invite: "ABCD2345" }, headers: {} }).status, 302);
 
-  // once it's in the App Store: no TestFlight step
-  rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_IOS_URL: "https://apps.apple.com/za/app/steady/id123456789" }) });
-  page = rt.call("GET", "/join", { headers: iphone });
-  assert.match(page.html, /App Store/);
+  // a practice's server left with the beta's TestFlight link: the App Store instead
+  page = at({ STEADY_IOS_URL: tf });
+  assert.ok(page.html.includes('href="' + APPSTORE + '"'));
   assert.ok(!/TestFlight/.test(page.html));
 
-  // anything that isn't an Apple link is ignored: back to the web app
-  rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_PUBLIC_DIR: pub, STEADY_CTL_DIR: ctl, STEADY_IOS_URL: "https://evil.example/x\"><script>" }) });
-  assert.equal(rt.call("GET", "/join", { headers: iphone }).status, 302);
+  page = at({ STEADY_IOS_URL: "https://apps.apple.com/za/app/steady/id123456789" });
+  assert.ok(page.html.includes('href="https://apps.apple.com/za/app/steady/id123456789"'));
+
+  // anything that isn't an Apple link is ignored
+  page = at({ STEADY_IOS_URL: "https://evil.example/x\"><script>" });
+  assert.ok(page.html.includes('href="' + APPSTORE + '"'));
+  assert.ok(!/evil/.test(page.html));
 });
 
 test("consent: Steady's own statement, versioned by its text; a practice's own from its brand folder", () => {

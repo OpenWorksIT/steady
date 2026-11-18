@@ -112,14 +112,16 @@ jobs:
           ls -la out
 
       - name: publish the web app and the APK to the web-dist branch
-        # servers fetch it with their read-only deploy key (deploy/update.sh) and offer the APK
-        # at /download/steady.apk and on the invite page (/join)
+        # servers fetch it with their read-only deploy key (deploy/update.sh); test servers offer
+        # the APK at /download/steady.apk and on the invite page (/join)
         env:
           REF: ${{ github.ref_name }}
         run: |
           if [ "$REF" = main ]; then dist=web-dist; else dist="web-dist-$REF"; fi
           mkdir -p app/build/web/download
-          cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/download/steady.apk
+          # since 1.2.5 only test servers offer the APK themselves: practice servers send Android
+          # phones to Google Play. version.json goes everywhere (versions, update checks).
+          if [ "$REF" != main ]; then cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/download/steady.apk; fi
           jq -n --arg build "$STEADY_BUILD" --arg version "$STEADY_VERSION" --arg date "$STEADY_BUILD_DATE" --arg signing "$STEADY_SIGNING" \
             '{build: $build, version: $version, date: $date, signing: $signing}' > app/build/web/download/version.json
           cd app/build/web

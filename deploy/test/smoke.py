@@ -157,9 +157,16 @@ def main():
     req = urllib.request.Request(BASE + "/join?invite=ABCD2345", headers={"User-Agent": "Mozilla/5.0 (Linux; Android 15) Chrome/130"})
     with urllib.request.urlopen(req, timeout=30) as r:
         page = r.read().decode()
-    check(r.status == 200 and "ABCD2345" in page and "<script" not in page, "the invite page works for Android phones", page[:200])
-    s, _ = call("GET", "/download/steady.apk")
-    check(s == 404 if not cfg.get("app") else s == 200, "the APK download matches what config reports", cfg.get("app"))
+    check(r.status == 200 and "ABCD2345" in page and "<script" not in page and "play.google.com/store/apps/details?id=za.co.openworks.steady" in page,
+          "the invite page sends Android phones to Google Play", page[:200])
+    # since 1.2.5: Steady's Google Play page, or (a test server) its own build, or none yet
+    try:
+        with urllib.request.urlopen(urllib.request.Request(BASE + "/download/steady.apk"), timeout=30) as r:
+            dl = (r.status, r.headers.get("Content-Type", ""), r.read(4096))
+    except urllib.error.HTTPError as e:
+        dl = (e.code, "", b"")
+    check((dl[0] == 200 and b"Steady is on Google Play" in dl[2]) or (dl[0] == 200 and "android.package-archive" in dl[1]) or dl[0] == 404,
+          "the download address: the Google Play page, or a test server's own build", dl[:2])
     s, r = call("GET", "/api/steady/system")
     check(s in (401, 403), "server updates need a signed-in server admin", r)
 
