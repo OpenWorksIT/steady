@@ -656,19 +656,40 @@ func makeServerCommunity(st *Status, runs *CommunityPractices) ServerCommunity {
 	if runs != nil {
 		pr = runs.Practices[v.Short]
 	}
+	var shared []string // approved here and at another practice too
 	if pr != nil {
 		v.Approved = len(pr.Approved)
 		v.Waiting = pending(pr, members)
+		for i := range v.Waiting {
+			v.Waiting[i].Elsewhere = approvedAt(runs, v.Waiting[i].Email, v.Short)
+		}
+		clash := clashes(runs)
+		for _, e := range pr.Approved {
+			if at := clash[normEmail(e)]; at != nil {
+				shared = append(shared, fmt.Sprintf("%s (also at %s)", normEmail(e), strings.Join(without(at, v.Short), ", ")))
+			}
+		}
 	}
 	switch {
 	case pr != nil && !on:
 		v.Level, v.Note = "fail", "the fleet view runs this practice's community, but the server says it's off (a restored backup?): fleet community "+v.Short+" on"
+	case len(shared) > 0:
+		v.Level, v.Note = "fail", fmt.Sprintf("approved here and at another practice too, so the sign-in bridge lets them in through neither: %s. Ask which practice each belongs to, and remove the address at the other: fleet community <that practice> remove <email>", strings.Join(shared, ", "))
 	case pr == nil && on && fleet:
 		v.Level, v.Note = "fail", "the server has a community key from the fleet view that the fleet view no longer runs: fleet community "+v.Short+" off, or on again"
 	case pr == nil && on:
 		v.Level, v.Note = "warn", "its community runs from .env lines and the bridge's config.json: move it to the fleet view with fleet community "+v.Short+" on --approve-all, then remove those lines and its entry"
 	case len(v.Waiting) > 0:
 		v.Level, v.Note = "warn", fmt.Sprintf("%d staff waiting for OpenWorks' approval: fleet community %s people", len(v.Waiting), v.Short)
+		blocked := 0
+		for _, m := range v.Waiting {
+			if len(m.Elsewhere) > 0 {
+				blocked++
+			}
+		}
+		if blocked > 0 {
+			v.Note += fmt.Sprintf(" (%d already approved at another practice: one address, one practice, so this practice puts them in with another address, or the other takes them out)", blocked)
+		}
 	}
 	return v
 }

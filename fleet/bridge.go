@@ -94,12 +94,17 @@ func (s *Store) CommunityPractices() (*CommunityPractices, error) {
 
 // writeBridge: the bridge's list, in its own format, sorted so it changes only when something
 // does. The bridge rereads it within seconds. A practice with nobody approved yet is left out:
-// nobody could come in through it, and the bridge refuses a practice without addresses, which
-// would set aside the whole list (every other practice with it).
+// nobody could come in through it, and the bridge refuses a practice without addresses.
+//
+// An address approved at two practices goes on neither's list: the bridge can't tell which
+// practice the person belongs to, and either could then sign them in. approve refuses this, so
+// it only happens to lists from before 1.2.6 or edited by hand; Checks says so until a dev
+// removes the address at one of them (clashes).
 func (s *Store) writeBridge(cp *CommunityPractices) error {
 	if err := os.MkdirAll(s.path("bridge"), 0o700); err != nil {
 		return err
 	}
+	clash := clashes(cp)
 	out := []bridgePractice{}
 	ids := make([]string, 0, len(cp.Practices))
 	for id := range cp.Practices {
@@ -108,14 +113,67 @@ func (s *Store) writeBridge(cp *CommunityPractices) error {
 	sort.Strings(ids)
 	for _, id := range ids {
 		p := cp.Practices[id]
-		if len(p.Approved) == 0 {
+		var emails []string
+		for _, e := range p.Approved {
+			if e = normEmail(e); e != "" && clash[e] == nil {
+				emails = append(emails, e)
+			}
+		}
+		if len(emails) == 0 {
 			continue
 		}
-		emails := append([]string{}, p.Approved...)
 		sort.Strings(emails)
 		out = append(out, bridgePractice{ID: p.ID, Name: p.Name, URL: p.URL, Key: p.Key, Emails: emails, Groups: p.Groups, Support: p.OpenWorks})
 	}
 	return writeJSON(filepath.Join(s.path("bridge"), "practices.json"), out)
+}
+
+// normEmail: an address as the lists keep it, lower case and trimmed (the bridge compares them
+// in lower case too).
+func normEmail(e string) string { return strings.ToLower(strings.TrimSpace(e)) }
+
+// approvedAt: the other practices (ids, sorted) that approved this address; none is nil.
+func approvedAt(cp *CommunityPractices, email, except string) []string {
+	email = normEmail(email)
+	var at []string
+	for id, p := range cp.Practices {
+		if id == except {
+			continue
+		}
+		for _, e := range p.Approved {
+			if normEmail(e) == email {
+				at = append(at, id)
+				break
+			}
+		}
+	}
+	sort.Strings(at)
+	return at
+}
+
+// clashes: each address approved at more than one practice, with those practices (sorted).
+func clashes(cp *CommunityPractices) map[string][]string {
+	at := map[string][]string{}
+	if cp == nil {
+		return at
+	}
+	for id, p := range cp.Practices {
+		seen := map[string]bool{}
+		for _, e := range p.Approved {
+			if e = normEmail(e); e != "" && !seen[e] {
+				seen[e] = true
+				at[e] = append(at[e], id)
+			}
+		}
+	}
+	for e, ids := range at {
+		if len(ids) < 2 {
+			delete(at, e)
+			continue
+		}
+		sort.Strings(ids)
+	}
+	return at
 }
 
 func newCommunityKey() string {
@@ -129,6 +187,9 @@ func newCommunityKey() string {
 // Member is a staff member a practice has put in the community (from its status).
 type Member struct {
 	Email, Name, Role string
+	// Elsewhere: the other practices that approved the same address (for one waiting here,
+	// which approve refuses until it's removed there)
+	Elsewhere []string
 }
 
 // communityOf: what a server's status says about its community.

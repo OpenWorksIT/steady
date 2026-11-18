@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -250,14 +251,16 @@ func validEmail(e string) bool {
 // ConfigFile reads the settings file, again whenever it changes, so a practice is added or
 // removed without a restart. With fleetPath, it also reads the practices the fleet view runs
 // (fleet/bridge.go writes them): those are added to config.json's, and replace one there with
-// the same id. If the fleet view's file is unreadable or doesn't fit, config.json's practices
-// carry on alone and FleetErr says why.
+// the same id. An address on the fleet view's list that another list has too is set aside (see
+// withFleet), and the rest carries on. If the fleet view's file is unreadable or doesn't fit
+// otherwise, config.json's practices carry on alone and FleetErr says why.
 type ConfigFile struct {
 	path, fleetPath string
 	mu              sync.Mutex
 	stamp           string
 	cfg             *Config
 	err, fleetErr   error
+	setAside        []string
 	checked         time.Time
 }
 
@@ -274,6 +277,14 @@ func (f *ConfigFile) FleetErr() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.fleetErr
+}
+
+// SetAside: the addresses taken off the fleet view's list because another list has them too,
+// each with where it was ("kempie@x.co.za: on vr and koos"). Empty when there are none.
+func (f *ConfigFile) SetAside() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.setAside...)
 }
 
 // Get returns the current settings, or why there are none.
@@ -299,7 +310,7 @@ func (f *ConfigFile) Get() (*Config, error) {
 		return f.cfg, f.err
 	}
 	f.stamp = stamp
-	f.fleetErr = nil
+	f.fleetErr, f.setAside = nil, nil
 	if f.fleetPath == "" {
 		f.cfg, f.err = loadConfig(f.path)
 		return f.cfg, f.err
@@ -309,11 +320,15 @@ func (f *ConfigFile) Get() (*Config, error) {
 		f.cfg, f.err = nil, err
 		return nil, err
 	}
-	merged, ferr := withFleet(base, f.fleetPath)
+	merged, aside, ferr := withFleet(base, f.fleetPath)
 	if ferr != nil {
 		f.fleetErr = ferr
 		log.Printf("signin: the fleet view's practices aren't in use: %v", ferr)
 		merged = base
+	} else if len(aside) > 0 {
+		f.setAside = aside
+		// how many, not which: the addresses are in `signin check`, not the log
+		log.Printf("signin: %d address(es) on the fleet view's list are on another list too, and were taken off it (signin check says which)", len(aside))
 	}
 	if len(merged.Practices) == 0 {
 		f.cfg, f.err = nil, fmt.Errorf(`%s: "practices" lists no practice, and the fleet view runs none, so nobody could sign in`, f.path)
@@ -325,43 +340,100 @@ func (f *ConfigFile) Get() (*Config, error) {
 
 // withFleet: config.json's settings with the fleet view's practices added (an id already in
 // config.json is replaced by the fleet view's), checked as one. No file: config.json's alone.
-func withFleet(base *Config, path string) (*Config, error) {
+//
+// One address on two lists can't be told apart: either practice could sign that person in. So
+// an address on the fleet view's list that config.json lists too (a practice of its own, or
+// OpenWorks support) comes off the fleet view's practice: OpenWorks writes config.json by hand.
+// One that two of the fleet view's practices list comes off both. Only that address is set
+// aside; the rest of the list carries on (before 1.2.6, the whole fleet list did). A practice
+// left with no address is left out, as the fleet view itself does. aside says what was set aside.
+func withFleet(base *Config, path string) (merged *Config, aside []string, err error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return base, nil
+		return base, nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("can't read %s: %w", path, err)
+		return nil, nil, fmt.Errorf("can't read %s: %w", path, err)
 	}
 	var fleet []Practice
 	dec := json.NewDecoder(strings.NewReader(string(b)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&fleet); err != nil {
-		return nil, fmt.Errorf("%s isn't valid: %w", path, err)
+		return nil, nil, fmt.Errorf("%s isn't valid: %w", path, err)
 	}
-	merged := *base
-	merged.Practices = nil
+	m := *base
+	m.Practices = nil
 	ids := map[string]bool{}
 	for _, p := range fleet {
 		ids[strings.ToLower(p.ID)] = true
 	}
 	for _, p := range base.Practices {
 		if !ids[strings.ToLower(p.ID)] {
-			merged.Practices = append(merged.Practices, p)
+			m.Practices = append(m.Practices, p)
 		}
 	}
-	merged.Practices = append(merged.Practices, fleet...)
+	// the lists config.json keeps (already checked on their own, in lower case)
+	fixed := map[string][]string{"OpenWorks support": base.OpenWorks}
+	for _, p := range m.Practices {
+		fixed[fmt.Sprintf("practice %q", p.ID)] = p.Emails
+	}
+	// the fleet view's lists in lower case, as validate() will have them
+	lower := make([][]string, len(fleet))
+	for i, p := range fleet {
+		for _, e := range p.Emails {
+			lower[i] = append(lower[i], strings.ToLower(strings.TrimSpace(e)))
+		}
+	}
+	for i, p := range fleet {
+		var keep []string
+		for _, x := range lower[i] {
+			var also []string
+			for label, list := range fixed {
+				for _, y := range list {
+					if overlaps(x, y) {
+						also = append(also, label)
+						break
+					}
+				}
+			}
+			for j := range fleet {
+				if j == i {
+					continue
+				}
+				for _, y := range lower[j] {
+					if overlaps(x, y) {
+						also = append(also, fmt.Sprintf("practice %q", fleet[j].ID))
+						break
+					}
+				}
+			}
+			if len(also) == 0 {
+				keep = append(keep, x)
+				continue
+			}
+			sort.Strings(also)
+			aside = append(aside, fmt.Sprintf("%s: on practice %q and %s", x, p.ID, strings.Join(also, " and ")))
+		}
+		if len(keep) == 0 {
+			if len(lower[i]) > 0 {
+				aside = append(aside, fmt.Sprintf("practice %q is left out: every address on its list is on another list too", p.ID))
+			}
+			continue
+		}
+		p.Emails = keep
+		m.Practices = append(m.Practices, p)
+	}
 	// validate() tidies its own copy of every list; keep config.json's untouched
-	merged.Practices = append([]Practice{}, merged.Practices...)
-	for i := range merged.Practices {
-		merged.Practices[i].Emails = append([]string{}, merged.Practices[i].Emails...)
-		merged.Practices[i].Groups = append([]string{}, merged.Practices[i].Groups...)
+	m.Practices = append([]Practice{}, m.Practices...)
+	for i := range m.Practices {
+		m.Practices[i].Emails = append([]string{}, m.Practices[i].Emails...)
+		m.Practices[i].Groups = append([]string{}, m.Practices[i].Groups...)
 	}
-	merged.OpenWorks = append([]string{}, base.OpenWorks...)
-	if err := merged.validate(); err != nil {
-		return nil, fmt.Errorf("with %s: %w", path, err)
+	m.OpenWorks = append([]string{}, base.OpenWorks...)
+	if err := m.validate(); err != nil {
+		return nil, nil, fmt.Errorf("with %s: %w", path, err)
 	}
-	return &merged, nil
+	return &m, aside, nil
 }
 
 func loadConfig(path string) (*Config, error) { return loadConfigWith(path, false) }

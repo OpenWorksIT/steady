@@ -266,6 +266,7 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 			}
 		}
 		group := flagValue(args, "--group")
+		var skipped []string
 		err = store.withCommunity(func(cp *CommunityPractices) (bool, error) {
 			pr := cp.Practices[id]
 			if pr == nil {
@@ -276,6 +277,16 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 			if group != "" {
 				pr.Groups = []string{group}
 			}
+			// an address another practice approved stays waiting here (one address, one practice)
+			var ok []string
+			for _, e := range approved {
+				if at := approvedAt(cp, e, id); len(at) > 0 {
+					skipped = append(skipped, fmt.Sprintf("%s (approved at %s)", normEmail(e), strings.Join(at, ", ")))
+					continue
+				}
+				ok = append(ok, e)
+			}
+			approved = ok
 			pr.Approved = union(pr.Approved, approved)
 			return true, nil
 		})
@@ -286,6 +297,9 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 		fmt.Fprintf(out, "The community is on for %s. Its master psychologist adds staff in Settings > Practice > Community;\nthey show here to approve: fleet community %s people\n", sv.Name, id)
 		if len(approved) > 0 {
 			fmt.Fprintf(out, "Approved now: %s\n", strings.Join(approved, ", "))
+		}
+		if len(skipped) > 0 {
+			fmt.Fprintf(out, "Not approved, because another practice already has the same address (one address, one practice: docs/COMMUNITY.md):\n  %s\n", strings.Join(skipped, "\n  "))
 		}
 		if !serverOn {
 			fmt.Fprintf(out, "But %s still says the community is off: Steady before 1.2.1 can't read the fleet view's setting. Update it, then run this again.\n", sv.Name)
@@ -329,12 +343,19 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 		for _, m := range pending(pr, members) {
 			waiting[m.Email] = true
 		}
+		clash := clashes(cp)
 		for _, m := range members {
-			state := "approved"
+			state, note := "approved", ""
 			if waiting[m.Email] {
 				state = "WAITING"
+				if at := approvedAt(cp, m.Email, id); len(at) > 0 {
+					note = "  (approved at " + strings.Join(at, ", ") + ": can't be approved here too)"
+				}
+			} else if at := clash[m.Email]; at != nil {
+				// approved here and elsewhere (before 1.2.6): the bridge lets them in through neither
+				note = "  (also approved at " + strings.Join(without(at, id), ", ") + ": signs in through neither until one removes it)"
 			}
-			fmt.Fprintf(out, "  %-9s %-34s %-28s %s\n", state, m.Email, m.Name, m.Role)
+			fmt.Fprintf(out, "  %-9s %-34s %-28s %s%s\n", state, m.Email, m.Name, m.Role, note)
 		}
 		if len(members) == 0 {
 			fmt.Fprintln(out, "  Nobody yet: the master psychologist adds staff in Settings > Practice > Community.")
@@ -367,10 +388,16 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 				return false, fmt.Errorf("the community isn't on for %s: fleet community %s on", sv.Name, id)
 			}
 			for _, e := range emails {
-				e = strings.ToLower(strings.TrimSpace(e))
+				e = normEmail(e)
 				if pos[1] == "approve" {
 					if !listed[e] {
 						return false, fmt.Errorf("%s isn't on %s's list: its master psychologist adds them first (Settings > Practice > Community)", e, sv.Name)
+					}
+					if at := approvedAt(cp, e, id); len(at) > 0 {
+						return false, fmt.Errorf("%s is already approved at %s. One address comes in through one practice only: the sign-in bridge couldn't tell which practice they belong to.\n"+
+							"If they now belong to %s, take them off there first (fleet community %s remove %s), then approve them here.\n"+
+							"Otherwise %s's master psychologist puts them in with another address (their address at this practice).",
+							e, practiceNames(cp, at), sv.Name, at[0], e, sv.Name)
 					}
 					pr.Approved = union(pr.Approved, []string{e})
 				} else {
@@ -413,6 +440,19 @@ func listCommunity(store *Store, out io.Writer) error {
 		fmt.Fprintf(out, "  %-12s %-32s %d approved%s\n", id, pr.Name, len(pr.Approved), mark)
 	}
 	return nil
+}
+
+// practiceNames: "VR Clinical Psychology (vr)" for each id, joined with "and".
+func practiceNames(cp *CommunityPractices, ids []string) string {
+	var out []string
+	for _, id := range ids {
+		if p := cp.Practices[id]; p != nil && p.Name != "" {
+			out = append(out, p.Name+" ("+id+")")
+		} else {
+			out = append(out, id)
+		}
+	}
+	return strings.Join(out, " and ")
 }
 
 func flagValue(args []string, name string) string {

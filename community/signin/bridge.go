@@ -418,11 +418,14 @@ func (a *App) healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 // version: which release and code this bridge was built from, for the fleet view to compare with
-// its own release (deploy/code-of.sh). Nothing else: no settings, no practices.
+// its own release (deploy/code-of.sh), and how many addresses it set aside for being on two
+// lists (config.go, withFleet), so the fleet view can say so. Nothing else: no settings, no
+// practices, no addresses.
 func (a *App) version(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(map[string]string{"version": buildVersion, "code": buildCode})
+	a.cfg.Get() // reread the lists if they changed
+	json.NewEncoder(w).Encode(map[string]any{"version": buildVersion, "code": buildCode, "setAside": len(a.cfg.SetAside())})
 }
 
 /* ---------------------------------------------------------------- visitors */

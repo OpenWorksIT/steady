@@ -215,6 +215,10 @@ Do these on the VPS before real patient data arrives:
 - [ ] Firewall: only 22 (ideally limited to your address or a VPN), 80 and 443 open.
 - [ ] Automatic security updates (`unattended-upgrades` on Debian/Ubuntu).
 - [ ] Docker's data on an encrypted volume (LUKS), or full-disk encryption if the provider supports it.
+      Without LUKS, ask the provider how the disk is protected at rest and record their answer in
+      `.env` as `STEADY_DISK_AT_REST` (`.env.example` has an example): the audit shows it, and it is
+      what OpenWorks tells a practice that asks (operator agreement, clause 6.3). Write what they
+      said, including the limits, not more.
 - [ ] `chmod 600 deploy/.env` and keep `deploy/secrets/` readable only by root and the relay (uid 65532).
 - [ ] `sudo ./accounts.sh check` says the dashboard is closed; `accounts.sh list` shows two-step sign-in for every staff account.
 - [ ] The master clinician has signed the operator agreement in the app (`accounts.sh check`: "operator agreement: signed").
