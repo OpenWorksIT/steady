@@ -58,19 +58,27 @@ routerAdd("GET", "/api/steady/config", (e) => {
   });
 });
 
-// Invite QR codes point here. Android: download the app, then scan again. iPhone: TestFlight
-// or the App Store (STEADY_IOS_URL), then scan again. Elsewhere (computer, or an iPhone while
-// there's no iOS link): straight on to the web app with the code filled in.
+// Invite QR codes point here. Android: Google Play, then scan again. iPhone: the App Store
+// (the test server may give a TestFlight link in STEADY_IOS_URL), then scan again. Elsewhere
+// (a computer): straight on to the web app with the code filled in.
 routerAdd("GET", "/join", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const d = require(`${__hooks}/lib/dist.js`);
   const code = d.cleanCode((e.requestInfo().query || {}).invite);
   const ua = String(e.request.header.get("User-Agent") || "");
-  const ios = /iPhone|iPad|iPod/i.test(ua) ? d.iosUrl(s.env("STEADY_IOS_URL", "")) : "";
-  if (!/Android/i.test(ua) && !ios) return e.redirect(302, "/" + (code ? "?invite=" + code : ""));
+  const test = s.env("STEADY_TRACK", "main") === "test";
+  const iphone = /iPhone|iPad|iPod/i.test(ua);
+  if (!/Android/i.test(ua) && !iphone) return e.redirect(302, "/" + (code ? "?invite=" + code : ""));
   e.response.header().set("Cache-Control", "no-store");
   const b = require(`${__hooks}/lib/brand.js`).current();
-  return e.html(200, d.joinPage({ practice: b.name, logo: b.logo ? "/api/steady/brand/logo?v=" + encodeURIComponent(b.version) : "", code: code, app: d.appInfo(s.publicDir()), ios: ios }));
+  return e.html(200, d.joinPage({
+    practice: b.name,
+    logo: b.logo ? "/api/steady/brand/logo?v=" + encodeURIComponent(b.version) : "",
+    code: code,
+    app: d.appInfo(s.publicDir()),
+    ios: iphone ? d.iosLink(s.env("STEADY_IOS_URL", ""), test) : "",
+    test: test
+  }));
 });
 
 // The practice's logo, from the brand folder on this server (deploy/brand.sh installs it).
@@ -84,9 +92,15 @@ routerAdd("GET", "/api/steady/brand/logo", (e) => {
   return e.fileFS($os.dirFS(dir), "logo.png");
 });
 
-// The newest Android build, as an installable download.
+// The test server's Android build, as an installable download. Everywhere else (since 1.2.5)
+// a page saying Steady is on Google Play: copies installed from a practice's server before
+// are offered an update that opens this.
 routerAdd("GET", "/download/steady.apk", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
+  if (s.env("STEADY_TRACK", "main") !== "test") {
+    e.response.header().set("Cache-Control", "no-store");
+    return e.html(200, require(`${__hooks}/lib/dist.js`).storePage());
+  }
   const dir = s.publicDir() + "/download";
   try { $os.stat(dir + "/steady.apk"); } catch (_) { throw new NotFoundError("No Android build on this server yet."); }
   e.response.header().set("Content-Type", "application/vnd.android.package-archive");
