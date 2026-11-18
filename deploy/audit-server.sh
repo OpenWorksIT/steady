@@ -102,10 +102,15 @@ fi
 [ -f /var/run/reboot-required ] && warn "a reboot is needed to finish updates" || ok "no reboot pending"
 
 head_ "Disk"
+# what the provider does about the disk at rest, in OpenWorks' words (deploy/.env.example): the
+# answer OpenWorks gives a practice that asks (operator agreement, clause 6.3)
+at_rest="$(envv STEADY_DISK_AT_REST | tr -d '[:cntrl:]' | cut -c1-200)"
 if lsblk -o TYPE 2>/dev/null | grep -q crypt; then
   ok "an encrypted volume (LUKS) is in use"
+elif [ -n "$at_rest" ]; then
+  ok "no LUKS volume; the disk at rest, as .env records it: $at_rest"
 else
-  warn "no LUKS volume found: is the provider's disk encryption on? (patient data at rest)"
+  warn "no LUKS volume found: ask the provider how the disk is protected at rest, and record the answer in .env as STEADY_DISK_AT_REST (docs/DEPLOY.md, step 6)"
 fi
 use="$(df -P /var/lib/docker 2>/dev/null | awk 'NR==2{gsub("%","",$5); print $5}')"
 [ -n "$use" ] && { [ "$use" -lt 80 ] && ok "disk ${use}% used" || warn "disk ${use}% used"; }

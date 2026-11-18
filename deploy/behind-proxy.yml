@@ -8,6 +8,8 @@
 services:
   caddy:
     profiles: [own-caddy]   # not started in this mode
+  caddy-perms:
+    profiles: [own-caddy]
 
   pocketbase:
     networks:

@@ -561,8 +561,8 @@ func TestVersion(t *testing.T) {
 	t.Cleanup(func() { buildVersion, buildCode = "dev", "" })
 	r := newRig(t, settings())
 	w := r.get("/version")
-	var got map[string]string
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || len(got) != 2 || got["version"] != "1.1.1" || got["code"] != "5f74a8885898" {
+	var got map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || len(got) != 3 || got["version"] != "1.1.1" || got["code"] != "5f74a8885898" || got["setAside"] != float64(0) {
 		t.Fatalf("version: %d %s", w.Code, w.Body.String())
 	}
 	if w.Header().Get("Cache-Control") != "no-store" || strings.Contains(w.Body.String(), "vr") {
@@ -604,10 +604,60 @@ func TestPracticesFromTheFleet(t *testing.T) {
 	if byID["vr"].Key != strings.Repeat("n", 40) || strings.Join(byID["vr"].Emails, ",") != "kempie@vrpsych.example" || byID["test"].Key != testKey {
 		t.Fatalf("merged: %+v", byID)
 	}
-	// a fleet file that doesn't fit (the same address on two lists): config.json's alone, and why
-	write([]map[string]any{{"id": "koos", "name": "Koos", "url": "https://koos.example.org", "key": strings.Repeat("k", 40), "emails": []string{"tester@gmail.com"}}})
+	// an address config.json lists too (in another case): only that address comes off the fleet
+	// view's practice, which carries on with the rest; config.json's list keeps it
+	write([]map[string]any{
+		{"id": "koos", "name": "Koos", "url": "https://koos.example.org", "key": strings.Repeat("k", 40), "emails": []string{"Tester@Gmail.com", "koos@koospsych.example"}},
+		{"id": "piet", "name": "Piet", "url": "https://piet.example.org", "key": strings.Repeat("p", 40), "emails": []string{"piet@vrpsych.example"}},
+	})
 	f.checked = time.Time{}
-	if c, err = f.Get(); err != nil || len(c.Practices) != 2 || f.FleetErr() == nil || !strings.Contains(f.FleetErr().Error(), "one list only") {
+	if c, err = f.Get(); err != nil || f.FleetErr() != nil {
+		t.Fatalf("one address on two lists: %v %v %v", c, err, f.FleetErr())
+	}
+	byID = map[string]Practice{}
+	for _, p := range c.Practices {
+		byID[p.ID] = p
+	}
+	if len(c.Practices) != 3 || strings.Join(byID["koos"].Emails, ",") != "koos@koospsych.example" || strings.Join(byID["test"].Emails, ",") != "tester@gmail.com" {
+		t.Fatalf("only the shared address should come off koos: %+v", byID)
+	}
+	// piet's only address is under vr's "@vrpsych.example": piet is left out, and both are said
+	aside := strings.Join(f.SetAside(), "\n")
+	if len(f.SetAside()) != 3 || !strings.Contains(aside, `tester@gmail.com: on practice "koos" and practice "test"`) || !strings.Contains(aside, `piet@vrpsych.example: on practice "piet" and practice "vr"`) || !strings.Contains(aside, `practice "piet" is left out`) {
+		t.Fatalf("set aside: %q", aside)
+	}
+	// an address two of the fleet view's practices list comes off both; OpenWorks' list wins too
+	write([]map[string]any{
+		{"id": "koos", "name": "Koos", "url": "https://koos.example.org", "key": strings.Repeat("k", 40), "emails": []string{"same@both.example", "koos@koospsych.example", "it@openworks.example"}},
+		{"id": "piet", "name": "Piet", "url": "https://piet.example.org", "key": strings.Repeat("p", 40), "emails": []string{"SAME@both.example", "piet@pietpsych.example"}},
+	})
+	f.checked = time.Time{}
+	if c, err = f.Get(); err != nil || f.FleetErr() != nil || len(c.Practices) != 4 {
+		t.Fatalf("two fleet practices: %v %v %v", c, err, f.FleetErr())
+	}
+	byID = map[string]Practice{}
+	for _, p := range c.Practices {
+		byID[p.ID] = p
+	}
+	if strings.Join(byID["koos"].Emails, ",") != "koos@koospsych.example" || strings.Join(byID["piet"].Emails, ",") != "piet@pietpsych.example" || strings.Join(c.OpenWorks, ",") != "it@openworks.example" {
+		t.Fatalf("the shared addresses should come off both: %+v %v", byID, c.OpenWorks)
+	}
+	if aside = strings.Join(f.SetAside(), "\n"); len(f.SetAside()) != 3 || !strings.Contains(aside, `same@both.example: on practice "koos" and practice "piet"`) || !strings.Contains(aside, `same@both.example: on practice "piet" and practice "koos"`) || !strings.Contains(aside, `it@openworks.example: on practice "koos" and OpenWorks support`) {
+		t.Fatalf("set aside: %q", aside)
+	}
+	// /version counts them, without saying which
+	r := &rig{t: t, clock: time.Now()}
+	r.app = NewApp(f, NewEntries(2*time.Minute, 5000, 20), "")
+	if w := r.get("/version"); !strings.Contains(w.Body.String(), `"setAside":3`) || strings.Contains(w.Body.String(), "@") {
+		t.Fatalf("version: %s", w.Body.String())
+	}
+	// a fleet file that doesn't fit otherwise (two practices with one key): config.json's alone, and why
+	write([]map[string]any{
+		{"id": "koos", "name": "Koos", "url": "https://koos.example.org", "key": strings.Repeat("k", 40), "emails": []string{"koos@koospsych.example"}},
+		{"id": "piet", "name": "Piet", "url": "https://piet.example.org", "key": strings.Repeat("k", 40), "emails": []string{"piet@pietpsych.example"}},
+	})
+	f.checked = time.Time{}
+	if c, err = f.Get(); err != nil || len(c.Practices) != 2 || f.FleetErr() == nil || !strings.Contains(f.FleetErr().Error(), "same key") || len(f.SetAside()) != 0 {
 		t.Fatalf("a bad fleet file: %v %v %v", c, err, f.FleetErr())
 	}
 	write("not a list")

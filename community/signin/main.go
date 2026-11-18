@@ -62,6 +62,12 @@ func main() {
 		if ferr := file.FleetErr(); ferr != nil {
 			fmt.Printf("WARNING: the fleet view's practices aren't in use, only config.json's: %v\n", ferr)
 		}
+		if aside := file.SetAside(); len(aside) > 0 {
+			fmt.Println("WARNING: on two lists, so taken off the fleet view's (remove it from one: docs/COMMUNITY.md, \"One address, one practice\"):")
+			for _, a := range aside {
+				fmt.Println("  " + a)
+			}
+		}
 		fmt.Printf("%s (and the fleet view's %s) is fine: the forum %s, %d practice(s):\n", path, fleetPath, cfg.Forum, len(cfg.Practices))
 		for _, p := range cfg.Practices {
 			fmt.Printf("  %-8s %s  %s  (%s)\n", p.ID, p.Name, p.URL, strings.Join(p.Emails, ", "))
