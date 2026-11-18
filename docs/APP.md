@@ -246,14 +246,26 @@ safe and private: losing them means every tester must uninstall and reinstall on
 The first build with the permanent key can't install over a copy signed with a throwaway key:
 testers uninstall once, install it, and sign in again. After that, updates install over the top.
 
+## Getting the app (1.2.5)
+
+Steady is on [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady)
+and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (live since
+18 Nov 2026). The App Store lists it in South Africa: use the `za` link, because the US link
+App Store Connect gives doesn't open. `app/stores.json` records which version each store has.
+
+Invite QR codes open `/join?invite=<code>`: Android phones get a Google Play button, iPhones the
+App Store, each with the steps to connect; a computer opens the web app with the code filled in.
+
 ## Updates for testers
 
-Each test build is published to the `web-dist` branch with the web app (builds from `test` go to
-`web-dist-test`, for vps1 with `STEADY_TRACK=test`), and `deploy/update.sh` puts it on the server: `https://<server>/download/steady.apk`. Invite QR codes open
-`/join?invite=<code>`: on an Android phone without the app, that page offers the download and
-the steps; on an iPhone it opens the web app with the code filled in. A copy of the app that is
-older than the server's build (and signed with the same permanent key) offers the download
-once per start and in Settings.
+Test builds (from `test`) go to `web-dist-test` with the APK, and `deploy/update.sh` puts it on
+vps1 (`STEADY_TRACK=test`) at `https://<server>/download/steady.apk`; its invite page offers that
+build under the Google Play button, and `STEADY_IOS_URL` may give iPhones a TestFlight link.
+Builds from `main` (`web-dist`) carry no APK: on a practice's server `/download/steady.apk`
+says Steady is on Google Play (and a TestFlight `STEADY_IOS_URL` is ignored). A copy installed
+from a server before 1.2.5 still sees a newer build there and offers the update, which opens
+that page; if Google Play won't install over it, the patient uninstalls it first and signs in
+again. The test-build release on GitHub keeps the newest APK for testers.
 
 ## Watch data
 
