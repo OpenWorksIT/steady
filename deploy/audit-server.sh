@@ -229,9 +229,11 @@ fi
 
 head_ "Backups"
 cron="$(crontab -l 2>/dev/null; cat /etc/cron.d/* 2>/dev/null)"
-if grep -q 'backup.sh' <<<"$cron"; then
+# Steady's own backup.sh, not another script whose name ends in it (vps1's openworks-backup.sh)
+steady_backup='(^|[[:space:]/])backup\.sh([[:space:]]|$)'
+if grep -Eq "$steady_backup" <<<"$cron"; then
   ok "backup.sh runs from cron"
-  dir="$(grep 'backup.sh' <<<"$cron" | grep -o '/[^ ]*backup.sh [^ ]*' | head -1 | awk '{print $2}')"
+  dir="$(grep -E "$steady_backup" <<<"$cron" | grep -o '/[^ ]*/backup\.sh [^ ]*' | head -1 | awk '{print $2}')"
   if [ -n "$dir" ] && [ -d "$dir" ]; then
     newest="$(find "$dir" -name '*.age' -mtime -2 2>/dev/null | head -1)"
     [ -n "$newest" ] && ok "a backup from the last two days: $(basename "$newest")" || fail "no backup newer than two days in $dir"
