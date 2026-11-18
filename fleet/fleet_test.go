@@ -940,6 +940,8 @@ func TestOwnServices(t *testing.T) {
 		{"other code", &BridgeStatus{Version: "1.1.1", Code: "0123456789ab"}, "bad", "not the code of release 1.1.1 (5f74a8885898)"},
 		{"older build", &BridgeStatus{Err: "it runs an older build that doesn't say which code it runs"}, "bad", "older build"},
 		{"unreachable", &BridgeStatus{Err: "can't reach the sign-in bridge: refused"}, "bad", "can't reach"},
+		{"set aside", &BridgeStatus{Version: "1.1.1", Code: "5f74a8885898", SetAside: 2}, "warn", "set aside 2 address(es) the fleet view approved that its config.json lists too"},
+		{"set aside, other code", &BridgeStatus{Version: "1.1.1", Code: "0123456789ab", SetAside: 1}, "bad", "; and it set aside 1 address(es)"},
 	}
 	for _, c := range cases {
 		o := find(ownServices(sts, &CommunityStatus{Bridge: c.bridge}), "Sign-in bridge")
@@ -968,14 +970,14 @@ func TestOwnServices(t *testing.T) {
 func TestFetchBridge(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/version" {
-			w.Write([]byte(`{"version":"1.1.1","code":"5f74a8885898"}`))
+			w.Write([]byte(`{"version":"1.1.1","code":"5f74a8885898","setAside":3}`))
 			return
 		}
 		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 	p := NewPoller(NewStore(t.TempDir()))
-	if b := p.fetchBridge(context.Background(), srv.URL); b.Err != "" || b.Version != "1.1.1" || b.Code != "5f74a8885898" {
+	if b := p.fetchBridge(context.Background(), srv.URL); b.Err != "" || b.Version != "1.1.1" || b.Code != "5f74a8885898" || b.SetAside != 3 {
 		t.Fatalf("bridge: %+v", b)
 	}
 	old := httptest.NewServer(http.NotFoundHandler())
@@ -1299,5 +1301,110 @@ func TestEmptyPracticeOffTheBridge(t *testing.T) {
 	readJSON(dir+"/bridge/practices.json", &bridge)
 	if len(bridge) != 2 {
 		t.Fatalf("bridge file: %+v", bridge)
+	}
+}
+
+// One address, one practice (1.2.6): approve refuses an address another practice approved (in any
+// case), --approve-all leaves it waiting and says so, and an address approved at two practices
+// from before (or by hand) goes on neither's bridge list, with Checks saying what to do.
+func TestOneAddressOnePractice(t *testing.T) {
+	app, site, steady, u, dir := setup(t)
+	t.Setenv("FLEET_ACTOR", "tiaan")
+	writeJSON(dir+"/community.json", Community{URL: "https://community.steadyapp.co.za", StatsKey: strings.Repeat("5a", 32), Signin: "https://signin.steadyapp.co.za"})
+	// the test server already has Dr Kempie, with the same address
+	err := app.store.withCommunity(func(cp *CommunityPractices) (bool, error) {
+		cp.Practices["test"] = &CommunityPractice{ID: "test", Name: "Steady Test", URL: "https://test.steadyapp.co.za", Key: strings.Repeat("k", 43), OpenWorks: true, Approved: []string{"kempie@vrpsych.co.za", "it@openworks.co.za"}}
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := func(email, name string) any { return map[string]any{"email": email, "name": name, "role": "clinician"} }
+	steady.mu.Lock()
+	steady.comm = map[string]any{"on": true, "fleet": true, "members": []any{member("Kempie@VRpsych.co.za", "Dr Kempie"), member("two@vrpsych.co.za", "Dr Two")}}
+	steady.mu.Unlock()
+	short := "127.0.0.1"
+	var out strings.Builder
+	if err := communityCmd(app.store, []string{short, "on", "--approve-all", "--yes"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Approved now: two@vrpsych.co.za\n") || !strings.Contains(out.String(), "Not approved, because another practice already has the same address") || !strings.Contains(out.String(), "kempie@vrpsych.co.za (approved at test)") {
+		t.Fatalf("--approve-all:\n%s", out.String())
+	}
+	cp, _ := app.store.CommunityPractices()
+	if strings.Join(cp.Practices[short].Approved, ",") != "two@vrpsych.co.za" {
+		t.Fatalf("approved: %v", cp.Practices[short].Approved)
+	}
+	// approve refuses it, whatever the case, and says what to do instead
+	err = communityCmd(app.store, []string{short, "approve", "two@vrpsych.co.za", "KEMPIE@vrpsych.co.za"}, strings.NewReader(""), &out)
+	if err == nil || !strings.Contains(err.Error(), "kempie@vrpsych.co.za is already approved at Steady Test (test)") || !strings.Contains(err.Error(), "fleet community test remove kempie@vrpsych.co.za") {
+		t.Fatalf("approve: %v", err)
+	}
+	out.Reset()
+	if err := communityCmd(app.store, []string{short, "people"}, strings.NewReader(""), &out); err != nil || !strings.Contains(out.String(), "(approved at test: can't be approved here too)") {
+		t.Fatalf("people: %v\n%s", err, out.String())
+	}
+	// the page marks them and offers no approve command for them; Checks says why they wait
+	app.poller.PollAll(context.Background())
+	c := signIn(t, site, u, time.Now())
+	res, _ := c.Get(site.URL + "/s/0")
+	page := body(t, res)
+	if !strings.Contains(page, "approved at test: one address, one practice") || strings.Contains(page, "approve kempie@vrpsych.co.za") {
+		t.Fatalf("server page: %s", page[strings.Index(page, `id="community"`):])
+	}
+	res, _ = c.Get(site.URL + "/checks")
+	if !strings.Contains(body(t, res), "1 already approved at another practice") {
+		t.Fatal("Checks doesn't say why the waiting one waits")
+	}
+
+	// approved at both from before 1.2.6 (here, by hand): on neither list, and Checks says so
+	err = app.store.withCommunity(func(cp *CommunityPractices) (bool, error) {
+		cp.Practices[short].Approved = union(cp.Practices[short].Approved, []string{"Kempie@vrpsych.co.za"})
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bridge []bridgePractice
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	lists := map[string]string{}
+	for _, b := range bridge {
+		lists[b.ID] = strings.Join(b.Emails, ",")
+	}
+	if len(bridge) != 2 || lists[short] != "two@vrpsych.co.za" || lists["test"] != "it@openworks.co.za" {
+		t.Fatalf("bridge file: %v", lists)
+	}
+	res, _ = c.Get(site.URL + "/checks")
+	checks := body(t, res)
+	if !strings.Contains(checks, "approved here and at another practice too, so the sign-in bridge lets them in through neither: kempie@vrpsych.co.za (also at test)") {
+		t.Fatalf("Checks: %s", checks)
+	}
+	out.Reset()
+	if err := communityCmd(app.store, []string{short, "people"}, strings.NewReader(""), &out); err != nil || !strings.Contains(out.String(), "(also approved at test: signs in through neither until one removes it)") {
+		t.Fatalf("people: %v\n%s", err, out.String())
+	}
+	// a practice whose only address is shared is left off the list altogether
+	err = app.store.withCommunity(func(cp *CommunityPractices) (bool, error) {
+		cp.Practices["test"].Approved = []string{"kempie@vrpsych.co.za"}
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 1 || bridge[0].ID != short || strings.Join(bridge[0].Emails, ",") != "two@vrpsych.co.za" {
+		t.Fatalf("bridge file: %+v", bridge)
+	}
+	// taken off at the other practice: back on this one's list
+	err = app.store.withCommunity(func(cp *CommunityPractices) (bool, error) {
+		cp.Practices["test"].Approved = nil
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 1 || strings.Join(bridge[0].Emails, ",") != "kempie@vrpsych.co.za,two@vrpsych.co.za" {
+		t.Fatalf("after removing it at test: %+v", bridge)
 	}
 }

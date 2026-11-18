@@ -33,14 +33,43 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - pocketbase
+      caddy-perms:
+        condition: service_completed_successfully
+      pocketbase:
+        condition: service_started
     networks: [edge, internal]
-    # it only needs its own two volumes and ports 80/443
+    # it only needs its own two volumes and ports 80/443, and runs as a user of its own (65531,
+    # nobody else's), not root: a flaw in Caddy gets no more than Caddy's own files
+    user: "65531:65531"
+    # ports below 1024 for any user inside the container (Docker's default since 20.10, said
+    # here so it doesn't rest on that)
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
+    # the image marks /usr/bin/caddy with this capability, and the kernel won't start a file so
+    # marked if the capability isn't allowed at all
     cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
+
+  # Hands Caddy's two volumes to its user before each start, then exits: Caddy wrote them as root
+  # before 1.2.6, and a new volume starts out root's. Nothing but chown, on those two volumes.
+  caddy-perms:
+    logging: *logging
+    image: caddy:2.11.7 # the same image as caddy (Dependabot updates both)
+    user: "0:0"
+    entrypoint: ["chown", "-R", "-h", "65531:65531", "/data", "/config"]
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    # CHOWN to change the owner, DAC_READ_SEARCH to keep reading folders it has just handed over
+    cap_add: [CHOWN, DAC_READ_SEARCH]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
 
   pocketbase:
     logging: *logging
