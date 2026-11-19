@@ -38,3 +38,4 @@ deploy/web.new/
 
 # exported test data
 deploy/test/steady-data-*.tar.gz
+deploy/decoys/

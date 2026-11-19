@@ -214,6 +214,8 @@ Do these on the VPS before real patient data arrives:
 - [ ] SSH with keys only (`PasswordAuthentication no`, `PermitRootLogin no`).
 - [ ] Firewall: only 22 (ideally limited to your address or a VPN), 80 and 443 open.
 - [ ] Automatic security updates (`unattended-upgrades` on Debian/Ubuntu).
+- [ ] Tripwires: a few decoys of this server's own (`sudo ./decoys.sh`, docs/FRONTDOOR.md), and
+      `STEADY_ALERT_EMAIL` in `.env` so a touch is emailed to OpenWorks.
 - [ ] Docker's data on an encrypted volume (LUKS), or full-disk encryption if the provider supports it.
       Without LUKS, ask the provider how the disk is protected at rest and record their answer in
       `.env` as `STEADY_DISK_AT_REST` (`.env.example` has an example): the audit shows it, and it is

@@ -294,6 +294,7 @@ function makeRuntime(opts = {}) {
   run(path.join(HOOKS, "steady_research.pb.js"));
   // the test branch only (docs/REVIEWERS.md); before steady_health, whose timing middleware is last
   run(path.join(HOOKS, "steady_reviewers.pb.js"));
+  run(path.join(HOOKS, "steady_frontdoor.pb.js"));
   run(path.join(HOOKS, "steady_health.pb.js"));
   run(path.join(HOOKS, "steady_feedback.pb.js"));
   run(path.join(HOOKS, "steady_care.pb.js"));
@@ -325,6 +326,7 @@ function makeRuntime(opts = {}) {
       response: { header: () => ({ set: (k, v) => { respHeaders[k] = v; } }) },
       json: (status, data) => { out = { status, data: JSON.parse(JSON.stringify(data)) }; },
       html: (status, html) => { out = { status, html, headers: respHeaders }; },
+      string: (status, text) => { out = { status, text, headers: respHeaders }; },
       redirect: (status, location) => { out = { status, location }; },
       fileFS: (dir, name) => { out = { status: 200, file: path.join(dir, name), headers: respHeaders }; }
     };
@@ -2764,4 +2766,174 @@ test("community run from the fleet view: settings it sends, the master psycholog
   assert.equal(set({ on: false }).status, 200);
   assert.equal(rt.call("GET", "/api/steady/config").data.communityUrl, "");
   assert.equal(rt.call("POST", R, { auth: master }).status, 404);
+});
+
+/* ------------------------------------------------------------------ the front door and tripwires */
+
+// a web app folder with two files, and a request through the front door's middleware
+function frontDoorRig(extraEnv) {
+  const os = require("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "steady-door-"));
+  fs.mkdirSync(path.join(dir, "web"));
+  fs.writeFileSync(path.join(dir, "web", "index.html"), "<html></html>");
+  fs.writeFileSync(path.join(dir, "web", "main.dart.js"), "//");
+  const env = Object.assign({}, ENV, {
+    STEADY_PUBLIC_DIR: path.join(dir, "web"), STEADY_DECOYS_FILE: path.join(dir, "decoys.json"),
+    STEADY_MONITOR_KEY: "m".repeat(40), STEADY_FLEET_KEY: "f".repeat(40), STEADY_DOMAIN: "vr.example.org"
+  }, extraEnv || {});
+  const rt = makeRuntime({ env });
+  const door = rt.hooks.middleware.find((f) => String(f).indexOf("tripwires") >= 0);
+  // req: { method, path, query, headers, ip, auth, status, error }
+  const send = (req) => {
+    const headers = req.headers || {};
+    const e = {
+      auth: req.auth || null,
+      request: {
+        method: req.method || "GET",
+        url: { path: req.path, rawQuery: req.query || "", query: () => ({ get: () => "" }) },
+        remoteAddr: (req.local ? "127.0.0.1" : "172.18.0.4") + ":5555",
+        header: { get: (k) => headers[k] || "" }
+      },
+      response: { header: () => ({ set() {} }) },
+      realIP: () => req.ip || "203.0.113.9",
+      status: () => req.status || 200,
+      next: () => { if (req.error) throw req.error; return "ok"; }
+    };
+    try { door(e); } catch (_) { /* the error goes on as it would */ }
+  };
+  const flush = () => rt.crons.steady_frontdoor();
+  const fleet = () => rt.call("GET", "/api/steady/fleet", { headers: { "X-Steady-Fleet": "f".repeat(40) } }).data;
+  return { rt, dir, env, send, flush, fleet };
+}
+
+test("the front door counts what was turned away, by kind, and nothing ordinary", () => {
+  const { rt, send, flush, fleet } = frontDoorRig();
+  const patient = rt.makeUser({ name: "P", role: "patient", active: true, email: "p@example.org" });
+  // ordinary: the app's files, the API answering, the normal second step of signing in
+  send({ path: "/" });
+  send({ path: "/main.dart.js" });
+  send({ path: "/api/steady/config" });
+  send({ path: "/join" });
+  send({ method: "POST", path: "/api/steady/auth/sign-in", status: 400, error: new BadRequestErrorFor(rt, "Enter the code from your authenticator app.") });
+  // turned away
+  send({ path: "/wp-login.php", headers: { "User-Agent": "Mozilla/5.0 zgrab/0.x" }, ip: "198.51.100.1" });
+  send({ path: "/.env", headers: { "User-Agent": "Mozilla/5.0 zgrab/0.x" }, ip: "198.51.100.1" });
+  send({ path: "/../../etc/passwd", ip: "198.51.100.2" });
+  send({ path: "/api/steady/closed", headers: { "X-Steady-Closed": "/_/" }, status: 404, error: notFound(rt) });
+  send({ method: "POST", path: "/api/steady/auth/sign-in", status: 400, error: new BadRequestErrorFor(rt, "Failed to authenticate.") });
+  send({ method: "POST", path: "/api/collections/users/auth-with-password", status: 400, error: new BadRequestErrorFor(rt, "Failed to authenticate.") });
+  send({ path: "/api/steady/patients", status: 429, error: Object.assign(new Error("Too many"), { status: 429 }) });
+  send({ path: "/api/collections/checkins/records", status: 401, error: Object.assign(new Error("no"), { status: 401 }) });
+  send({ path: "/api/collections/checkins/records/abcdefghijklmno", auth: patient, status: 404, error: notFound(rt) });
+  // the server's own: its security check knocks with the monitor key, its health check from inside
+  send({ path: "/api/steady/closed", headers: { "X-Steady-Closed": "/_/", "X-Steady-Monitor": "m".repeat(40) }, status: 404, error: notFound(rt) });
+  send({ path: "/wp-admin/", local: true });
+  flush();
+  const d = fleet().frontDoor;
+  assert.deepEqual(
+    { probe: d.last24h.probe, closed: d.last24h.closed, signin: d.last24h.signin, limited: d.last24h.limited, refused: d.last24h.refused, insider: d.last24h.insider },
+    { probe: 3, closed: 1, signin: 2, limited: 1, refused: 1, insider: 1 });
+  assert.equal(d.last24h.sources, 3); // 198.51.100.1, .2 and the rest from 203.0.113.9
+  const paths = d.paths.map((p) => p.kind + " " + p.path);
+  assert.ok(paths.includes("probe /wp-login.php") && paths.includes("closed /_/") && paths.includes("insider /api/collections/checkins/records/:id"), paths.join(", "));
+  // tools only for probes and the closed door; no addresses anywhere in the counts
+  assert.deepEqual(d.agents, [{ agent: "Mozilla/5.0 zgrab/0.x", n: 2 }]);
+  assert.ok(!JSON.stringify(d).includes("198.51.100") && !JSON.stringify(d).includes("203.0.113"));
+  assert.equal(d.days.length, 1);
+  // the hour's row carries on after a restart
+  rt.app.store().keys().filter((k) => String(k).indexOf("steady.door.h.") === 0).forEach((k) => rt.app.store().remove(k));
+  send({ path: "/phpmyadmin/" });
+  flush();
+  assert.equal(fleet().frontDoor.last24h.probe, 4);
+  // and rows past 30 days go
+  rt.tick(31 * 86400000);
+  flush();
+  assert.equal(rt.store.frontdoor.filter((r) => r.getString("hour") !== "salt").length, 0);
+});
+
+// errors as the hooks throw them
+function BadRequestErrorFor(rt, message) { return new rt.sandbox.BadRequestError(message); }
+function notFound(rt) { return new rt.sandbox.NotFoundError("Not found."); }
+
+test("Caddy's closed door answers 404, and robots.txt keeps search engines out", () => {
+  const { rt } = frontDoorRig();
+  ["GET", "POST", "DELETE"].forEach((m) => assert.equal(rt.call(m, "/api/steady/closed").status, 404));
+  const robots = rt.call("GET", "/robots.txt");
+  assert.equal(robots.status, 200);
+  assert.equal(robots.text, "User-agent: *\nDisallow: /\n");
+});
+
+test("tripwires: decoys from the server's own file, touched only on purpose, emailed once an hour", () => {
+  const value = "decoy-" + "q".repeat(34);
+  const sha = (t) => require("crypto").createHash("sha256").update(t).digest("hex");
+  const { rt, dir, send, flush, fleet } = frontDoorRig({ STEADY_ALERT_EMAIL: "alerts@openworks.example", STEADY_SMTP_HOST: "smtp.example.org", STEADY_SMTP_USER: "u", STEADY_SMTP_PASSWORD: "p" });
+  const real = rt.makeUser({ name: "Dr Real", role: "clinician", active: true, email: "dr@vr.example.org" });
+  fs.writeFileSync(path.join(dir, "decoys.json"), JSON.stringify({
+    robots: true,
+    decoys: [
+      { path: "/old-portal/", label: "robots path" },
+      { value: "sha256:" + sha(value), label: "planted in .env" },
+      { name: "Admin@VR.example.org", label: "admin name" },
+      // ignored, and said why: what the app uses, a real key, a real account
+      { path: "/api/steady/patients", label: "bad path" },
+      { path: "/main.dart.js", label: "bad file" },
+      { value: sha("f".repeat(40)), label: "the fleet key" },
+      { name: "dr@vr.example.org", label: "a real account" }
+    ]
+  }));
+  // nothing ordinary touches them: the app, its files, a real sign-in name, the real fleet key
+  send({ path: "/main.dart.js" });
+  send({ path: "/api/steady/patients", auth: real });
+  send({ path: "/api/steady/fleet", headers: { "X-Steady-Fleet": "f".repeat(40) } });
+  rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "dr@vr.example.org", password: "wrong-password" } });
+  flush();
+  assert.equal(fleet().frontDoor.last24h.trip, 0);
+  assert.equal(rt.mails.length, 0);
+
+  const robots = rt.call("GET", "/robots.txt").text;
+  assert.equal(robots, "User-agent: *\nDisallow: /\nDisallow: /old-portal/\n");
+  // touched: the path (twice within the hour: one email), the value as a key and in a query, the
+  // name and the value at sign-in
+  send({ path: "/old-portal/login.php", ip: "198.51.100.7", headers: { "User-Agent": "curl/8.5" } });
+  send({ path: "/old-portal", ip: "198.51.100.7" });
+  send({ path: "/api/steady/fleet", headers: { Authorization: "Bearer " + value } });
+  send({ path: "/api/x", query: "token=" + encodeURIComponent(value) });
+  rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "admin@vr.example.org", password: "guess" } });
+  rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "dr@vr.example.org", password: value } });
+  flush();
+  const d = fleet();
+  assert.equal(d.frontDoor.last24h.trip, 6);
+  const labels = d.frontDoor.trips.map((t) => t.label + "/" + t.type).sort();
+  assert.deepEqual(labels, ["admin name/name", "planted in .env/value", "planted in .env/value", "planted in .env/value", "robots path/path", "robots path/path"]);
+  const byPath = d.frontDoor.trips.find((t) => t.path === "/old-portal/login.php");
+  assert.equal(byPath.ip, "198.51.100.7");
+  assert.equal(byPath.agent, "curl/8.5");
+  // one email for each decoy within the hour, to OpenWorks, with nothing about patients
+  assert.equal(rt.mails.length, 3);
+  assert.ok(rt.mails.every((m) => m.to[0].address === "alerts@openworks.example" && /^Steady tripwire on vr\.example\.org: /.test(m.subject)));
+  assert.ok(!rt.mails.some((m) => m.text.includes(value)));
+  // the fleet view sees how many and what's wrong, never the decoys themselves
+  const t = d.tripwires;
+  assert.deepEqual({ set: t.set, paths: t.paths, values: t.values, names: t.names, alertEmail: t.alertEmail }, { set: true, paths: 1, values: 1, names: 1, alertEmail: true });
+  assert.equal(t.problems.length, 4);
+  assert.ok(t.problems.some((p) => /the fleet key: .*real STEADY_FLEET_KEY/.test(p)) && t.problems.some((p) => /a real account: the name belongs to a real account/.test(p)));
+  assert.ok(!JSON.stringify(t).includes("old-portal") && !JSON.stringify(t).includes(sha(value)) && !JSON.stringify(t).includes("admin@"));
+  // and none of it is in the practice's own access log
+  assert.ok(!rt.store.auditlog.some((a) => /trip|decoy/.test(a.getString("action"))));
+  // an hour on, the same decoy is emailed again
+  rt.tick(3600001);
+  send({ path: "/old-portal/" });
+  assert.equal(rt.mails.length, 4);
+});
+
+test("tripwires: none set is fine, and a broken file is reported, not fatal", () => {
+  const { rt, dir, send, fleet } = frontDoorRig();
+  send({ path: "/anything" });
+  assert.deepEqual(Object.assign({}, fleet().tripwires, { problems: undefined }), { set: false, paths: 0, values: 0, names: 0, alertEmail: false, problems: undefined });
+  fs.writeFileSync(path.join(dir, "decoys.json"), "{not json");
+  rt.tick(31000);
+  const t = fleet().tripwires;
+  assert.equal(t.set, false);
+  assert.match(t.problems[0], /can't be read/);
+  assert.equal(rt.call("GET", "/robots.txt").text, "User-agent: *\nDisallow: /\n");
 });
