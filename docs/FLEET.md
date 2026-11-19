@@ -255,6 +255,12 @@ sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-si
   && sudo docker compose -f community/signin/compose.yml up -d --build
 ```
 
+## Front door
+
+The **Front door** page has what every service turned away (practice servers, the sign-in
+bridge, the forum, the fleet view itself) and the tripwires touched; the overview and Checks flag
+both. What's counted, how, and how to set up tripwires and vps1's count: [FRONTDOOR.md](FRONTDOOR.md).
+
 ## Which code runs where
 
 **Practice servers** report their version; one behind the newest signed release is counted at

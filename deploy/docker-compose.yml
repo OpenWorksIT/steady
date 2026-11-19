@@ -129,6 +129,8 @@ services:
       STEADY_DEMO_DAILY: ${STEADY_DEMO_DAILY:-}
       # the app stores' reviewers' account (docs/REVIEWERS.md): OpenWorks' test server only
       STEADY_REVIEWERS: ${STEADY_REVIEWERS:-off}
+      # where a touched tripwire is emailed (OpenWorks; deploy/decoys.sh, docs/FRONTDOOR.md)
+      STEADY_ALERT_EMAIL: ${STEADY_ALERT_EMAIL:-}
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data
@@ -142,6 +144,8 @@ services:
       - /var/lib/steady/ctl/out:/ctl/out:ro
       # edit the consent text without rebuilding
       - ../server/pb_hooks/content:/pb/pb_hooks/content:ro
+      # this server's tripwires, never in git (./decoys.sh; empty is none)
+      - ./decoys:/pb/decoys:ro
     networks:
       internal: {}
 

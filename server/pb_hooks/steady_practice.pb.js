@@ -121,6 +121,7 @@ onRecordAuthWithPasswordRequest((e) => {
   const G = require(`${__hooks}/lib/signin.js`);
   // counted before checking, per email, the same for unknown emails
   G.attempt($app, e.record ? e.record.email() : String(e.identity || ""), e.record, e, "password");
+  require(`${__hooks}/lib/tripwires.js`).checkSignIn($app, e, String(e.identity || ""), e.password);
   // an unknown email takes as long as a known one
   if (!e.record) { G.dummyCheck($app, e.password); return e.next(); }
   const right = e.record.validatePassword(e.password);
@@ -148,6 +149,7 @@ routerAdd("POST", "/api/steady/auth/sign-in", (e) => {
   try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
   // counted before checking, per email, the same for unknown emails
   G.attempt($app, email, u, e, "password");
+  require(`${__hooks}/lib/tripwires.js`).checkSignIn($app, e, email, password);
   // an unknown email takes as long as a known one
   if (!u) { G.dummyCheck($app, password); throw new BadRequestError("Failed to authenticate."); }
   if (!password || !u.validatePassword(password)) throw new BadRequestError("Failed to authenticate.");
@@ -233,6 +235,7 @@ routerAdd("POST", "/api/steady/auth/lock", (e) => {
   let u = null;
   try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
   G.attempt($app, email, u, e, "password");
+  require(`${__hooks}/lib/tripwires.js`).checkSignIn($app, e, email, password);
   if (!u) { G.dummyCheck($app, password); throw new BadRequestError("That email and password didn't match."); }
   if (!password || !u.validatePassword(password)) throw new BadRequestError("That email and password didn't match.");
   if (!s.isStaff(u)) throw new BadRequestError("That email and password didn't match.");
