@@ -606,6 +606,14 @@ func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time, cp ...*Commu
 		for _, c := range a.Problems {
 			add(c.Level, c.Section, c.Text, a.Checked)
 		}
+		// the front door: a tripwire touched, a jump, a decoy the server ignores
+		fix, look := doorChecks(practiceDoor(i, st, now))
+		for _, t := range fix {
+			add("fail", "Front door", t, row.Checked)
+		}
+		for _, t := range look {
+			add("warn", "Front door", t, row.Checked)
+		}
 		sc.Passed = a.Oks
 		p.Passed += a.Oks
 		switch {

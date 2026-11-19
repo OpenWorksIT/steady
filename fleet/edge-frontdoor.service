@@ -1,0 +1,21 @@
+# The front door of OpenWorks' own services on vps1, for the fleet view (edge-frontdoor.py).
+#   sudo install -m 644 /opt/steady-ops/fleet/edge-frontdoor.service /opt/steady-ops/fleet/edge-frontdoor.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now edge-frontdoor.timer
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Count what vps1's Caddy turned away, for the Steady fleet view
+After=docker.service
+
+[Service]
+Type=oneshot
+# the Caddy in front of the sign-in bridge, the forum and the fleet view (Shap's, on vps1)
+Environment=EDGE_CADDY=shap-caddy-1
+# the docker client keeps nothing; home is out of reach
+Environment=HOME=/tmp
+ExecStart=/usr/bin/python3 -I /opt/steady-ops/fleet/edge-frontdoor.py
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/steady-fleet

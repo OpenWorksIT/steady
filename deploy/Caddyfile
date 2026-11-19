@@ -20,8 +20,17 @@
 	# accounts.sh does account work from inside the server (docs/DEPLOY.md, step 5). An
 	# address allow-list here isn't safe: Docker can hand on connections from its own private
 	# addresses. PocketBase refuses these from outside its container as well.
+	# Such a request never reaches them: it goes to /api/steady/closed instead, which counts it as
+	# a try at a closed door (the fleet view's Front door, docs/FRONTDOOR.md) and answers 404. It
+	# has to be a handle of its own: Caddy runs handle before respond, so before 1.2.7 the
+	# respond here never ran, and only PocketBase's own refusal kept these out.
 	@dashboard path_regexp dashboard (?i)^/(_|_/.*|api/collections/(_superusers|pbc_3142635823)(/.*)?)$
-	respond @dashboard 404
+	handle @dashboard {
+		rewrite * /api/steady/closed
+		reverse_proxy pocketbase:8090 {
+			header_up X-Steady-Closed {http.request.orig_uri.path}
+		}
+	}
 
 	handle {
 		# the web app: only this site's own code, fonts and API (tested with the Flutter build), and

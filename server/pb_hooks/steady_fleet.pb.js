@@ -1,9 +1,9 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Steady - for OpenWorks IT's fleet view (fleet/): one practice server's state at a glance,
 // and the two things the fleet view may ask a server to do. Never anything about patients:
-// only versions, health, counts, backup age, whether the operator agreement is signed, and the
+// only versions, health, counts, backup age, whether the operator agreement is signed, the
 // latest security and privacy check (deploy/audit-server.sh, every 6 hours: what it found, never
-// keys or patients' details).
+// keys or patients' details), and the front door (what was turned away, and tripwires touched).
 //
 //   GET  /api/steady/fleet           X-Steady-Fleet: STEADY_FLEET_KEY
 //   POST /api/steady/fleet/request   X-Steady-Fleet: STEADY_FLEET_KEY   {action: check|update|restart}
@@ -108,6 +108,12 @@ routerAdd("GET", "/api/steady/fleet", (e) => {
       return { version: st.version, signed: st.signed, signedAt: st.signedAt ? new Date(st.signedAt).toISOString() : "", lastSignedVersion: st.lastSignedVersion };
     })(),
     audit: d.ctlAudit(ctl),
+    // what the server turned away, by kind, and the tripwires touched (lib/frontdoor.js): counts,
+    // paths and tools asked with; an address only for a touched tripwire, which the practice's
+    // own people never touch
+    frontDoor: (() => { try { return require(`${__hooks}/lib/frontdoor.js`).summary($app, Date.now()); } catch (_) { return null; } })(),
+    // how many decoys are set and what's wrong with any, never the decoys themselves
+    tripwires: (() => { try { return require(`${__hooks}/lib/tripwires.js`).status($app); } catch (_) { return null; } })(),
     pending: d.ctlPending(ctl),
     updating: status ? status.updating || null : null,
     lastUpdate: status ? status.lastUpdate || null : null,

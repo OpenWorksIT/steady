@@ -1,0 +1,42 @@
+{{template "top" "Front door"}}
+{{template "bar" .}}
+<main>
+<h1>Front door</h1>
+<p class="muted">What each service turned away, and the tripwires touched; this page refreshes itself. {{.Now}}.
+Practice servers count their own; OpenWorks' services on vps1 are counted from its Caddy every 10 minutes.
+Addresses are counted, never kept, except for a touched tripwire (nobody at a practice ever touches one).</p>
+{{with .Page.Trips}}<p class="error">A tripwire was touched {{.}} time(s) this week: see below.</p>{{end}}
+
+<div class="table"><table>
+<thead><tr><th>Service</th><th>Last 24 hours</th><th>Last 7 days</th><th>Addresses (24 h / 7 d)</th><th></th></tr></thead>
+<tbody>
+{{range .Page.Services}}<tr>
+<td><a href="#{{.Host}}"><strong>{{.Name}}</strong></a><br><span class="muted">{{.Host}}</span></td>
+{{if not .Have}}<td colspan="3" class="muted">{{.Err}}</td>
+{{else if .Practice}}<td>{{template "practicecounts" .Day}}</td><td>{{template "practicecounts" .Week}}</td><td>{{.Day.Sources}} / {{.Week.Sources}}</td>
+{{else}}<td>{{template "edgecounts" .Day}}</td><td>{{template "edgecounts" .Week}}</td><td>{{.Day.Sources}} / {{.Week.Sources}}</td>{{end}}
+<td><span class="check {{.Level}}">{{if eq .Level "bad"}}tripwire touched{{else if eq .Level "warn"}}look at it{{else}}as usual{{end}}</span></td>
+</tr>{{end}}
+</tbody></table></div>
+{{with .Page.EdgeErr}}<p class="muted">vps1's services: {{.}}</p>{{end}}
+
+{{range .Page.Services}}{{if .Have}}{{$svc := .}}
+<h2 id="{{.Host}}">{{.Name}}</h2>
+{{with .Err}}<p class="warn">{{.}}</p>{{end}}
+{{range .Flags}}<p class="{{if eq $svc.Level "bad"}}error{{else}}warn{{end}}">{{.}}</p>{{end}}
+{{with .Trips}}<h3>Tripwires touched</h3>
+<div class="table"><table><thead><tr><th>When</th><th>Decoy</th><th>Request</th><th>From</th><th>With</th></tr></thead><tbody>
+{{range .}}<tr class="bad"><td>{{.When}}</td><td>{{.Label}} <span class="muted">({{.Type}})</span></td><td><code>{{.Method}} {{.Path}}</code></td><td><code>{{.IP}}</code></td><td class="muted">{{.Agent}}</td></tr>
+{{end}}</tbody></table></div>{{end}}
+{{if .Practice}}<p class="muted">{{.Tripwires}}</p>{{range .Problems}}<p class="warn">Ignored: {{.}}</p>{{end}}{{end}}
+{{with .Paths}}<h3>Asked for most (7 days)</h3>
+<div class="table"><table><thead><tr><th>{{if $svc.Practice}}Kind{{else}}Answer{{end}}</th><th>Path</th><th>Times</th></tr></thead><tbody>
+{{range .}}<tr><td>{{.Kind}}</td><td><code>{{.Path}}</code></td><td>{{.N}}</td></tr>
+{{end}}</tbody></table></div>{{else}}{{if not .Practice}}<p class="muted">Its log keeps no paths (its links carry tokens): counts only.</p>{{end}}{{end}}
+{{with .Agents}}<h3>Came with (7 days)</h3>
+<ul>{{range .}}<li><code>{{.Path}}</code> <span class="muted">{{.N}} times</span></li>{{end}}</ul>{{end}}
+{{end}}{{end}}
+</main>
+{{template "end"}}
+{{define "practicecounts"}}{{.Probe}} probes · {{.Closed}} at the closed door · {{.Signin}} failed sign-ins · {{.Limited}} rate-limited · {{.Refused}} refused · {{.Insider}} an account's own{{if .Trip}} · <strong class="error">{{.Trip}} tripwire</strong>{{end}}{{end}}
+{{define "edgecounts"}}{{.Requests}} requests · {{.Refused}} refused · {{.Missing}} not found · {{.Limited}} rate-limited · {{.Errors}} errors{{end}}

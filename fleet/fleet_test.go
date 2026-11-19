@@ -109,7 +109,9 @@ type fakeSteady struct {
 	noAudit  map[string]any // when set: no results, and this as the check's timer (host.auditService)
 	comm     map[string]any // when set: the server's community block
 	commSet  []map[string]any
-	commOld  bool // Steady 1.2.0: takes the fleet view's setting but still says off
+	commOld  bool           // Steady 1.2.0: takes the fleet view's setting but still says off
+	door     map[string]any // when set: the server's frontDoor and tripwires (1.2.7)
+	trip     map[string]any
 }
 
 func newFakeSteady(t *testing.T) *fakeSteady {
@@ -139,6 +141,9 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 			f.mu.Lock()
 			if f.comm != nil {
 				d["community"] = f.comm
+			}
+			if f.door != nil {
+				d["frontDoor"], d["tripwires"] = f.door, f.trip
 			}
 			f.mu.Unlock()
 			json.NewEncoder(w).Encode(d)
@@ -1406,5 +1411,86 @@ func TestOneAddressOnePractice(t *testing.T) {
 	readJSON(dir+"/bridge/practices.json", &bridge)
 	if len(bridge) != 1 || strings.Join(bridge[0].Emails, ",") != "kempie@vrpsych.co.za,two@vrpsych.co.za" {
 		t.Fatalf("after removing it at test: %+v", bridge)
+	}
+}
+
+// The Front door (1.2.7): a practice server's own counts and tripwires, vps1's services from the
+// Caddy log summary, on its page, the overview and Checks.
+func TestFrontDoor(t *testing.T) {
+	app, site, steady, u, dir := setup(t)
+	writeJSON(dir+"/community.json", Community{URL: "https://community.steadyapp.co.za", StatsKey: strings.Repeat("5a", 32), Signin: "https://signin.steadyapp.co.za"})
+	c := signIn(t, site, u, time.Now())
+	// before 1.2.7: said so, nothing flagged
+	res, _ := c.Get(site.URL + "/frontdoor")
+	page := body(t, res)
+	if !strings.Contains(page, "no front door from this server yet") || !strings.Contains(page, "not counted yet: install edge-frontdoor.timer") {
+		t.Fatalf("before: %s", page)
+	}
+	steady.mu.Lock()
+	steady.door = map[string]any{
+		"last24h": map[string]any{"probe": 40, "closed": 2, "signin": 90, "limited": 3, "refused": 5, "insider": 0, "trip": 1, "sources": 7},
+		"last7d":  map[string]any{"probe": 300, "closed": 6, "signin": 102, "limited": 9, "refused": 30, "insider": 0, "trip": 1, "sources": 50},
+		"paths":   []any{map[string]any{"kind": "probe", "path": "/wp-login.php<b>", "n": 12}, map[string]any{"kind": "closed", "path": "/_/", "n": 6}},
+		"agents":  []any{map[string]any{"agent": "zgrab/0.x", "n": 9}},
+		"trips":   []any{map[string]any{"at": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339), "label": "planted in .env", "type": "value", "path": "/api/steady/fleet", "method": "GET", "ip": "198.51.100.7", "agent": "curl/8"}},
+	}
+	steady.trip = map[string]any{"set": true, "paths": 1, "values": 1, "names": 0, "alertEmail": true, "problems": []any{"bad path: the path is one the app or server uses, so it's ignored"}}
+	steady.mu.Unlock()
+	// vps1's services, counted 5 minutes ago; the test server's own site is left out (it counts itself)
+	writeJSON(dir+"/edge-frontdoor.json", map[string]any{"at": time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339), "hosts": map[string]any{
+		"community.steadyapp.co.za": map[string]any{"last24h": map[string]any{"requests": 900, "refused": 4, "missing": 400, "limited": 0, "errors": 0, "sources": 30},
+			"last7d": map[string]any{"requests": 5000, "refused": 20, "missing": 520, "limited": 0, "errors": 0, "sources": 80}},
+		"signin.steadyapp.co.za": map[string]any{"last24h": map[string]any{"requests": 20}, "last7d": map[string]any{"requests": 90}},
+		hostOf(steady.srv.URL):   map[string]any{"last24h": map[string]any{"requests": 1}},
+	}})
+	app.poller.PollAll(context.Background())
+	res, _ = c.Get(site.URL + "/frontdoor")
+	page = body(t, res)
+	for _, want := range []string{
+		"A tripwire was touched 1 time(s) this week", "planted in .env", "198.51.100.7", "<code>GET /api/steady/fleet</code>",
+		"failed sign-ins: 90 in 24 h (about 2 a day before): someone may be guessing passwords",
+		"2 tripwire(s) set, emailed when touched", "Ignored: bad path", "/wp-login.php&lt;b&gt;", "closed door",
+		"Community forum", "Sign-in bridge", "not found: 400 in 24 h (about 20 a day before)", "Its log keeps no paths",
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("front door page lacks %q:\n%s", want, page)
+		}
+	}
+	if strings.Contains(page, "/wp-login.php<b>") || strings.Count(page, "<h2 id=") != 3 {
+		t.Fatalf("escaping or the services: %s", page)
+	}
+	// the overview and Checks say so
+	res, _ = c.Get(site.URL + "/")
+	if ov := body(t, res); !strings.Contains(ov, "a tripwire touched 1 time(s) this week") || !strings.Contains(ov, "front door(s) to look at") {
+		t.Fatalf("overview: %s", ov)
+	}
+	res, _ = c.Get(site.URL + "/checks")
+	checks := body(t, res)
+	if !strings.Contains(checks, "a tripwire was touched 1 time(s) this week") || !strings.Contains(checks, "a decoy is ignored: bad path") || !strings.Contains(checks, "not found: 400 in 24 h") {
+		t.Fatalf("checks: %s", checks)
+	}
+	// a summary that has stopped coming is said
+	writeJSON(dir+"/edge-frontdoor.json", map[string]any{"at": time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339), "hosts": map[string]any{
+		"signin.steadyapp.co.za": map[string]any{"last24h": map[string]any{"requests": 20}}}})
+	res, _ = c.Get(site.URL + "/frontdoor")
+	if page = body(t, res); !strings.Contains(page, "is edge-frontdoor.timer running on vps1?") {
+		t.Fatalf("stale: %s", page)
+	}
+}
+
+func TestJump(t *testing.T) {
+	for _, c := range []struct {
+		day, week, floor int
+		want             string
+	}{
+		{90, 102, 30, "about 2 a day before"},
+		{29, 29, 30, ""},           // under the floor
+		{60, 300, 30, ""},          // 60 against about 40 a day: not 3 times
+		{40, 40, 30, "hardly any"}, // nothing before
+	} {
+		got := jump("x", c.day, c.week, c.floor, "y")
+		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
+			t.Fatalf("jump(%d, %d, %d) = %q, want %q", c.day, c.week, c.floor, got, c.want)
+		}
 	}
 }
