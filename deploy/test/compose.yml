@@ -79,7 +79,7 @@ services:
 
   # Keeps the PocketBase dashboard off the internet; everything else passes through.
   caddy:
-    image: caddy:2.11.7 # pinned: Dependabot proposes updates as pull requests into working
+    image: caddy:2.11.8 # pinned: Dependabot proposes updates as pull requests into working
     restart: unless-stopped
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
