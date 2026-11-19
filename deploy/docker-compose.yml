@@ -20,7 +20,7 @@ x-logging: &logging
 services:
   caddy:
     logging: *logging
-    image: caddy:2.11.7 # pinned: Dependabot proposes updates as pull requests into working
+    image: caddy:2.11.8 # pinned: Dependabot proposes updates as pull requests into working
     restart: unless-stopped
     ports:
       - "80:80"
@@ -57,7 +57,7 @@ services:
   # before 1.2.6, and a new volume starts out root's. Nothing but chown, on those two volumes.
   caddy-perms:
     logging: *logging
-    image: caddy:2.11.7 # the same image as caddy (Dependabot updates both)
+    image: caddy:2.11.8 # the same image as caddy (Dependabot updates both)
     user: "0:0"
     entrypoint: ["chown", "-R", "-h", "65531:65531", "/data", "/config"]
     volumes:
@@ -127,6 +127,8 @@ services:
       STEADY_INTEGRATION_KEY: ${STEADY_INTEGRATION_KEY:-}
       # test servers only: the demo patients get a new day every night (accounts.sh demo-patients)
       STEADY_DEMO_DAILY: ${STEADY_DEMO_DAILY:-}
+      # where a touched tripwire is emailed (OpenWorks; deploy/decoys.sh, docs/FRONTDOOR.md)
+      STEADY_ALERT_EMAIL: ${STEADY_ALERT_EMAIL:-}
       TZ: Africa/Johannesburg
     volumes:
       - pb_data:/pb/pb_data
@@ -140,6 +142,8 @@ services:
       - /var/lib/steady/ctl/out:/ctl/out:ro
       # edit the consent text without rebuilding
       - ../server/pb_hooks/content:/pb/pb_hooks/content:ro
+      # this server's tripwires, never in git (./decoys.sh; empty is none)
+      - ./decoys:/pb/decoys:ro
     networks:
       internal: {}
 

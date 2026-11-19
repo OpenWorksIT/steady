@@ -59,6 +59,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /s/{n}", a.signedIn(a.detail))
 	mux.HandleFunc("GET /audit", a.signedIn(a.audit))
 	mux.HandleFunc("GET /checks", a.signedIn(a.checks))
+	mux.HandleFunc("GET /frontdoor", a.signedIn(a.frontdoor))
 	mux.HandleFunc("GET /todo", a.signedIn(a.todo))
 	mux.HandleFunc("POST /todo", a.signedIn(a.todoAdd))
 	mux.HandleFunc("GET /todo/{id}", a.signedIn(a.todoItem))
@@ -311,6 +312,14 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request, s *Session) {
 		}
 		rows = append(rows, row)
 	}
+	// the front door: tripwires touched this week, and services to look at
+	cfg, _ := a.store.Community()
+	for _, d := range makeFrontDoor(sts, a.store.EdgeFrontDoor(), cfg, now).Services {
+		counts["trips"] += d.Week.Trip
+		if d.Level == "warn" && d.Have {
+			counts["door"]++
+		}
+	}
 	own := ownServices(sts, a.poller.CommunitySnapshot())
 	for _, o := range own {
 		if o.Level == "bad" {
@@ -351,7 +360,29 @@ func (a *App) checks(w http.ResponseWriter, r *http.Request, s *Session) {
 	now := a.now()
 	w.Header().Set("Refresh", "60; url=/checks?auto=1")
 	cp, _ := a.store.CommunityPractices()
-	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": makeChecks(sts, a.poller.CommunitySnapshot(), now, cp)})
+	page := makeChecks(sts, a.poller.CommunitySnapshot(), now, cp)
+	// vps1's own services' front door (the practice servers' is in makeChecks)
+	cfg, _ := a.store.Community()
+	for _, d := range edgeDoors(a.store.EdgeFrontDoor(), cfg, practiceHosts(sts), now) {
+		_, look := doorChecks(d)
+		if d.Err != "" {
+			look = append(look, d.Err)
+		}
+		for _, t := range look {
+			page.Look = append(page.Look, FeedItem{Server: d.Name, Level: "warn", Section: "Front door", Text: t, Link: "/frontdoor#" + d.Host})
+		}
+	}
+	a.render(w, "checks.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"), "Page": page})
+}
+
+// frontdoor: what every service turned away, and the tripwires touched (frontdoor.go).
+func (a *App) frontdoor(w http.ResponseWriter, r *http.Request, s *Session) {
+	sts, _ := a.poller.Snapshot()
+	now := a.now()
+	w.Header().Set("Refresh", "60; url=/frontdoor?auto=1")
+	cfg, _ := a.store.Community()
+	a.render(w, "frontdoor.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"),
+		"Page": makeFrontDoor(sts, a.store.EdgeFrontDoor(), cfg, now)})
 }
 
 func (a *App) audit(w http.ResponseWriter, r *http.Request, s *Session) {

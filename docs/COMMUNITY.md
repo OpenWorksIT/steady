@@ -643,7 +643,20 @@ git pull
 ```
 
 Do it monthly, and soon after Discourse announces a security release (admins get an email).
-The forum is offline for the 10 to 15 minutes the rebuild takes. **Admin > Upgrade** can also
+The forum is offline for the 10 to 15 minutes the rebuild takes.
+
+Before it, take a backup in **Admin > Backups**. While the forum has no admin yet, its welcome
+page ("Congratulations, you installed Discourse!") can come back after a rebuild (it did with
+2026.11.0-latest.2, on the test server). Nothing is lost; turn it off again:
+
+```bash
+sudo docker exec community rails runner 'SiteSetting.has_login_hint = false'
+```
+
+Never use the welcome page's **Register** button: it makes a forum password for the address in
+`DISCOURSE_DEVELOPER_EMAILS`, the one way in that doesn't go through Steady. And don't paste the
+rebuild's output anywhere in full: its last lines are the container's start command, with the
+forum's mail password and DiscourseConnect secret in it. **Admin > Upgrade** can also
 update Discourse from the browser between rebuilds. Debian keeps itself patched through
 `unattended-upgrades`.
 
@@ -678,7 +691,7 @@ The bridge says why it refused someone in its log, never with names or addresses
 | No Community tab for OpenWorks support on the test server | `STEADY_COMMUNITY_SUPPORT=yes` isn't in its `.env`, or `docker compose up -d` wasn't run after adding it. |
 | "The community didn't open here" in the web app | The practice's Steady isn't a `steadyapp.co.za` address, so the browser won't keep the forum's sign-in in the frame (see "Web addresses"). The phone app works. Or the server's Caddy has no `frame-src` for the forum (step 2). |
 | A blank Community tab in the web app | The browser's console names the rule: `frame-src` in Steady's Caddy, or `frame-ancestors` in `community.caddy`. |
-| "Congratulations, you installed Discourse!" in the Community tab | The forum has no admin yet: step 4, "Discourse's own welcome page". |
+| "Congratulations, you installed Discourse!" in the Community tab | The forum has no admin yet: step 4, "Discourse's own welcome page". After a rebuild: `sudo docker exec community rails runner 'SiteSetting.has_login_hint = false'` ("Updates"). Not its Register button. |
 | The forum opens as a site of its own | `community.caddy` isn't the current one: copy it again and reload Caddy. |
 | No notification emails | `./launcher logs community`. Port 465 needs `DISCOURSE_SMTP_FORCE_TLS: true`; 587 needs STARTTLS and no FORCE_TLS. Keep the password in quotes. Admin > Emails > Logs shows what was sent. |
 | No HTTPS certificate | DNS must point at vps1; then Shap's Caddy log. |

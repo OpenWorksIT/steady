@@ -18,9 +18,16 @@ STEADY_DOMAIN {
 	}
 
 	# The dashboard and superuser sign-in are not on the internet: accounts.sh does account
-	# work from inside the server (docs/DEPLOY.md, step 5).
+	# work from inside the server (docs/DEPLOY.md, step 5). Such a request goes to
+	# /api/steady/closed instead, counted as a try at a closed door and answered 404 (a handle
+	# of its own: Caddy runs handle before respond, so before 1.2.7 a respond here never ran).
 	@admin path_regexp admin (?i)^/(_|_/.*|api/collections/(_superusers|pbc_3142635823)(/.*)?)$
-	respond @admin 404
+	handle @admin {
+		rewrite * /api/steady/closed
+		reverse_proxy steady-pocketbase:8090 {
+			header_up X-Steady-Closed {http.request.orig_uri.path}
+		}
+	}
 
 	handle {
 		header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src https://community.steadyapp.co.za https://signin.steadyapp.co.za; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"

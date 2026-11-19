@@ -43,6 +43,10 @@ info() { if [ "$QUIET" = yes ]; then cat >/dev/null; else sed 's/^/        /'; f
 envv() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/^"//; s/"$//'; }
 
 DOMAIN="$(envv STEADY_DOMAIN)"
+# the outside checks knock on the closed doors with the monitor key, so the server doesn't count
+# them in its front door (docs/FRONTDOOR.md)
+MONITOR_HDR=()
+[ -n "$(envv STEADY_MONITOR_KEY)" ] && MONITOR_HDR=(-H "X-Steady-Monitor: $(envv STEADY_MONITOR_KEY)")
 [ -n "$DOMAIN_ARG" ] && DOMAIN="$DOMAIN_ARG"
 [ "$(id -u)" = 0 ] || say '%s\n' "(not root: some checks will be skipped)"
 # a test server says so in .env: it may follow a branch unsigned and go without backups
@@ -195,6 +199,22 @@ if [ -d secrets ]; then
   [ -n "$priv" ] && fail "a backup private key is on this server ($priv): keep it off" || ok "no backup private key on the server"
 fi
 
+# tripwires (docs/FRONTDOOR.md): how many, never which
+decoys="$(python3 -c 'import json,sys
+try: print(len(json.load(open(sys.argv[1])).get("decoys", [])))
+except FileNotFoundError: print(0)
+except Exception: print("?")' decoys/decoys.json 2>/dev/null || echo "?")"
+case "$decoys" in
+  0) warn "no tripwires set: ./decoys.sh (docs/FRONTDOOR.md)" ;;
+  "?") warn "decoys/decoys.json can't be read (./decoys.sh list)" ;;
+  *)
+    ok "$decoys tripwires set (./decoys.sh)"
+    [ "$(stat -c '%U:%G:%a' decoys/decoys.json)" = "root:10001:640" ] || warn "decoys/decoys.json should be root's and readable by the server only (./decoys.sh list puts it right)"
+    [ -n "$(envv STEADY_ALERT_EMAIL)" ] && ok "a touched tripwire is emailed to STEADY_ALERT_EMAIL" \
+      || warn "no STEADY_ALERT_EMAIL: a touched tripwire shows only in the fleet view"
+    ;;
+esac
+
 head_ "Containers"
 if command -v docker >/dev/null; then
   for c in $(docker compose ps -q 2>/dev/null); do
@@ -229,9 +249,11 @@ fi
 
 head_ "Backups"
 cron="$(crontab -l 2>/dev/null; cat /etc/cron.d/* 2>/dev/null)"
-if grep -q 'backup.sh' <<<"$cron"; then
+# Steady's own backup.sh, not another script whose name ends in it (vps1's openworks-backup.sh)
+steady_backup='(^|[[:space:]/])backup\.sh([[:space:]]|$)'
+if grep -Eq "$steady_backup" <<<"$cron"; then
   ok "backup.sh runs from cron"
-  dir="$(grep 'backup.sh' <<<"$cron" | grep -o '/[^ ]*backup.sh [^ ]*' | head -1 | awk '{print $2}')"
+  dir="$(grep -E "$steady_backup" <<<"$cron" | grep -o '/[^ ]*/backup\.sh [^ ]*' | head -1 | awk '{print $2}')"
   if [ -n "$dir" ] && [ -d "$dir" ]; then
     newest="$(find "$dir" -name '*.age' -mtime -2 2>/dev/null | head -1)"
     [ -n "$newest" ] && ok "a backup from the last two days: $(basename "$newest")" || fail "no backup newer than two days in $dir"
@@ -261,7 +283,7 @@ elif [ -n "$DOMAIN" ] && command -v curl >/dev/null; then
   grep -qi '^server:' <<<"$h" && warn "the Server header is sent" || ok "no Server header"
   # _%C5%BFuperusers: "_ſuperusers" (long s), which PocketBase folds to _superusers
   for p in /_/ /api/collections/_superusers/auth-with-password /api/collections/_%C5%BFuperusers/auth-with-password /api/collections/users/request-password-reset /api/settings; do
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X GET "https://$DOMAIN$p")"
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${MONITOR_HDR[@]}" -X GET "https://$DOMAIN$p")"
     case "$code" in 404|401|403) ok "$p answers $code from outside" ;; *) fail "$p answers $code from outside" ;; esac
   done
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "http://$DOMAIN/")"
