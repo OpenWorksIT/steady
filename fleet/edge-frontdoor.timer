@@ -1,0 +1,11 @@
+# Every 10 minutes (edge-frontdoor.service).
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Count what vps1's Caddy turned away, every 10 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target
