@@ -1,0 +1,63 @@
+{{template "top" "Tripwire touch"}}
+{{template "bar" .}}
+<main>
+<p><a href="/frontdoor">← Front door</a> · <a href="/frontdoor/touches">Every touch kept</a></p>
+<h1>{{.T.Label}}, touched on {{.T.Server}}</h1>
+<p><span class="pill verdict {{.T.VerdictClass}}">{{.T.VerdictLabel}}</span> <span class="muted">from <code>{{.T.IP}}</code></span></p>
+{{if .Msg}}<p class="note">{{.Msg}}</p>{{end}}
+
+<h2>What it looks like</h2>
+<ul class="hints">
+{{range .Hints}}<li class="{{.Class}}">{{.Text}}</li>
+{{end}}</ul>
+
+<h2>{{if .T.Open}}Mark it{{else}}Add to it{{end}}</h2>
+<form method="post" action="/frontdoor/touch/{{.T.ID}}" class="todo-form">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<label><span>Note <span class="muted">(what you found or did; it stays with the touch. Needed for "real: dealt with")</span></span><textarea name="note" rows="3" maxlength="1000"></textarea></label>
+{{if and .T.Open .OpenOthers}}<label class="tick"><input type="checkbox" name="also" value="1" checked> The same for the other {{.OpenOthers}} touch(es) from this address not looked at yet</label>{{end}}
+<div class="buttons">
+{{if .T.Open}}{{range .Verdicts}}<button name="op" value="{{.Key}}"{{if ne .Key "test"}} class="secondary"{{end}}>{{.Button}}</button>
+{{end}}{{else}}<button name="op" value="reopen" class="secondary">Not looked at after all: reopen</button>{{end}}
+<button name="op" value="note" class="link">Only add the note</button>
+</div>
+</form>
+{{with .Notes}}<ul class="feed">
+{{range .}}<li><span class="muted">{{.When}} · {{.By}}</span><div>{{.Text}}</div></li>
+{{end}}</ul>{{end}}
+
+<h2>What happened</h2>
+<dl>
+{{range .Facts}}<dt>{{.Name}}</dt><dd>{{if eq .Name "Request" "From" "Forwarded as" "Headers sent" "Came from" "Said it was"}}<code>{{.Value}}</code>{{else if and (eq .Name "Server") $.ServerLink}}<a href="{{$.ServerLink}}">{{.Value}}</a>{{else}}{{.Value}}{{end}}</dd>
+{{end}}</dl>
+
+<h2>Where it came from</h2>
+{{with .Origin}}<dl>
+<dt>Address</dt><dd><code>{{$.T.IP}}</code></dd>
+{{if .Private}}<dt>What it is</dt><dd>{{.Private}}</dd>{{end}}
+{{if .Names}}<dt>Its name</dt><dd>{{range $i, $n := .Names}}{{if $i}}, {{end}}<code>{{$n}}</code>{{end}}</dd>{{else if not .Private}}<dt>Its name</dt><dd class="muted">none (no reverse DNS)</dd>{{end}}
+{{if .Network}}<dt>Network</dt><dd>{{.Network}}{{if .ASN}} <span class="muted">(AS{{.ASN}})</span>{{end}}</dd>{{end}}
+{{if .Prefix}}<dt>Its block</dt><dd><code>{{.Prefix}}</code></dd>{{end}}
+{{if .Country}}<dt>Country</dt><dd>{{.Country}}</dd>{{end}}
+{{if .Err}}<dt>Network</dt><dd class="muted">{{.Err}}</dd>{{end}}
+</dl>{{end}}
+{{with .Links}}<p class="muted">Look it up yourself (each opens in your browser; nothing is sent from here):
+{{range $i, $l := .}}{{if $i}} · {{end}}<a href="{{$l.URL}}" rel="noopener noreferrer" target="_blank">{{$l.Name}}</a>{{end}}</p>{{end}}
+
+<h2>What else this address did on {{.T.Server}}</h2>
+{{with .Trail}}
+{{if .Kept}}<p class="warn">The server's request log has let this go: this is the copy kept when it was marked, {{.Kept}}.</p>{{end}}
+{{range .Summary}}<p class="muted">{{.}}</p>{{end}}
+{{with .Rows}}<div class="table"><table class="trail"><thead><tr><th>When (SAST)</th><th>Request</th><th>Answer</th><th>Said it was</th></tr></thead><tbody>
+{{range .}}<tr{{if .Touch}} class="touch"{{end}}><td>{{.When}}</td><td><code>{{.Method}} {{.Path}}</code>{{if .Touch}} <strong class="error">the touch</strong>{{end}}{{with .Referer}}<br><span class="muted">from {{.}}</span>{{end}}</td><td>{{.Status}}</td><td class="muted">{{if .Agent}}{{.Agent}}{{else}}the same{{end}}</td></tr>
+{{end}}</tbody></table></div>
+<p class="muted">"The same": what the touch itself said it was{{with $.T.Agent}} (<code>{{.}}</code>){{end}}. Requests made with an account are only counted; record ids, files and anything that looks like a key are left out.</p>{{end}}
+{{else}}<p class="muted">{{.TrailErr}}</p>{{end}}
+{{if and .Trail .TrailErr}}<p class="muted">Asked just now: {{.TrailErr}}</p>{{end}}
+
+<h2>Other touches from this address</h2>
+{{with .Others}}<div class="table"><table><thead><tr><th>When</th><th>Server</th><th>Decoy</th><th>Request</th><th>Status</th></tr></thead><tbody>
+{{range .}}<tr{{if not .Open}} class="closed"{{end}}><td><a href="/frontdoor/touch/{{.ID}}">{{.When}}</a></td><td>{{.Server}}</td><td>{{.Label}} <span class="muted">({{.Type}})</span></td><td><code>{{.Request}}</code></td><td><span class="check {{.Class}}">{{.Verdict}}</span></td></tr>
+{{end}}</tbody></table></div>{{else}}<p class="muted">None: this is the only touch kept from this address (the fleet view keeps them 90 days).</p>{{end}}
+</main>
+{{template "end"}}
