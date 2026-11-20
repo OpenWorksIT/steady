@@ -1,5 +1,10 @@
 # OpenWorks' own server (vps3)
 
+> **Not in use.** The fleet view, the forum and its sign-in bridge run on vps1, behind Shap's
+> Caddy ([FLEET.md](FLEET.md), [COMMUNITY.md](COMMUNITY.md)); the separate server below was
+> dropped in November 2026. This page and `ops/` are kept for the day they need a server of
+> their own (more practices, a busier forum): it's how to set one up.
+
 A server of its own for the two things that are OpenWorks IT's rather than a practice's:
 
 - the **fleet view** at fleet.steadyapp.co.za ([FLEET.md](FLEET.md))
