@@ -179,8 +179,7 @@ frame the forum.
 
 It holds the forum's secret and every practice's key, so it runs from a signed release in its
 own folder, `/opt/steady-ops`, like the fleet view ([FLEET.md](FLEET.md), step 2: the code, its
-signature checked). Until a signed release has the bridge, try it out from `/opt/steady` (vps1's
-test checkout) instead, with the test server only, and move it before the forum goes live.
+signature checked), never from vps1's test checkout.
 
 **Its settings folder**, readable only by the bridge, then the keys: build it and make one key
 for the forum and one for each practice:

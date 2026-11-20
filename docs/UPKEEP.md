@@ -35,6 +35,8 @@ privacy checks run every 6 hours and show there, with the privacy numbers. The l
 what to look at there, and what it can't see.
 
 - [ ] The fleet view's Checks column: all clear, or each item explained or fixed. A check that has stopped running says so.
+- [ ] The fleet view's Front door: anything flagged looked at; a touched tripwire handled ([FRONTDOOR.md](FRONTDOOR.md), "When one is touched").
+- [ ] Tripwires still in place: `sudo ./decoys.sh check` says how many, that touches are emailed, and nothing ignored.
 - [ ] Settings > Server and updates: on the newest signed release, last update succeeded.
 - [ ] Settings > Server health: disk under 70 %, no memory or load trouble.
 - [ ] Backups: last night's backup is there (`audit-server.sh` says so). Once a quarter, restore one to a scratch machine with `restore-data.sh` and open it.
@@ -50,6 +52,9 @@ what to look at there, and what it can't see.
 - [ ] The same checks as a practice server, where they apply (it holds no real patient data).
 - [ ] It follows `test` (`STEADY_TRACK=test` in `.env`) and is on its newest commit.
 - [ ] Free disk: `sudo docker image prune -f` if it's filling up.
+- [ ] The fleet view and the sign-in bridge run the newest signed release (the overview's OpenWorks' own services; [FLEET.md](FLEET.md), "Updating the fleet view").
+- [ ] vps1's front-door count is running: `sudo systemctl status edge-frontdoor.timer` (the fleet view says when it stops).
+- [ ] The forum: updated this month, with a backup taken first ([COMMUNITY.md](COMMUNITY.md), "Updates"; afterwards, the welcome page fix if it's back).
 - [ ] The community sign-in bridge (`/var/lib/steady-signin/config.json`): each practice's address list still matches its psychologists and practice administrators, and the OpenWorks list its support staff ([COMMUNITY.md](COMMUNITY.md)).
 - [ ] The forum's sign-in bridge: `signin check` lists only the practices that should be there (no test server once the forum is live), each with its address list ([COMMUNITY.md](COMMUNITY.md)).
 - [ ] The forum's members (Admin > Users): nobody who has left a practice is still signed in.
@@ -76,6 +81,7 @@ what to look at there, and what it can't see.
 ## 7. OpenWorks' own computer
 
 - [ ] `deploy/backup-repo.sh` has recent copies in `~/Backups/steady`.
+- [ ] The servers' encrypted backups pulled from vps1 are recent, and once a quarter one of each opens with its key.
 - [ ] The signing key has an offline backup, and its passphrase is stored safely.
 
 ## 8. Paperwork

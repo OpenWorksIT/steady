@@ -5,7 +5,7 @@ change isn't released until they pass.
 
 ## Automated
 
-**Server logic** (`node --test server/tests/*.test.js`, about 75 tests)
+**Server logic** (`node --test server/tests/*.test.js`, about 90 tests)
 
 - Scoring for every built-in questionnaire (PHQ-9 with every band boundary and the item 9 flag,
   GAD-7, WHO-5, PCL-5 with its clusters); answers outside the allowed options rejected;
@@ -31,7 +31,10 @@ change isn't released until they pass.
   routes closed; browser tab sessions (short tokens, renewed as short ones whatever device key
   comes with them; phones and patients keep the usual length); the operator agreement (only the
   master clinician signs, only the version shown, every field checked, signed copies never
-  change) and its text, version and docs copy agreeing.
+  change) and its text, version and docs copy agreeing; the front door (each kind of turned-away
+  request counted, nothing ordinary, no addresses kept, the server's own checks left out) and
+  tripwires (decoys from the server's own file, touched only on purpose, ignored when they'd
+  catch the practice's own traffic, emailed once an hour, never in the app or its access log).
 
 **Push relay** (`cd pusher && go test ./...`): what Apple and Google get, byte for byte (the
 words "Steady" and "New notification" and the device's token, no data keys, no collapse or
@@ -40,6 +43,15 @@ against a local HTTP/2 server; FCM's OAuth token exchange and sends against a lo
 which answers mean a dead token; the service-account file (and a clear error for
 `google-services.json`); ES256 signatures and key formats; the `/send` endpoint and its time
 limits.
+
+**The fleet view** (`cd fleet && go test ./...`): polling servers with their keys, the overview,
+Checks and To do, sign-in with roles and two-step codes, the community's approvals (one address,
+one practice), the bridge's list, its code against the fleet view's release, and the Front door
+page across every service. **The sign-in bridge** (`cd community/signin && go test ./...`): who
+may come in through which practice, notes signed and checked, the fleet view's list merged with
+`config.json` (an address on two lists set aside, the rest carrying on), and `/version`.
+**vps1's front-door count** (`python3 fleet/test_edge_frontdoor.py`): a made-up Caddy log counted
+by kind, nothing twice, no address or query string kept.
 
 **The real server** (CI's `e2e` job: the Docker test stack with PocketBase, the relay, Caddy and a
 mail catcher):

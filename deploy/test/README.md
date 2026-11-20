@@ -47,7 +47,7 @@ python3 smoke.py https://steady-test.<your domain>   # through the tunnel
 
 ## 4. iPhone (Friday)
 
-A native iPhone build needs an Apple Developer account and Xcode on a Mac, so for now use the web version: open the address in **Safari**, tap **Share > Add to Home Screen**, and open Steady from the home screen. Everything works except lock-screen notifications; new items appear while the app is open.
+Install Steady from the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (or the newest TestFlight build) and connect it to this stack's address, as on Android. Notifications need the Apple push key in the stack (docs/DEPLOY.md); without it everything else works, and new items appear when the app is opened. The web version works too: open the address in **Safari**, tap **Share > Add to Home Screen**, and open Steady from the home screen.
 
 ## Trying both directions
 
