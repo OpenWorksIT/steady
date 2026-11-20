@@ -209,7 +209,7 @@ case "$decoys" in
   "?") warn "decoys/decoys.json can't be read (./decoys.sh list)" ;;
   *)
     ok "$decoys tripwires set (./decoys.sh)"
-    [ "$(stat -c '%U:%G:%a' decoys/decoys.json)" = "root:10001:640" ] || warn "decoys/decoys.json should be root's and readable by the server only (./decoys.sh list puts it right)"
+    [ "$(stat -c '%u:%g:%a' decoys/decoys.json)" = "0:10001:640" ] || warn "decoys/decoys.json should be root's and readable by the server only (./decoys.sh list puts it right)"
     [ -n "$(envv STEADY_ALERT_EMAIL)" ] && ok "a touched tripwire is emailed to STEADY_ALERT_EMAIL" \
       || warn "no STEADY_ALERT_EMAIL: a touched tripwire shows only in the fleet view"
     ;;
