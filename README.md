@@ -11,7 +11,7 @@ Built by [OpenWorks IT](https://openworks.co.za), with the clinical science and 
 
 Each practice runs Steady on its own server, and its patients' data stays there: OpenWorks IT looks after the servers, but OpenWorks' accounts in the app can't open any patient's information. (As the operator, OpenWorks can technically reach the server itself to keep it running; the practice's operator agreement covers that.)
 
-> **Status: version 1.2.7, live.** On [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady) and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (South Africa) since November 2026, and in use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
+> **Status: version 1.2.8, live.** On [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady) and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (South Africa) since November 2026, and in use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
 
 ## What's in the box
 
