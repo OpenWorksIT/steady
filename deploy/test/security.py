@@ -534,6 +534,13 @@ def run(su):
         check(U, "nobody without the fleet key can reset a password from the fleet route", s == 404, [s, r])
         s, r = call("POST", "/api/steady/fleet/community", who, {"on": False}, headers={"X-Steady-Fleet": "not-the-key-not-the-key-123"})
         check(U, "nobody without the fleet key can switch the community on or off", s == 404, [s, r])
+        s, r = call("GET", "/api/steady/fleet/trail", who, query={"ip": "127.0.0.1"}, headers={"X-Steady-Fleet": "not-the-key-not-the-key-123"})
+        check(U, "nobody without the fleet key can read an address's trail", s == 404, [s, r])
+    fk = ENV.get("STEADY_FLEET_KEY", "")
+    if fk:
+        # against the real PocketBase: the 30 days of front-door rows are searched for the address
+        s, r = call("GET", "/api/steady/fleet/trail", None, query={"ip": "127.0.0.1"}, headers={"X-Steady-Fleet": fk})
+        check(U, "...and with it, only for an address that touched a tripwire", s == 404, [s, r])
 
     # ---- leaks through pages and errors
     L = "leaks"

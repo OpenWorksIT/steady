@@ -516,7 +516,7 @@ type ChecksPage struct {
 	Passed    int
 }
 
-func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time, cp ...*CommunityPractices) ChecksPage {
+func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time, marks map[string]Mark, cp ...*CommunityPractices) ChecksPage {
 	var runs *CommunityPractices
 	if len(cp) > 0 {
 		runs = cp[0]
@@ -607,7 +607,7 @@ func makeChecks(sts []*Status, cst *CommunityStatus, now time.Time, cp ...*Commu
 			add(c.Level, c.Section, c.Text, a.Checked)
 		}
 		// the front door: a tripwire touched, a jump, a decoy the server ignores
-		fix, look := doorChecks(practiceDoor(i, st, now))
+		fix, look := doorChecks(practiceDoor(i, st, now, marks))
 		for _, t := range fix {
 			add("fail", "Front door", t, row.Checked)
 		}

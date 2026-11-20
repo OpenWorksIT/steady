@@ -10,7 +10,7 @@
 {{with index .Counts "nocheck"}}<a class="pill down" href="/checks">{{.}} without a running security check</a>{{end}}
 {{with index .Counts "behind"}}<span class="pill slow">{{.}} not on the newest release</span>{{end}}
 {{with index .Counts "owncode"}}<a class="pill down" href="#code">{{.}} of OpenWorks' services on other code</a>{{end}}
-{{with index .Counts "trips"}}<a class="pill down" href="/frontdoor">a tripwire touched {{.}} time(s) this week</a>{{end}}
+{{with index .Counts "trips"}}<a class="pill down" href="/frontdoor/touches">{{.}} tripwire touch(es) to look into</a>{{end}}
 {{with index .Counts "door"}}<a class="pill slow" href="/frontdoor">{{.}} front door(s) to look at</a>{{end}}</p>
 {{if .ConfigError}}<p class="error">servers.json: {{.ConfigError}}</p>{{end}}
 {{if not .Rows}}<p>No servers yet: add them to servers.json (docs/FLEET.md).</p>{{end}}
