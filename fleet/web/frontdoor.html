@@ -5,7 +5,8 @@
 <p class="muted">What each service turned away, and the tripwires touched; this page refreshes itself. {{.Now}}.
 Practice servers count their own; OpenWorks' services on vps1 are counted from its Caddy every 10 minutes.
 Addresses are counted, never kept, except for a touched tripwire (nobody at a practice ever touches one).</p>
-{{with .Page.Trips}}<p class="error">A tripwire was touched {{.}} time(s) this week: see below.</p>{{end}}
+{{with .Page.Trips}}<p class="error">A tripwire was touched {{.}} time(s) this week, not looked at yet: see below, and open each to look into it.</p>{{end}}
+{{if or .Page.Trips .Page.Marked}}<p class="muted">{{with .Page.Marked}}{{.}} touch(es) this week already marked. {{end}}<a href="/frontdoor/touches">Every touch kept</a> (90 days).</p>{{end}}
 
 <div class="table"><table>
 <thead><tr><th>Service</th><th>Last 24 hours</th><th>Last 7 days</th><th>Addresses (24 h / 7 d)</th><th></th></tr></thead>
@@ -25,9 +26,10 @@ Addresses are counted, never kept, except for a touched tripwire (nobody at a pr
 {{with .Err}}<p class="warn">{{.}}</p>{{end}}
 {{range .Flags}}<p class="{{if eq $svc.Level "bad"}}error{{else}}warn{{end}}">{{.}}</p>{{end}}
 {{with .Trips}}<h3>Tripwires touched</h3>
-<div class="table"><table><thead><tr><th>When</th><th>Decoy</th><th>Request</th><th>From</th><th>With</th></tr></thead><tbody>
-{{range .}}<tr class="bad"><td>{{.When}}</td><td>{{.Label}} <span class="muted">({{.Type}})</span></td><td><code>{{.Method}} {{.Path}}</code></td><td><code>{{.IP}}</code></td><td class="muted">{{.Agent}}</td></tr>
+<div class="table"><table><thead><tr><th>When</th><th>Decoy</th><th>Request</th><th>From</th><th>With</th><th>Status</th></tr></thead><tbody>
+{{range .}}<tr class="{{if .Open}}bad{{else}}closed{{end}}"><td><a href="/frontdoor/touch/{{.ID}}">{{.When}}</a></td><td>{{.Label}} <span class="muted">({{.Type}})</span></td><td><code>{{.Method}} {{.Path}}</code></td><td><code>{{.IP}}</code></td><td class="muted">{{.Agent}}</td><td><a class="check {{.Class}}" href="/frontdoor/touch/{{.ID}}">{{if .Open}}look into it{{else}}{{.Verdict}}{{end}}</a></td></tr>
 {{end}}</tbody></table></div>{{end}}
+{{with .Unlisted}}<p class="muted">And {{.}} more this week that the server counted without keeping them (it keeps 20 an hour, and lists the newest 100).</p>{{end}}
 {{if .Practice}}<p class="muted">{{.Tripwires}}</p>{{range .Problems}}<p class="warn">Ignored: {{.}}</p>{{end}}{{end}}
 {{with .Paths}}<h3>Asked for most (7 days)</h3>
 <div class="table"><table><thead><tr><th>{{if $svc.Practice}}Kind{{else}}Answer{{end}}</th><th>Path</th><th>Times</th></tr></thead><tbody>

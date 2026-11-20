@@ -1,0 +1,12 @@
+{{template "top" "Tripwire touches"}}
+{{template "bar" .}}
+<main>
+<p><a href="/frontdoor">← Front door</a></p>
+<h1>Tripwire touches</h1>
+<p class="muted">Every touch the servers listed, kept here 90 days (a year for one marked real), with what was made of it. Open one to look into it and mark it.</p>
+<nav class="chips"><a href="/frontdoor/touches"{{if not .ShowAll}} class="on"{{end}}>Not looked at yet <span class="n">{{.Open}}</span></a><a href="/frontdoor/touches?show=all"{{if .ShowAll}} class="on"{{end}}>All <span class="n">{{.All}}</span></a></nav>
+{{with .Rows}}<div class="table"><table><thead><tr><th>When</th><th>Server</th><th>Decoy</th><th>Request</th><th>From</th><th>Status</th></tr></thead><tbody>
+{{range .}}<tr{{if not .Open}} class="closed"{{end}}><td><a href="/frontdoor/touch/{{.ID}}">{{.When}}</a></td><td>{{.Server}}</td><td>{{.Label}} <span class="muted">({{.Type}})</span></td><td><code>{{.Request}}</code></td><td><code>{{.IP}}</code></td><td><span class="check {{.Class}}">{{.Verdict}}</span></td></tr>
+{{end}}</tbody></table></div>{{else}}<p class="note">{{if .ShowAll}}No touches kept.{{else}}Nothing to look at: every touch has been marked.{{end}}</p>{{end}}
+</main>
+{{template "end"}}

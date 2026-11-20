@@ -112,6 +112,8 @@ type fakeSteady struct {
 	commOld  bool           // Steady 1.2.0: takes the fleet view's setting but still says off
 	door     map[string]any // when set: the server's frontDoor and tripwires (1.2.7)
 	trip     map[string]any
+	trail    map[string]any // when set: the trail it gives for 198.51.100.7 (1.2.8)
+	trails   []string       // the addresses asked about
 }
 
 func newFakeSteady(t *testing.T) *fakeSteady {
@@ -147,6 +149,17 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 			}
 			f.mu.Unlock()
 			json.NewEncoder(w).Encode(d)
+		case r.URL.Path == "/api/steady/fleet/trail" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
+			f.mu.Lock()
+			f.trails = append(f.trails, r.URL.Query().Get("ip"))
+			tr := f.trail
+			f.mu.Unlock()
+			if tr == nil || r.URL.Query().Get("ip") != "198.51.100.7" {
+				w.WriteHeader(404)
+				w.Write([]byte(`{"message":"Not found."}`))
+				return
+			}
+			json.NewEncoder(w).Encode(tr)
 		case r.URL.Path == "/api/steady/fleet/request" && r.Method == "POST" && r.Header.Get("X-Steady-Fleet") == "fleet-key-0123456789abcdefgh":
 			var b map[string]string
 			json.NewDecoder(r.Body).Decode(&b)
@@ -783,7 +796,7 @@ func TestMakeChecks(t *testing.T) {
 	// installed and waiting for its first run: worth a look, not a red flag
 	waiting := &Status{Server: Server{Name: "New"}, At: now, Data: map[string]any{"host": map[string]any{"auditService": map[string]any{
 		"installed": true, "enabled": true, "state": "inactive", "result": "success", "timer": "active"}}}}
-	p := makeChecks([]*Status{down, none, stale, waiting}, nil, now)
+	p := makeChecks([]*Status{down, none, stale, waiting}, nil, now, nil)
 	if len(p.Fix) != 4 || p.Fix[0].Server != "Down" || !strings.Contains(p.Fix[1].Text, "no check from this server") ||
 		!strings.Contains(p.Fix[2].Text, "2 deletion request(s)") || !strings.Contains(p.Fix[3].Text, "has stopped") {
 		t.Fatalf("fix: %+v", p.Fix)
@@ -962,7 +975,7 @@ func TestOwnServices(t *testing.T) {
 	}
 	// and the checks page lists what's wrong first: the bridge to fix, the fleet view to look at
 	buildVersion, buildCode, bridgeCode = "1.1.0", "8272cc124f7a", "5f74a8885898"
-	p := makeChecks(sts, &CommunityStatus{Bridge: &BridgeStatus{Version: "1.0.5", Code: "deadbeef0000"}}, time.Now())
+	p := makeChecks(sts, &CommunityStatus{Bridge: &BridgeStatus{Version: "1.0.5", Code: "deadbeef0000"}}, time.Now(), nil)
 	if len(p.Fix) < 1 || p.Fix[0].Server != "Sign-in bridge" || p.Fix[0].Link != "/#code" || !strings.Contains(p.Fix[0].Text, "runs 1.0.5 (code deadbeef0000)") {
 		t.Fatalf("fix: %+v", p.Fix)
 	}
@@ -1001,7 +1014,7 @@ func TestServerBehindIsListed(t *testing.T) {
 	branch := &Status{Server: Server{Name: "Test"}, At: time.Now(), Data: map[string]any{
 		"version": map[string]any{"code": "def5678", "managed": true, "signed": false, "behind": 2.0},
 		"audit":   map[string]any{"at": time.Now().Format(time.RFC3339), "items": []any{}}}}
-	p := makeChecks([]*Status{behind, branch}, nil, time.Now())
+	p := makeChecks([]*Status{behind, branch}, nil, time.Now(), nil)
 	var got []string
 	for _, it := range p.Look {
 		if it.Section == "Version" {
@@ -1106,7 +1119,7 @@ func TestFeedbackAndSupportAccountsOnChecks(t *testing.T) {
 			"feedbackOldestNew": oldest.Format(time.RFC3339), "openworksServer": own,
 			"audit": map[string]any{"at": now.Format(time.RFC3339), "items": []any{}}}}
 	}
-	p := makeChecks([]*Status{mk("VR", false, now.Add(-8*24*time.Hour)), mk("Test", true, now.Add(-2*24*time.Hour))}, nil, now)
+	p := makeChecks([]*Status{mk("VR", false, now.Add(-8*24*time.Hour)), mk("Test", true, now.Add(-2*24*time.Hour))}, nil, now, nil)
 	var got []string
 	for _, it := range p.Look {
 		got = append(got, it.Server+" "+it.Section)
@@ -1461,7 +1474,7 @@ func TestFrontDoor(t *testing.T) {
 	}
 	// the overview and Checks say so
 	res, _ = c.Get(site.URL + "/")
-	if ov := body(t, res); !strings.Contains(ov, "a tripwire touched 1 time(s) this week") || !strings.Contains(ov, "front door(s) to look at") {
+	if ov := body(t, res); !strings.Contains(ov, "1 tripwire touch(es) to look into") || !strings.Contains(ov, "front door(s) to look at") {
 		t.Fatalf("overview: %s", ov)
 	}
 	res, _ = c.Get(site.URL + "/checks")

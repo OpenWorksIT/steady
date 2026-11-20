@@ -269,7 +269,11 @@ devs).
 
 The **Front door** page has what every service turned away (practice servers, the sign-in
 bridge, the forum, the fleet view itself) and the tripwires touched; the overview and Checks flag
-both. What's counted, how, and how to set up tripwires and vps1's count: [FRONTDOOR.md](FRONTDOOR.md).
+both. Each touch opens a page to look into it (what happened, where it came from, what else the
+address did on that server) and to mark it as a test, a scanner or real and dealt with; until
+it's marked it stays red. Touches are kept in `touches.json` in the data folder (90 days, a year
+for real ones). What's counted, how, the touch page, and how to set up tripwires and vps1's count:
+[FRONTDOOR.md](FRONTDOOR.md).
 
 ## Which code runs where
 
