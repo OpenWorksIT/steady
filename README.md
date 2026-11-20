@@ -11,7 +11,7 @@ Built by [OpenWorks IT](https://openworks.co.za), with the clinical science and 
 
 Each practice runs Steady on its own server, and its patients' data stays there: OpenWorks IT looks after the servers, but OpenWorks' accounts in the app can't open any patient's information. (As the operator, OpenWorks can technically reach the server itself to keep it running; the practice's operator agreement covers that.)
 
-> **Status: version 1.2, live.** On [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady) and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (South Africa) since November 2026, and in use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
+> **Status: version 1.2.7, live.** On [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady) and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (South Africa) since November 2026, and in use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
 
 ## What's in the box
 
@@ -20,8 +20,11 @@ Each practice runs Steady on its own server, and its patients' data stays there:
 | `server/` | [PocketBase](https://pocketbase.io) 0.40 with Steady's database schema, access rules, API routes and scheduled jobs (JavaScript hooks and migrations). All clinical logic lives in `server/pb_hooks/lib/core.js` and is unit-tested. |
 | `pusher/` | A small push relay in Go (standard library only). Delivers notifications through Apple (iOS) and Firebase Cloud Messaging (Android). Each one says only "New notification". |
 | `app/` | The Flutter app for iOS and Android. |
-| `deploy/` | Docker Compose setup with Caddy for HTTPS, key generation and encrypted backups. |
-| `docs/` | Deployment, app setup, questionnaire format, privacy notes and testing. |
+| `deploy/` | Docker Compose setup with Caddy for HTTPS, key generation, encrypted backups, the security check (`audit-server.sh`) and tripwires (`decoys.sh`). |
+| `fleet/` | OpenWorks IT's fleet view (Go): every practice server's state at a glance, its security checks and front door, and who may come into the community. Never anything about patients. |
+| `community/` | The Steady Community forum's setup (Discourse) and its sign-in bridge (Go), so psychologists come in through Steady. |
+| `ops/` | A Caddy for a server of OpenWorks' own, kept for when the fleet view and the forum outgrow vps1 (not in use). |
+| `docs/` | Deployment, the app, the fleet view, the community, the front door, questionnaire format, privacy notes, upkeep and testing. |
 
 ## Questionnaires and exercises
 
@@ -43,6 +46,7 @@ Every instrument carries a licence status. Imported instruments wait as "Check l
 - **Access is narrow.** Patients see only their own data; psychologists see only their own patients. Every read of patient data through the app is written to an audit log before it's shown (if it can't be written, nothing is shown), and the master clinician and practice admin can read the log in the app.
 - **Staff sign-in is layered.** Password, a code from an authenticator app, and a device linked with an emailed code; the phone app locks with the phone's own screen lock, and sensitive actions ask to confirm it's you. A lost phone can be locked from any device; only OpenWorks restores the account.
 - **Notifications through the phone's own service.** Android phones get them through Google's Firebase Cloud Messaging, iPhones through Apple; Firebase is only in the Android app, and nothing about the patient goes to either.
+- **Watched from outside.** Each server checks its own security and privacy every 6 hours, counts what it turns away (probes, the closed dashboard, failed sign-ins), and keeps tripwires that no one at the practice ever touches. All of it reports to OpenWorks' fleet view, never to anyone in the app ([docs/FRONTDOOR.md](docs/FRONTDOOR.md)).
 - **Self-hosted in South Africa.** See [docs/PRIVACY.md](docs/PRIVACY.md) for POPIA notes.
 
 ## Quick start
@@ -66,8 +70,11 @@ Full steps: [docs/DEPLOY.md](docs/DEPLOY.md) and [docs/APP.md](docs/APP.md).
 ## Tests
 
 ```bash
-node --test server/tests/*.test.js     # scoring, flags, importers, and the full API flow
-cd pusher && go test ./...             # encryption, signing, delivery
+node --test server/tests/*.test.js           # scoring, flags, importers, the front door, and the full API flow
+(cd pusher && go test ./...)                 # encryption, signing, delivery
+(cd fleet && go test ./...)                  # the fleet view
+(cd community/signin && go test ./...)       # the community's sign-in bridge
+python3 fleet/test_edge_frontdoor.py         # vps1's front-door count
 ```
 
 ## Credits

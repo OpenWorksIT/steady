@@ -101,12 +101,14 @@ gets a Docker network of its own (`fleet-edge`) that only it and Shap's Caddy ar
 1. **DNS:** an A record `fleet.steadyapp.co.za` pointing at vps1.
 2. **The code, its signature checked.** Put OpenWorks' signing key in
    `/root/steady-allowed-signers` (the same line as a practice server's
-   `deploy/secrets/allowed_signers`), then, with the newest release for `v1.0.5`:
+   `deploy/secrets/allowed_signers`), then check out the newest signed release. The commands
+   pick it themselves and print it, so there's no version number to type:
    ```bash
    sudo git clone -q https://github.com/OpenWorksIT/steady.git /opt/steady-ops
    cd /opt/steady-ops
-   sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-signers verify-tag v1.0.5 \
-     && sudo git checkout -q --detach v1.0.5
+   T="$(sudo git tag -l 'v*' --sort=-v:refname | head -1)"; echo "$T"
+   sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-signers verify-tag "$T" \
+     && sudo git checkout -q --detach "$T"
    ```
    It must say **Good "git" signature**.
 3. **The network and Shap's Caddy.**
@@ -141,7 +143,7 @@ gets a Docker network of its own (`fleet-edge`) that only it and Shap's Caddy ar
    ```json
    [
      {"name": "VR Clinical Psychology", "url": "https://vr.steadyapp.co.za", "fleetKey": "..."},
-     {"name": "Test server (vps1)", "url": "https://steady.openworks.co.za", "fleetKey": "..."}
+     {"name": "Test server (vps1)", "url": "https://test.steadyapp.co.za", "fleetKey": "..."}
    ]
    ```
    Then `sudo chown 65532:65532 /var/lib/steady-fleet/servers.json && sudo chmod 600 /var/lib/steady-fleet/servers.json`.
@@ -245,15 +247,23 @@ practice server that still has one; stop it there with
 
 ## Updating the fleet view
 
-To a newer signed release only, its signature checked (here `v1.1.1`). The sign-in bridge runs
-from the same folder, so rebuild it with the fleet view:
+To the newest signed release, its signature checked. The commands pick it themselves and print
+it before anything changes, so there's no version number to type (typing an older one would
+take the fleet view back to it). The sign-in bridge runs from the same folder, so it's rebuilt
+with the fleet view:
 
 ```bash
 cd /opt/steady-ops && sudo git fetch -q --tags
-sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-signers verify-tag v1.1.1 \
-  && sudo git checkout -q --detach v1.1.1 && sudo docker compose -f fleet/compose.yml up -d --build \
+T="$(sudo git tag -l 'v*' --sort=-v:refname | head -1)"; echo "$T"
+sudo git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=/root/steady-allowed-signers verify-tag "$T" \
+  && sudo git checkout -q --detach "$T" && sudo docker compose -f fleet/compose.yml up -d --build \
   && sudo docker compose -f community/signin/compose.yml up -d --build
 ```
+
+Afterwards the overview's OpenWorks' own services section says "the newest signed release" and
+"the same code as the fleet view's release". Users' roles were added in 1.2: if the fleet view
+ever ran an older release, check them with `fleet.sh users` (Accounts made before roles count as
+devs).
 
 ## Front door
 
@@ -276,10 +286,10 @@ the sign-in bridge's fingerprint for the same release, and asks the bridge for i
 | The fleet view says | What it means |
 |---|---|
 | Fleet view: the newest signed release | It runs what the practice servers report as the newest release |
-| Fleet view: 1.1.2 is out | A newer signed release is out: update it (above) |
+| Fleet view: a newer release is out | A newer signed release is out: update it (above) |
 | Fleet view: a build without a release number | Built without the Docker build's stamps, not from a release |
 | Sign-in bridge: the same code as the fleet view's release | All well |
-| Sign-in bridge: not the code of release 1.1.1 | Red. Built from another checkout (vps1's test folder), or not rebuilt after the update: `cd /opt/steady-ops && sudo docker compose -f community/signin/compose.yml up -d --build` |
+| Sign-in bridge: not the code of the fleet view's release | Red. Built from another checkout (vps1's test folder), or not rebuilt after the update: `cd /opt/steady-ops && sudo docker compose -f community/signin/compose.yml up -d --build` |
 | Sign-in bridge: an older build that doesn't say which code it runs | Red. The same, from before 1.1.1 |
 | Sign-in bridge: not checked | `community.json` has no `signin` (step 6) |
 
