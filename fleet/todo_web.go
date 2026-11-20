@@ -54,7 +54,7 @@ func (a *App) renderTodo(w http.ResponseWriter, r *http.Request, s *Session, for
 	page := makeTodoPage(f, status, area, a.serverNames(), now)
 	sts, _ := a.poller.Snapshot()
 	cp, _ := a.store.CommunityPractices()
-	ch := makeChecks(sts, a.poller.CommunitySnapshot(), now, cp)
+	ch := makeChecks(sts, a.poller.CommunitySnapshot(), now, a.store.TouchMarks(), cp)
 	page.Fix, page.ToLook = len(ch.Fix), len(ch.Look)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(code)

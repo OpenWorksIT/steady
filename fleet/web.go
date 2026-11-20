@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"embed"
 	"html/template"
@@ -39,12 +40,15 @@ type App struct {
 	proxySeen time.Time
 	// tests run without TLS
 	insecureCookie bool
+	// where a touch came from (DNS; tests give their own), kept an hour
+	lookup  func(context.Context, string) Origin
+	origins *originCache
 }
 
 func NewApp(store *Store, poller *Poller, trustedProxy string) *App {
 	t := template.Must(template.New("").ParseFS(webFS, "web/*.html"))
 	return &App{store: store, poller: poller, sessions: NewSessions(), limiter: NewLimiter(), pages: t, now: time.Now,
-		hashing: make(chan struct{}, 2), hashWait: 10 * time.Second, proxy: trustedProxy}
+		hashing: make(chan struct{}, 2), hashWait: 10 * time.Second, proxy: trustedProxy, lookup: lookupOrigin, origins: &originCache{}}
 }
 
 func (a *App) Routes() http.Handler {
@@ -60,6 +64,9 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("GET /audit", a.signedIn(a.audit))
 	mux.HandleFunc("GET /checks", a.signedIn(a.checks))
 	mux.HandleFunc("GET /frontdoor", a.signedIn(a.frontdoor))
+	mux.HandleFunc("GET /frontdoor/touches", a.signedIn(a.touchesPage))
+	mux.HandleFunc("GET /frontdoor/touch/{id}", a.signedIn(a.touchPage))
+	mux.HandleFunc("POST /frontdoor/touch/{id}", a.signedIn(a.touchMark))
 	mux.HandleFunc("GET /todo", a.signedIn(a.todo))
 	mux.HandleFunc("POST /todo", a.signedIn(a.todoAdd))
 	mux.HandleFunc("GET /todo/{id}", a.signedIn(a.todoItem))
@@ -314,8 +321,8 @@ func (a *App) overview(w http.ResponseWriter, r *http.Request, s *Session) {
 	}
 	// the front door: tripwires touched this week, and services to look at
 	cfg, _ := a.store.Community()
-	for _, d := range makeFrontDoor(sts, a.store.EdgeFrontDoor(), cfg, now).Services {
-		counts["trips"] += d.Week.Trip
+	for _, d := range makeFrontDoor(sts, a.store.EdgeFrontDoor(), cfg, a.store.TouchMarks(), now).Services {
+		counts["trips"] += d.Open
 		if d.Level == "warn" && d.Have {
 			counts["door"]++
 		}
@@ -360,7 +367,7 @@ func (a *App) checks(w http.ResponseWriter, r *http.Request, s *Session) {
 	now := a.now()
 	w.Header().Set("Refresh", "60; url=/checks?auto=1")
 	cp, _ := a.store.CommunityPractices()
-	page := makeChecks(sts, a.poller.CommunitySnapshot(), now, cp)
+	page := makeChecks(sts, a.poller.CommunitySnapshot(), now, a.store.TouchMarks(), cp)
 	// vps1's own services' front door (the practice servers' is in makeChecks)
 	cfg, _ := a.store.Community()
 	for _, d := range edgeDoors(a.store.EdgeFrontDoor(), cfg, practiceHosts(sts), now) {
@@ -382,7 +389,7 @@ func (a *App) frontdoor(w http.ResponseWriter, r *http.Request, s *Session) {
 	w.Header().Set("Refresh", "60; url=/frontdoor?auto=1")
 	cfg, _ := a.store.Community()
 	a.render(w, "frontdoor.html", map[string]any{"User": s.User, "CSRF": s.CSRF, "Now": now.Format("15:04"),
-		"Page": makeFrontDoor(sts, a.store.EdgeFrontDoor(), cfg, now)})
+		"Page": makeFrontDoor(sts, a.store.EdgeFrontDoor(), cfg, a.store.TouchMarks(), now)})
 }
 
 func (a *App) audit(w http.ResponseWriter, r *http.Request, s *Session) {

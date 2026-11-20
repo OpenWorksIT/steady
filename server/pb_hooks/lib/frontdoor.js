@@ -225,9 +225,13 @@ function trip(app, hit) {
     var hour = hourOf(hit.nowMs || Date.now());
     var b = bucket(app, hour);
     b.counts.trip = (b.counts.trip || 0) + 1;
-    if (b.trips.length < MAX_TRIPS) b.trips.push(kept);
+    var keep = b.trips.length < MAX_TRIPS;
+    if (keep) b.trips.push(kept);
     save(app, hour, b);
     app.store().set("steady.door.lastTrip", String(hit.nowMs || Date.now()));
+    // a kept touch goes to its row now, not with the next minute's flush: a restart (an update,
+    // a crash) must not lose it. At most 20 an hour.
+    if (keep) writeRow(app, hour, b);
   } catch (e) { /* never break a request */ }
   return kept;
 }
@@ -281,24 +285,28 @@ function tripsFrom(app, ip, nowMs) {
   return out.slice(0, LIST_TRIPS);
 }
 
+/** Writes one hour's counts to its row. Returns whether it was written. */
+function writeRow(app, hour, b) {
+  var rec;
+  try { rec = app.findFirstRecordByFilter("frontdoor", "hour = {:h}", { h: hour }); } catch (e) { rec = new Record(app.findCollectionByNameOrId("frontdoor")); }
+  rec.set("hour", hour);
+  rec.set("data", b);
+  try { app.save(rec); return true; } catch (e) { return false; }
+}
+
 /** Writes every hour in memory to its row, forgets the finished ones, and drops rows past 30 days. */
 function flush(app, nowMs) {
   var current = hourOf(nowMs);
   var st = app.store();
   var keys = [];
   try { keys = st.keys(); } catch (e) { keys = []; }
-  var col = app.findCollectionByNameOrId("frontdoor");
   keys.forEach(function (k) {
     k = String(k);
     if (k.indexOf(PREFIX) !== 0) return;
     var hour = k.slice(PREFIX.length);
     var b;
     try { b = JSON.parse(String(st.get(k))); } catch (e) { st.remove(k); return; }
-    var rec;
-    try { rec = app.findFirstRecordByFilter("frontdoor", "hour = {:h}", { h: hour }); } catch (e) { rec = new Record(col); }
-    rec.set("hour", hour);
-    rec.set("data", b);
-    try { app.save(rec); } catch (e) { return; }
+    if (!writeRow(app, hour, b)) return;
     if (hour < current) st.remove(k);
   });
   var old = app.findRecordsByFilter("frontdoor", "hour < {:h} && hour != 'salt'", "hour", 2000, 0, { h: hourOf(nowMs - KEEP_DAYS * 86400000) });

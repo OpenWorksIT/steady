@@ -2933,6 +2933,17 @@ test("tripwires: a touch keeps what happened, never a decoy or a patient, and ge
   assert.equal(d.trips.length, 100);
 });
 
+test("tripwires: a touch is written at once, so a restart before the next flush doesn't lose it", () => {
+  const { rt, dir, send, fleet } = frontDoorRig();
+  fs.writeFileSync(path.join(dir, "decoys.json"), JSON.stringify({ decoys: [{ path: "/old-portal/", label: "robots path" }] }));
+  send({ path: "/old-portal/", ip: "198.51.100.7" });
+  // a restart: what was only in memory is gone
+  rt.app.store().keys().filter((k) => String(k).indexOf("steady.door.") === 0).forEach((k) => rt.app.store().remove(k));
+  const d = fleet().frontDoor;
+  assert.equal(d.last24h.trip, 1);
+  assert.equal(d.trips[0].ip, "198.51.100.7");
+});
+
 test("an address's trail: only for one that touched a tripwire, never what an account did", () => {
   const value = "decoy-" + "w".repeat(34);
   const sha = (t) => require("crypto").createHash("sha256").update(t).digest("hex");

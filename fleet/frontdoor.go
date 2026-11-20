@@ -28,7 +28,10 @@ type DoorPath struct {
 }
 
 type DoorTrip struct {
-	When, Label, Type, Path, Method, IP, Agent string
+	ID, When, Label, Type, Where, Path, Method, IP, Agent string
+	Status                                                int
+	Open                                                  bool   // not yet marked
+	Verdict, Class                                        string // what was made of it, in words
 }
 
 // DoorService is one service's row and section on the Front door page.
@@ -40,6 +43,8 @@ type DoorService struct {
 	Day, Week        DoorCounts
 	Paths, Agents    []DoorPath
 	Trips            []DoorTrip
+	Open, Closed     int      // touches listed this week: not looked at yet, and marked
+	Unlisted         int      // touches counted this week that the server didn't keep or list
 	Level            string   // good, warn, bad
 	Flags            []string // why it isn't good
 	Tripwires        string   // how many decoys are set, for a practice server
@@ -102,7 +107,9 @@ func jump(name string, day, week, floor int, what string) string {
 	return fmt.Sprintf("%s: %d in 24 h (about %.0f a day before): %s", name, day, before, what)
 }
 
-func practiceDoor(i int, st *Status, now time.Time) DoorService {
+// practiceDoor: one practice server's front door. marks: what was made of each touch (by id;
+// nil: every touch still open).
+func practiceDoor(i int, st *Status, now time.Time, marks map[string]Mark) DoorService {
 	row := makeRow(i, st, now)
 	s := DoorService{Name: row.Name, Host: row.Domain, Link: fmt.Sprintf("/s/%d", i), Practice: true, Level: "good"}
 	if row.Err != "" {
@@ -125,17 +132,34 @@ func practiceDoor(i int, st *Status, now time.Time) DoorService {
 			if m == nil {
 				continue
 			}
-			when := str(m["at"])
-			if t := parseTime(m["at"]); !t.IsZero() {
-				when = t.In(sast).Format("2 Jan 15:04") + " (" + ago(t, now) + ")"
+			t, ok := touchFrom(st.Server, m, now)
+			if !ok {
+				continue
 			}
-			s.Trips = append(s.Trips, DoorTrip{When: when, Label: clip(str(m["label"]), 80), Type: clip(str(m["type"]), 10),
-				Path: clip(str(m["path"]), 120), Method: clip(str(m["method"]), 10), IP: clip(str(m["ip"]), 60), Agent: clip(str(m["agent"]), 120)})
+			d := DoorTrip{ID: t.ID, When: t.At.In(sast).Format("2 Jan 15:04") + " (" + ago(t.At, now) + ")", Label: t.Label, Type: t.Type,
+				Where: t.Where, Path: t.Path, Method: t.Method, IP: t.IP, Agent: clip(t.Agent, 120), Status: t.Status, Open: true,
+				Verdict: "not looked at yet", Class: "bad"}
+			if mk, ok := marks[t.ID]; ok {
+				t.Verdict, t.Notes = mk.Verdict, make([]Entry, mk.Notes)
+				d.Open, d.Verdict, d.Class = t.Open(), t.VerdictLabel(), t.VerdictClass()
+				if mk.By != "" && !d.Open {
+					d.Verdict += " (" + mk.By + ")"
+				}
+			}
+			if d.Open {
+				s.Open++
+			} else {
+				s.Closed++
+			}
+			s.Trips = append(s.Trips, d)
 		}
 	}
-	if s.Week.Trip > 0 {
+	if s.Unlisted = s.Week.Trip - s.Open - s.Closed; s.Unlisted < 0 {
+		s.Unlisted = 0
+	}
+	if s.Open > 0 {
 		s.Level = "bad"
-		s.Flags = append(s.Flags, fmt.Sprintf("a tripwire was touched %d time(s) this week: whoever did it was looking for a way in, or has something they shouldn't (see below)", s.Week.Trip))
+		s.Flags = append(s.Flags, fmt.Sprintf("a tripwire was touched %d time(s) this week, not looked at yet: whoever did it was looking for a way in, or has something they shouldn't (see below)", s.Open))
 	}
 	for _, j := range []struct {
 		name         string
@@ -280,14 +304,16 @@ func edgeDoors(ed EdgeDoor, cfg *Community, practice map[string]bool, now time.T
 type FrontDoorPage struct {
 	Services []DoorService
 	EdgeErr  string
-	Trips    int // tripwire touches this week, across the practice servers
+	Trips    int // tripwire touches this week not looked at yet, across the practice servers
+	Marked   int // and the ones marked
 }
 
-func makeFrontDoor(sts []*Status, ed EdgeDoor, cfg *Community, now time.Time) FrontDoorPage {
+func makeFrontDoor(sts []*Status, ed EdgeDoor, cfg *Community, marks map[string]Mark, now time.Time) FrontDoorPage {
 	var p FrontDoorPage
 	for i, st := range sts {
-		s := practiceDoor(i, st, now)
-		p.Trips += s.Week.Trip
+		s := practiceDoor(i, st, now, marks)
+		p.Trips += s.Open
+		p.Marked += s.Closed
 		p.Services = append(p.Services, s)
 	}
 	p.EdgeErr = ed.Err

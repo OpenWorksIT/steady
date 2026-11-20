@@ -4,6 +4,7 @@
 //	users.json    who may sign in (password hashes and authenticator secrets)
 //	audit.log     sign-ins and every action, one JSON line each
 //	todo.json     OpenWorks' to-do list and the monthly upkeep round (todo.go)
+//	touches.json  every tripwire touch the servers listed, and what was made of each (touches.go)
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package main
@@ -36,6 +37,8 @@ type Store struct {
 	mu  sync.Mutex
 	// todo.json (todo.go)
 	todoMu sync.Mutex
+	// touches.json (touches.go)
+	touch touchStore
 }
 
 func NewStore(dir string) *Store { return &Store{dir: dir} }

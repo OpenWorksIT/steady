@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -56,8 +57,8 @@ func (p *Poller) fetch(ctx context.Context, sv Server) *Status {
 		return st
 	}
 	defer res.Body.Close()
-	// a server's status is a few kilobytes
-	body, _ := io.ReadAll(io.LimitReader(res.Body, 256<<10))
+	// a server's status is a few kilobytes (up to 100 tripwire touches: tens)
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 512<<10))
 	if res.StatusCode == 404 {
 		st.Err = "the server doesn't know this fleet key (or runs a Steady older than 1.0.3)"
 		return st
@@ -110,10 +111,16 @@ func (p *Poller) PollAll(ctx context.Context) {
 		p.last[st.Server.URL] = st
 	}
 	p.mu.Unlock()
-	// staff a practice took out of the community come off the bridge's list
+	// staff a practice took out of the community come off the bridge's list; tripwire touches
+	// are copied to touches.json
 	for _, st := range results {
 		if st.Err == "" && st.Data != nil {
 			p.store.reconcile(st.Server, st.Data)
+			if trips, _ := get(st.Data, "frontDoor", "trips").([]any); len(trips) > 0 {
+				if err := p.store.NoteTouches(st.Server, trips, time.Now()); err != nil {
+					fmt.Fprintln(os.Stderr, "touches:", err)
+				}
+			}
 		}
 	}
 }
