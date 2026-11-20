@@ -90,7 +90,7 @@ function makeRuntime(opts = {}) {
   }
 
   function matchClause(rec, clause, params) {
-    const m = /^\s*([a-zA-Z_.][a-zA-Z0-9_.]*)\s*(\?=|>=|<=|!=|=|<|>)\s*(.+?)\s*$/.exec(clause);
+    const m = /^\s*([a-zA-Z_.][a-zA-Z0-9_.]*)\s*(\?=|>=|<=|!=|=|<|>|~)\s*(.+?)\s*$/.exec(clause);
     if (!m) throw new Error("fake filter can't parse: " + clause);
     const [, field, op, rawV] = m;
     let v;
@@ -105,6 +105,8 @@ function makeRuntime(opts = {}) {
       return Array.isArray(list) && list.indexOf(v) >= 0;
     }
     let a = rec.data[field];
+    // contains: a JSON field as the text PocketBase keeps
+    if (op === "~") return (a !== null && typeof a === "object" ? JSON.stringify(a) : String(a === undefined || a === null ? "" : a)).indexOf(v) >= 0;
     if (typeof v === "boolean") a = a === true;
     else a = a === undefined || a === null ? "" : String(a);
     switch (op) {
@@ -131,7 +133,9 @@ function makeRuntime(opts = {}) {
   }
 
   const hooks = { createRequest: {}, updateRequest: {}, update: {}, afterCreate: {}, list: {}, view: {}, deleteRequest: {}, del: {} };
-  const settings = { trustedProxy: { headers: [], useLeftmostIP: false }, rateLimits: { enabled: false, rules: [] }, smtp: {}, meta: {}, __settings: true };
+  const settings = { trustedProxy: { headers: [], useLeftmostIP: false }, rateLimits: { enabled: false, rules: [] }, smtp: {}, meta: {}, logs: { maxDays: 5, logIP: true }, __settings: true };
+  // PocketBase's request log (the _logs table): rows as { created, data: {type, url, method, status, auth, userAgent, referer, userIP} }
+  const requestLog = [];
   const mails = [];
   const routes = {};
   const crons = {};
@@ -147,6 +151,32 @@ function makeRuntime(opts = {}) {
     },
     // raw SQL (one migration backfills a column): recorded, not run
     db: () => ({ newQuery: (sql) => ({ execute() { (app.sql = app.sql || []).push(sql); } }) }),
+    // the request log, for lib/trail.js's two queries (one address's requests: grouped by account
+    // kind, or the ones without an account, newest first)
+    auxDB: () => ({ newQuery: (sql) => {
+      let p = {};
+      const q = {
+        bind(x) { p = x; return q; },
+        all(out) {
+          const mine = requestLog.filter((r) => r.data.type === "request" && r.data.userIP === p.ip);
+          if (/GROUP BY/.test(sql)) {
+            const g = {};
+            mine.forEach((r) => {
+              const k = r.data.auth || "";
+              const x = g[k] = g[k] || { auth: k, n: 0, first: r.created, last: r.created };
+              x.n++; if (r.created < x.first) x.first = r.created; if (r.created > x.last) x.last = r.created;
+            });
+            Object.keys(g).forEach((k) => out.push(g[k]));
+          } else {
+            const limit = Number(/LIMIT (\d+)/.exec(sql)[1]);
+            mine.filter((r) => !r.data.auth).sort((a, b) => (a.created < b.created ? 1 : -1)).slice(0, limit).forEach((r) => out.push({
+              created: r.created, url: r.data.url || "", method: r.data.method || "", status: r.data.status || 0, agent: r.data.userAgent || "", referer: r.data.referer || "" }));
+          }
+          return out;
+        }
+      };
+      return q;
+    } }),
     // like PocketBase: names match with Unicode case folding ("_ſuperusers" finds _superusers)
     findCachedCollectionByNameOrId: (n) => {
       const fold = (x) => String(x).toUpperCase().toLowerCase();
@@ -205,6 +235,7 @@ function makeRuntime(opts = {}) {
   }
   const sandbox = {
     console, JSON, Date: FakeDate, Math, Number, String, Array, Object, RegExp, Error, isFinite, parseInt, parseFloat, encodeURIComponent,
+    decodeURIComponent, arrayOf: () => [], DynamicModel: class { constructor(o) { Object.assign(this, o); } },
     __hooks: HOOKS,
     $app: app,
     MailerMessage: class { constructor(m) { Object.assign(this, m); } },
@@ -318,7 +349,7 @@ function makeRuntime(opts = {}) {
     const e = {
       auth,
       app,
-      request: { pathValue: (n) => params[n], header: { get: (k) => headers[k] || "" } },
+      request: { pathValue: (n) => params[n], header: { get: (k) => headers[k] || "" }, url: { path: p, query: () => ({ get: (k) => query[k] || "" }) } },
       requestInfo: () => ({ body, query }),
       realIP: () => "127.0.0.1",
       response: { header: () => ({ set: (k, v) => { respHeaders[k] = v; } }) },
@@ -365,7 +396,7 @@ function makeRuntime(opts = {}) {
   const makeUser = (fields) => makeRecord("users", Object.assign(
     ["clinician", "admin", "support"].indexOf(fields.role) >= 0 && !("confirmedAt" in fields) ? { confirmedAt: "2099-01-01 00:00:00.000Z" } : {}, fields));
 
-  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, mails, sandbox, opts, tick: (ms) => { clock += ms; }, now: () => clock };
+  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, mails, sandbox, opts, requestLog, tick: (ms) => { clock += ms; }, now: () => clock };
 }
 
 /* ------------------------------------------------------------------ tests */
@@ -2702,8 +2733,11 @@ function frontDoorRig(extraEnv) {
         method: req.method || "GET",
         url: { path: req.path, rawQuery: req.query || "", query: () => ({ get: () => "" }) },
         remoteAddr: (req.local ? "127.0.0.1" : "172.18.0.4") + ":5555",
+        host: req.host || "vr.example.org",
         header: { get: (k) => headers[k] || "" }
       },
+      // as PocketBase: header names lower case, - as _
+      requestInfo: () => ({ headers: Object.fromEntries(Object.keys(headers).map((k) => [k.toLowerCase().replace(/-/g, "_"), headers[k]])) }),
       response: { header: () => ({ set() {} }) },
       realIP: () => req.ip || "203.0.113.9",
       status: () => req.status || 200,
@@ -2846,4 +2880,93 @@ test("tripwires: none set is fine, and a broken file is reported, not fatal", ()
   assert.equal(t.set, false);
   assert.match(t.problems[0], /can't be read/);
   assert.equal(rt.call("GET", "/robots.txt").text, "User-agent: *\nDisallow: /\n");
+});
+
+// PocketBase's own errors reach a JavaScript middleware as a GoError, the ApiError in its value
+function goError(status, message) { const e = new Error(message); e.name = "GoError"; e.value = { status, message }; return e; }
+
+test("the front door reads PocketBase's errors as they really arrive (a GoError)", () => {
+  const { rt, send, flush, fleet } = frontDoorRig();
+  const patient = rt.makeUser({ name: "P", role: "patient", active: true, email: "p@example.org" });
+  send({ method: "POST", path: "/api/steady/auth/sign-in", error: goError(400, "Failed to authenticate.") });
+  send({ path: "/api/steady/patients", error: goError(429, "Too Many Requests.") });
+  send({ path: "/api/collections/checkins/records", error: goError(401, "The request requires valid record authorization token.") });
+  send({ path: "/api/collections/checkins/records/abcdefghijklmno", auth: patient, error: goError(404, "The requested resource wasn't found.") });
+  send({ path: "/api/steady/closed", headers: { "X-Steady-Closed": "/_/" }, error: goError(404, "Not found.") });
+  flush();
+  const d = fleet().frontDoor.last24h;
+  assert.deepEqual({ signin: d.signin, limited: d.limited, refused: d.refused, insider: d.insider, closed: d.closed }, { signin: 1, limited: 1, refused: 1, insider: 1, closed: 1 });
+});
+
+test("tripwires: a touch keeps what happened, never a decoy or a patient, and gets its answer", () => {
+  const value = "decoy-" + "z".repeat(34);
+  const sha = (t) => require("crypto").createHash("sha256").update(t).digest("hex");
+  const { rt, dir, send, flush, fleet } = frontDoorRig();
+  fs.writeFileSync(path.join(dir, "decoys.json"), JSON.stringify({ decoys: [
+    { path: "/old-portal/", label: "robots path" }, { value: sha(value), label: "planted in .env" }] }));
+  const doc = rt.makeUser({ name: "Dr Took", role: "clinician", active: true, email: "took@vr.example.org" });
+  const patient = rt.makeUser({ name: "P", role: "patient", active: true, email: "p@example.org" });
+  send({ path: "/old-portal/login.php", query: "id=1%27%20OR%201%3D1&token=abcdefgh12345678", host: "203.0.113.50", ip: "198.51.100.7",
+    headers: { "User-Agent": "zgrab/0.x", "Accept-Language": "en", "X-Forwarded-For": "127.0.0.1, 198.51.100.7", Referer: "https://x.example/?k=" + value }, error: goError(404, "File not found.") });
+  send({ path: "/api/x", query: "key=" + value, auth: doc, ip: "198.51.100.8", error: goError(404, "Not found.") });
+  send({ path: "/api/steady/fleet", headers: { "X-Api-Key": value }, auth: patient, ip: "198.51.100.9" });
+  flush();
+  const trips = fleet().frontDoor.trips;
+  const p = trips.find((t) => t.type === "path");
+  assert.deepEqual({ where: p.where, host: p.host, query: p.query, status: p.status, lang: p.lang, forwarded: p.forwarded, headers: p.headers, account: p.account },
+    { where: "the path", host: "203.0.113.50", query: "id=1' OR 1=1&token=\u2026(16)", status: 404, lang: "en", forwarded: "127.0.0.1, 198.51.100.7",
+      headers: "accept-language referer user-agent x-forwarded-for", account: "" });
+  assert.equal(p.referer, "https://x.example/?k=\u2026(" + value.length + ")");
+  const k = trips.find((t) => t.ip === "198.51.100.8");
+  assert.deepEqual({ where: k.where, query: k.query, account: k.account, status: k.status },
+    { where: "the query (key)", query: "key=\u2026(" + value.length + ")", account: "a psychologist's account: took@vr.example.org", status: 404 });
+  const h = trips.find((t) => t.ip === "198.51.100.9");
+  assert.deepEqual({ where: h.where, account: h.account, status: h.status }, { where: "the X-Api-Key header", account: "a patient's account", status: 200 });
+  // the decoy itself, and who the patient is, never leave the server
+  const all = JSON.stringify(fleet());
+  assert.ok(!all.includes(value) && !all.includes("p@example.org") && !all.includes(patient.id), "a decoy or a patient in the fleet's answer");
+  // up to 100 are listed, every one counted
+  for (let i = 0; i < 8; i++) { rt.tick(3600000); for (let n = 0; n < 15; n++) send({ path: "/old-portal/", ip: "198.51.100.7" }); }
+  flush();
+  const d = fleet().frontDoor;
+  assert.equal(d.last7d.trip, 123);
+  assert.equal(d.trips.length, 100);
+});
+
+test("an address's trail: only for one that touched a tripwire, never what an account did", () => {
+  const value = "decoy-" + "w".repeat(34);
+  const sha = (t) => require("crypto").createHash("sha256").update(t).digest("hex");
+  const { rt, dir, send, flush } = frontDoorRig();
+  fs.writeFileSync(path.join(dir, "decoys.json"), JSON.stringify({ decoys: [{ path: "/old-portal/", label: "robots path" }, { value: sha(value), label: "in .env" }] }));
+  const key = { "X-Steady-Fleet": "f".repeat(40) };
+  const trail = (ip, headers) => rt.call("GET", "/api/steady/fleet/trail", { query: { ip }, headers: headers || key });
+  const at = (ms) => new Date(rt.now() + ms).toISOString().replace("T", " ");
+  const log = (ms, d) => rt.requestLog.push({ created: at(ms), data: Object.assign({ type: "request", method: "GET", status: 200, auth: "", userAgent: "zgrab/0.x", referer: "" }, d) });
+  log(-60000, { url: "/robots.txt", userIP: "198.51.100.7" });
+  log(-30000, { url: "/old-portal/?q=" + value, status: 404, userIP: "198.51.100.7" });
+  log(-20000, { url: "/api/collections/checkins/records/abcdefghijklmno?expand=patient", status: 401, userIP: "198.51.100.7" });
+  log(-10000, { url: "/api/files/pbc_1/abcdefghijklmno/export_kempie.pdf?token=eyJhbGciOi.x.y", status: 404, userIP: "198.51.100.7" });
+  log(-5000, { url: "/api/steady/patients/abcdefghijklmno/summary", auth: "users", userIP: "198.51.100.7" });
+  log(-4000, { url: "/api/steady/overview", auth: "users", userIP: "198.51.100.7" });
+  log(-3000, { url: "/somewhere", userIP: "198.51.100.99" });
+  // no key, a bad address, or one that touched nothing: not found
+  assert.equal(trail("198.51.100.7", {}).status, 404);
+  assert.equal(trail("198.51.100.7\" OR 1=1").status, 404);
+  assert.equal(trail("198.51.100.7").status, 404);
+  send({ path: "/old-portal/", ip: "198.51.100.7", headers: { "User-Agent": "zgrab/0.x" } });
+  flush();
+  const t = trail("198.51.100.7");
+  assert.equal(t.status, 200);
+  const d = t.data;
+  assert.equal(d.total, 6);
+  assert.deepEqual(d.signedIn.map((s) => [s.as, s.n]), [["an account", 2]]);
+  assert.deepEqual(d.requests.map((r) => r.path), [
+    "/api/files/\u2026?token=\u2026(14)", "/api/collections/checkins/records/:id?expand=patient", "/old-portal/?q=\u2026(" + value.length + ")", "/robots.txt"]);
+  assert.equal(d.touches.length, 1);
+  assert.deepEqual(d.logs, { days: 5, ip: true });
+  // what the accounts asked for, and the decoy, are nowhere in it
+  const blob = JSON.stringify(d);
+  assert.ok(!blob.includes("summary") && !blob.includes("overview") && !blob.includes(value) && !blob.includes("kempie") && !blob.includes("198.51.100.99"));
+  // another address that touched nothing still isn't found
+  assert.equal(trail("198.51.100.99").status, 404);
 });

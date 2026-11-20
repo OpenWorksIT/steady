@@ -6,6 +6,7 @@
 // keys or patients' details), and the front door (what was turned away, and tripwires touched).
 //
 //   GET  /api/steady/fleet           X-Steady-Fleet: STEADY_FLEET_KEY
+//   GET  /api/steady/fleet/trail?ip= X-Steady-Fleet: STEADY_FLEET_KEY   (lib/trail.js)
 //   POST /api/steady/fleet/request   X-Steady-Fleet: STEADY_FLEET_KEY   {action: check|update|restart}
 //   POST /api/steady/fleet/reset     X-Steady-Fleet: STEADY_FLEET_KEY   {email, twoStep}
 //   POST /api/steady/fleet/community X-Steady-Fleet: STEADY_FLEET_KEY   {on, forum, signin, key, openworks}
@@ -119,6 +120,17 @@ routerAdd("GET", "/api/steady/fleet", (e) => {
     lastUpdate: status ? status.lastUpdate || null : null,
     lastRestart: status ? status.lastRestart || null : null
   });
+});
+
+// what an address that touched a tripwire did here (lib/trail.js): for the fleet view's look
+// into a touch. Any other address is not found, as is a wrong key.
+routerAdd("GET", "/api/steady/fleet/trail", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  if (!s.fleetKeyOk(e)) throw new NotFoundError("Not found.");
+  e.response.header().set("Cache-Control", "no-store");
+  const t = require(`${__hooks}/lib/trail.js`).trail($app, String((e.requestInfo().query || {}).ip || ""), Date.now());
+  if (!t) throw new NotFoundError("Not found.");
+  return e.json(200, t);
 });
 
 routerAdd("POST", "/api/steady/fleet/request", (e) => {

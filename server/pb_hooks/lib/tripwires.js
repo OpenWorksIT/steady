@@ -114,16 +114,16 @@ function ipOf(e) {
   try { return String(e.realIP() || ""); } catch (err) { return ""; }
 }
 
-/** Every key-like thing a request carries: the key headers (a Bearer token as is and without
- *  "Bearer "), and query values. */
+/** Every key-like thing a request carries, with where: the key headers (a Bearer token as is
+ *  and without "Bearer "), and query values. [{where, v}] */
 function carried(e) {
   var out = [];
   HEADERS.forEach(function (h) {
     var v = header(e, h);
     if (!v) return;
-    out.push(v);
+    out.push({ where: "the " + h + " header", v: v });
     var bare = v.replace(/^(Bearer|Basic|Token)\s+/i, "");
-    if (bare !== v) out.push(bare);
+    if (bare !== v) out.push({ where: "the " + h + " header", v: bare });
   });
   var q = "";
   try { q = String(e.request.url.rawQuery || ""); } catch (err) { q = ""; }
@@ -132,9 +132,35 @@ function carried(e) {
     if (i < 0) return;
     var v = pair.slice(i + 1);
     try { v = decodeURIComponent(v.replace(/\+/g, " ")); } catch (err) { /* as is */ }
-    if (v.length >= 8) out.push(v);
+    if (v.length >= 8) out.push({ where: "the query (" + F.clean(pair.slice(0, i), 30) + ")", v: v });
   });
   return out;
+}
+
+/** The names of the headers a request came with (never their values), as a browser or tool
+ *  sends them: a fingerprint of what made it. */
+function headerNames(e) {
+  try {
+    var h = e.requestInfo().headers;
+    return Object.keys(h).filter(function (k) { return typeof h[k] !== "function"; })
+      .map(function (k) { return String(k).replace(/_/g, "-"); }).sort().join(" ");
+  } catch (err) { return ""; }
+}
+
+/** What kind of account a request came with: "" for none. A staff account by its address (its
+ *  sign-in may be in someone else's hands); never which patient. */
+function accountOf(e) {
+  try {
+    var a = e.auth;
+    if (!a) return "";
+    var col = "";
+    try { col = String(a.collection().name); } catch (err) { col = String(a.collectionName || ""); }
+    if (col === "_superusers") return "a superuser";
+    var role = String(a.getString("role") || "");
+    var staff = { clinician: "a psychologist's account", admin: "a practice admin's account", support: "an OpenWorks account" }[role];
+    if (!staff) return "a patient's account";
+    return staff + ": " + F.clean(a.getString("email"), 100);
+  } catch (err) { return "an account"; }
 }
 
 /** Emails OpenWorks about a touch, at most once an hour for each decoy. */
@@ -149,22 +175,39 @@ function alert(app, hit) {
   var domain = s.env("STEADY_DOMAIN", "this server");
   require(__hooks + "/lib/mail.js").send(app, to, "Steady tripwire on " + domain + ": " + hit.label,
     "A tripwire on " + domain + " was touched at " + hit.at + " (UTC).\n\n" +
-    "Decoy: " + hit.label + " (" + hit.type + ")\n" +
-    "Request: " + (hit.method || "") + " " + (hit.path || "") + "\n" +
+    "Decoy: " + hit.label + " (" + hit.type + ", in " + (hit.where || "the request") + ")\n" +
+    "Request: " + (hit.method || "") + " " + (hit.path || "") + (hit.query ? "?" + hit.query : "") + "\n" +
+    (hit.account ? "Signed in as: " + hit.account + "\n" : "") +
     "From: " + (hit.ip || "unknown") + "\n" +
     "With: " + (hit.agent || "nothing said") + "\n\n" +
-    "More touches of the same decoy within the hour are counted without another email. The fleet view's Front door has them all.\n\n" +
+    "More touches of the same decoy within the hour are counted without another email. The fleet view's Front door has them all: open one to see what else that address did, and mark it as a test or as dealt with.\n\n" +
     "An automatic message from Steady. Nothing about patients is in it.");
 }
 
-function touched(app, e, label, type, nowMs) {
+function touched(app, e, label, type, where, nowMs) {
+  var d = load(app);
+  var secret = function (v) { return !!d.values[$security.sha256(String(v))]; };
+  var req = function (f) { try { return f(); } catch (err) { return ""; } };
   var hit = F.trip(app, {
-    label: label, type: type,
-    path: (function () { try { return e.request.url.path; } catch (err) { return ""; } })(),
-    method: (function () { try { return e.request.method; } catch (err) { return ""; } })(),
-    ip: ipOf(e), agent: header(e, "User-Agent"), nowMs: nowMs
+    label: label, type: type, where: where,
+    path: req(function () { return e.request.url.path; }),
+    method: req(function () { return e.request.method; }),
+    ip: ipOf(e), agent: header(e, "User-Agent"),
+    host: req(function () { return e.request.host; }),
+    query: F.maskQuery(req(function () { return e.request.url.rawQuery; }), secret),
+    referer: F.maskUrl(header(e, "Referer"), secret),
+    lang: header(e, "Accept-Language"),
+    forwarded: header(e, "X-Forwarded-For"),
+    headers: headerNames(e),
+    account: accountOf(e),
+    nowMs: nowMs
   });
-  try { app.logger().warn("steady: a tripwire was touched", "decoy", hit.label, "type", type); } catch (err) { /* no logger */ }
+  try {
+    var who = "";
+    try { who = e.auth ? String(e.auth.id) : ""; } catch (err) { who = ""; }
+    // the account itself (a patient's too) only in this server's own log, for OpenWorks
+    app.logger().warn("steady: a tripwire was touched", "decoy", hit.label, "type", type, "ip", hit.ip, "account", who);
+  } catch (err) { /* no logger */ }
   try { alert(app, hit); } catch (err) { /* the count is kept anyway */ }
 }
 
@@ -179,15 +222,15 @@ function checkRequest(app, e) {
     for (var i = 0; i < d.paths.length; i++) {
       var p = d.paths[i].path.toLowerCase();
       if (lower === p || lower === p.replace(/\/$/, "") || (d.paths[i].prefix && lower.indexOf(p) === 0)) {
-        touched(app, e, d.paths[i].label, "path", now);
+        touched(app, e, d.paths[i].label, "path", "the path", now);
         break;
       }
     }
     if (Object.keys(d.values).length) {
       var seen = {};
-      carried(e).forEach(function (v) {
-        var h = $security.sha256(v);
-        if (d.values[h] && !seen[h]) { seen[h] = 1; touched(app, e, d.values[h], "value", now); }
+      carried(e).forEach(function (c) {
+        var h = $security.sha256(c.v);
+        if (d.values[h] && !seen[h]) { seen[h] = 1; touched(app, e, d.values[h], "value", c.where, now); }
       });
     }
   } catch (err) { /* a tripwire must never break a request */ }
@@ -200,10 +243,10 @@ function checkSignIn(app, e, name, password) {
     if (!count(d)) return;
     var now = s.nowMs();
     var n = String(name || "").trim().toLowerCase();
-    if (n && d.names[n]) touched(app, e, d.names[n], "name", now);
+    if (n && d.names[n]) touched(app, e, d.names[n], "name", "the sign-in name", now);
     if (password && Object.keys(d.values).length) {
       var h = $security.sha256(String(password));
-      if (d.values[h]) touched(app, e, d.values[h], "value", now);
+      if (d.values[h]) touched(app, e, d.values[h], "value", "the password, signing in", now);
     }
   } catch (err) { /* never break a sign-in */ }
 }
