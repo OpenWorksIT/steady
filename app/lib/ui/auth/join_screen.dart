@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
 import '../../services/api.dart';
+import '../patient/contact_consent.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -19,6 +20,8 @@ class _JoinScreenState extends State<JoinScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _consent = false;
+  // "my practice may contact me about what I share": ticked to start with
+  bool _contact = true;
 
   static String _formatCode(String? c) {
     final s = (c ?? '').toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
@@ -45,6 +48,7 @@ class _JoinScreenState extends State<JoinScreen> {
         email: _email.text.trim(),
         password: _password.text,
         consent: _consent,
+        contact: _contact,
       );
       nav.popUntil((r) => r.isFirst);
       await state.signedInNow();
@@ -120,7 +124,9 @@ class _JoinScreenState extends State<JoinScreen> {
               const SizedBox(height: 10),
               Text(_error!, style: TextStyle(color: context.cs.error)),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            ContactConsentTile(practiceName: cfg.practiceName, value: _contact, onChanged: (v) => setState(() => _contact = v)),
+            const SizedBox(height: 8),
             BusyButton(label: 'Create my account', onPressed: _consent ? _join : null),
             const SizedBox(height: 24),
             const CrisisFooter(),

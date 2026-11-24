@@ -81,7 +81,7 @@ function iosLink(v, test) {
 
 function iosSteps(url, code) {
   var beta = url.indexOf("https://testflight.apple.com/") === 0;
-  var finish = '<li>Open Steady, tap <b>Scan invite QR code</b> and scan the code on your psychologist\'s screen again' +
+  var finish = '<li>Open Steady, tap <b>Scan invite QR code</b> and scan the code on your clinician\'s screen again' +
     (code ? ', or tap <b>I have an invite code</b> and type <b class="code">' + code + '</b>' : '') + '.</li>';
   if (!beta) {
     return '<a class="btn" href="' + esc(url) + '">Get Steady on the App Store</a>' +
@@ -96,7 +96,7 @@ function iosSteps(url, code) {
 }
 
 function androidSteps(code, app, test) {
-  var finish = '<li>Open Steady, tap <b>Scan invite QR code</b> and scan the code on your psychologist\'s screen again' +
+  var finish = '<li>Open Steady, tap <b>Scan invite QR code</b> and scan the code on your clinician\'s screen again' +
     (code ? ', or tap <b>I have an invite code</b> and type <b class="code">' + code + '</b>' : '') + '.</li>';
   // the test server's own build, for testing what isn't in Google Play yet
   var testBuild = test && app && app.sizeMB > 0

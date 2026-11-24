@@ -13,8 +13,8 @@
 #                                         # "active on" unlocks an account its owner locked
 #   sudo ./accounts.sh audit [--patient <id>] [--actor <id>] [--days 90]
 #   sudo ./accounts.sh check              # proxy, rate limits, dashboard, operator agreement
-#   sudo ./accounts.sh demo-patients <psychologist email> [--remove]   # 3 fictional RADR patients
-#   sudo ./accounts.sh reviewer <email> [--remove]   # the test server only: a psychologist for
+#   sudo ./accounts.sh demo-patients <clinician email> [--remove]   # 3 fictional RADR patients
+#   sudo ./accounts.sh reviewer <email> [--remove]   # the test server only: a clinician for
 #                                         # the app stores' reviewers (docs/REVIEWERS.md)
 #   sudo ./accounts.sh rotate-sessions    # signs EVERYONE out (new token secrets): after a
 #                                         # restore, or if a copy of the data may have leaked
@@ -115,7 +115,7 @@ case "$cmd" in
         *) usage ;;
       esac
     done
-    [ "$role" != clinician ] && [ "$master" = true ] && { echo "Only a psychologist can be the master clinician." >&2; exit 1; }
+    [ "$role" != clinician ] && [ "$master" = true ] && { echo "Only a clinician can be the master clinician." >&2; exit 1; }
     res="$(api POST /api/steady/ops/accounts "$(jq -n --arg n "$name" --arg e "$email" --arg r "$role" \
       --argjson m "$master" --argjson s "$server" '{name:$n,email:$e,role:$r,master:$m,serverAdmin:$s,create:true}')")"
     show_password "$res"
@@ -173,7 +173,7 @@ case "$cmd" in
     if [ "$rm" = true ]; then
       echo "Stopped the reviewers' account $1 and removed its $(jq -r .removed <<<"$demo") fictional patient(s)."
     else
-      jq -r '"Psychologist account for the app stores reviewers: " + .account.name + " <" + .account.email + ">", "Password: " + .password' <<<"$res"
+      jq -r '"Clinician account for the app stores reviewers: " + .account.name + " <" + .account.email + ">", "Password: " + .password' <<<"$res"
       jq -r '(.created[] | "  with \(.name): \(.days) days of watch data, \(.checkins) check-ins, \(.questionnaires) questionnaires")' <<<"$demo"
       echo "Put both in the app stores' review notes (Play Console > App content > App access; App Store"
       echo "Connect > App Review Information), with the server address. It signs in with that password"

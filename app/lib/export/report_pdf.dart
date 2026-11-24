@@ -458,7 +458,7 @@ List<pw.Widget> _radr(ExportPatient p) {
       child: pw.Text(
         'To improve care: not a risk score, prediction or diagnosis, and not watched around the clock. Each measure is '
         'compared with the person\'s previous four weeks; four domains are scored and shown with the check-ins beside them. '
-        'In the psychologist\'s list RADR only orders patients, after answers waiting for review. '
+        'In the clinician\'s list RADR only orders patients, after answers waiting for review. '
         'Method and sources: docs/RADR.md in the Steady repository.',
         style: const pw.TextStyle(fontSize: 8, color: _ink, lineSpacing: 1.4),
       ),
@@ -669,7 +669,7 @@ String _n(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStrin
 List<pw.Widget> _clinicianNotes(ExportPatient p) {
   if (p.notes.isEmpty) return [];
   return [
-    _section('Clinician notes', 'Short notes kept in Steady by the psychologist. Patients never see them.'),
+    _section('Clinician notes', 'Short notes kept in Steady by the clinician. Patients never see them.'),
     _table(['Date', 'By', 'Note'], [
       for (final n in p.notes.reversed) [_cell(_dateTime(n.at)), _cell(n.by), pw.Text(n.text.trim(), style: _body)],
     ], widths: {0: const pw.FixedColumnWidth(88), 1: const pw.FixedColumnWidth(80)}),
@@ -691,6 +691,7 @@ List<pw.Widget> _method(ExportPatient p) {
           'Rated once there are ${m['baselineMin'] ?? 14} days to compare with.',
     if (r != null && r.exclusions.isNotEmpty)
       'Switched off for this patient: ${r.exclusions.map((x) => '${ExportRadr.domainNames['${x['domain']}'] ?? x['domain']} (${x['reason'] ?? ''})').join(', ')}.',
+    if (r != null && r.baselineText(_date).isNotEmpty) r.baselineText(_date),
     if (p.methods['steadyBuild']?.isNotEmpty ?? false) 'Steady build ${p.methods['steadyBuild']}.',
   ];
   if (lines.isEmpty) return [];

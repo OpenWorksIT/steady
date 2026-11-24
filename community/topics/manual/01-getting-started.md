@@ -4,7 +4,7 @@
 
 *Purpose: get into Steady for the first time with the temporary password the practice gave you.*
 
-OpenWorks IT sets up the master psychologist's account. The master psychologist (or OpenWorks IT) sets up everyone else's, and gives each person a temporary password by phone or in person.
+OpenWorks IT sets up the master clinician's account. The master clinician (or OpenWorks IT) sets up everyone else's, and gives each person a temporary password by phone or in person.
 
 1. Open Steady. The first time, it shows **Your privacy**. Read it and tap **I understand**.
 
@@ -36,11 +36,11 @@ OpenWorks IT sets up the master psychologist's account. The master psychologist 
 - The recovery codes aren't shown again.
 - Steady emails you when your password is changed or a recovery code is used. These emails are about your own account only; Steady never puts patient information in an email.
 
-## The master psychologist: sign the operator agreement
+## The master clinician: sign the operator agreement
 
 *Purpose: the practice's written agreement with OpenWorks IT, which POPIA asks for because OpenWorks runs the practice's Steady server.*
 
-The first time the master psychologist signs in, Steady asks them to sign the operator agreement before they can use it.
+The first time the master clinician signs in, Steady asks them to sign the operator agreement before they can use it.
 
 1. Read the agreement on the **Operator agreement** screen.
 
@@ -74,9 +74,9 @@ Before a password reset, adding staff, an export, deleting an account, reading t
 
 ## Your first screen
 
-Psychologists (including the master psychologist) start on **Patients**. Until you invite someone, it says **No patients yet**. The practice administrator starts on **Practice** (see *For practice administrators and the master psychologist*).
+Clinicians (including the master clinician) start on **Patients**. Until you invite someone, it says **No patients yet**. The practice administrator starts on **Practice** (see *For practice administrators and the master clinician*).
 
-![A psychologist's first screen](images/10-staff-first-screen.webp)
+![A clinician's first screen](images/10-staff-first-screen.webp)
 
 ## Signing in on other days
 
@@ -107,7 +107,7 @@ You're signed out everywhere and every device is unlinked. Steady emails you a n
 
 ## Forgot your password
 
-Tap **Forgot password** on the sign-in screen. Steady can't reset it by email: ask the master psychologist or practice administrator to reset it. They give you a temporary password and you choose your own when you sign in.
+Tap **Forgot password** on the sign-in screen. Steady can't reset it by email: ask the master clinician or practice administrator to reset it. They give you a temporary password and you choose your own when you sign in.
 
 ![Forgot your password](images/13-staff-forgot-password.webp)
 

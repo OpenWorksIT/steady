@@ -1,9 +1,9 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Steady, OpenWorks' test server only (the test branch; never main or a practice's server):
 // an account for Apple's and Google's app reviewers. The watch data a patient shares shows on
-// the psychologist's side only, so the stores' reviewers need a psychologist's login, and they
+// the clinician's side only, so the stores' reviewers need a clinician's login, and they
 // can't use an authenticator app or receive the emailed device code. accounts.sh reviewer makes
-// one: a psychologist marked demo, with three fictional patients (accounts.sh demo-patients),
+// one: a clinician marked demo, with three fictional patients (accounts.sh demo-patients),
 // that signs in with its password alone where STEADY_REVIEWERS=on (lib/server.js reviewer). It
 // sees only its own fictional patients, and the community doesn't open for it. See
 // docs/REVIEWERS.md.

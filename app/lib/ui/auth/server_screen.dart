@@ -54,7 +54,7 @@ class _ServerScreenState extends State<ServerScreen> {
               const SizedBox(height: 8),
             ],
             if (widget.firstRun && canScanInvites) ...[
-              Text('New patient? Scan the invite QR code from your psychologist and Steady sets itself up.',
+              Text('New patient? Scan the invite QR code from your clinician and Steady sets itself up.',
                   style: context.tt.bodyLarge?.copyWith(color: context.sc.ink2)),
               const SizedBox(height: 14),
               const ScanInviteButton(),

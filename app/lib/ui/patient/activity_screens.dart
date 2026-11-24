@@ -25,7 +25,7 @@ Future<void> _finishExercise(BuildContext context, Instrument i, String? assignm
       ? await api.completeExercise(assignmentId, result, title: i.name)
       : await api.selfStart(i.id, result, title: i.name);
   nav.pushReplacement(MaterialPageRoute(
-    builder: (_) => DoneScreen(message: sent ? 'Well done. Your psychologist can see you finished this.' : 'Well done. $keptOnPhone', kept: !sent),
+    builder: (_) => DoneScreen(message: sent ? 'Well done. Your clinician can see you finished this.' : 'Well done. $keptOnPhone', kept: !sent),
   ));
 }
 
@@ -70,7 +70,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     final payload = {for (final it in visible) if (_answered(it)) it.id: _answers[it.id]};
     final sent = await api.completeQuestionnaire(widget.assignmentId, payload, title: widget.instrument.name);
     nav.pushReplacement(MaterialPageRoute(
-        builder: (_) => DoneScreen(message: sent ? 'Your answers have been sent to your psychologist.' : keptOnPhone, kept: !sent)));
+        builder: (_) => DoneScreen(message: sent ? 'Your answers have been sent to your clinician.' : keptOnPhone, kept: !sent)));
   }
 
   @override

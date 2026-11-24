@@ -10,7 +10,7 @@ import 'theme.dart';
 
 /// What Steady is not, as the app stores ask for it: on the sign-in screen and in Settings.
 const kNotMedicalDevice = 'Steady is not a medical device and does not diagnose, treat, cure, or prevent any medical '
-    'condition. It helps you and your psychologist keep track between sessions; it doesn\'t replace their care.';
+    'condition. It helps you and your clinician keep track between sessions; it doesn\'t replace their care.';
 
 class SourceLink extends StatelessWidget {
   const SourceLink({super.key});

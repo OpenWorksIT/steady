@@ -108,7 +108,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
     final sent = await outbox.flush();
     if (!mounted) return;
     if (sent > 0) {
-      showSnack(context, sent == 1 ? 'Sent to your psychologist.' : '$sent answers sent to your psychologist.');
+      showSnack(context, sent == 1 ? 'Sent to your clinician.' : '$sent answers sent to your clinician.');
       _refresh();
     } else if (!quiet && outbox.waiting == before) {
       showSnack(context, 'Steady still can\'t reach the practice. It keeps trying.');
@@ -208,9 +208,9 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
               ],
               WatchCard(onChanged: _refresh),
               const SizedBox(height: 12),
-              SectionHeader('From your psychologist', trailing: d.pending.isEmpty ? null : '${d.pending.length} to do'),
+              SectionHeader('From your clinician', trailing: d.pending.isEmpty ? null : '${d.pending.length} to do'),
               if (d.pending.isEmpty)
-                Text('Nothing waiting. Anything your psychologist sends will show up here.',
+                Text('Nothing waiting. Anything your clinician sends will show up here.',
                     style: context.tt.bodyMedium?.copyWith(color: context.sc.ink2))
               else
                 for (final a in d.pending)

@@ -151,7 +151,7 @@ class _SupportStaffScreenState extends State<SupportStaffScreen> {
           return ListView(padding: const EdgeInsets.fromLTRB(16, 10, 16, 28), children: [
             Text('The practice\'s staff and their app versions. OpenWorks support never sees patients.',
                 style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
-            section('Psychologists', d.staff.where((p) => p.role == 'clinician')),
+            section('Clinicians', d.staff.where((p) => p.role == 'clinician')),
             section('Practice admin', d.staff.where((p) => p.role == 'admin')),
             section('OpenWorks', d.staff.where((p) => p.isSupport)),
           ]);

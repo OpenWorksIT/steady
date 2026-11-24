@@ -48,7 +48,7 @@ The item shows under **Questionnaires and exercises** as **Waiting** until the p
 
 Go to **Settings > Practice > Library**.
 
-![Practice, for a psychologist](images/47-psych-practice.webp)
+![Practice, for a clinician](images/47-psych-practice.webp)
 
 **Ready to send** lists what the practice has cleared. **Needs a licence check** lists instruments the practice hasn't yet confirmed it may use.
 

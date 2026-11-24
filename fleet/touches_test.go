@@ -29,7 +29,7 @@ func touchRig(t *testing.T) (*App, *http.Client, *fakeSteady, string, string) {
 				"path": "/api/steady/fleet", "method": "GET", "ip": "198.51.100.7", "agent": "curl/8.5", "status": 0},
 			map[string]any{"at": now.Add(-10 * time.Minute).Format(time.RFC3339Nano), "label": "admin name", "type": "name", "where": "the sign-in name",
 				"path": "/api/steady/auth/sign-in", "method": "POST", "ip": "192.0.2.44", "agent": "python-requests/2.31", "status": 400,
-				"account": "a psychologist's account: took@vr.example.org"},
+				"account": "a clinician's account: took@vr.example.org"},
 		},
 	}
 	steady.trip = map[string]any{"set": true, "paths": 1, "values": 1, "names": 1, "alertEmail": true, "problems": []any{}}
@@ -104,7 +104,7 @@ func TestTouchesKeptAndLookedInto(t *testing.T) {
 	// the signed-in touch from another address says what to do about the account
 	res, _ = c.Get(site + "/frontdoor/touch/" + ids["admin name"])
 	page = body(t, res)
-	if !strings.Contains(page, "It came signed in, with a psychologist&#39;s account: took@vr.example.org") || !strings.Contains(page, "the server keeps no trail for this address") ||
+	if !strings.Contains(page, "It came signed in, with a clinician&#39;s account: took@vr.example.org") || !strings.Contains(page, "the server keeps no trail for this address") ||
 		!strings.Contains(page, "It tried to sign in as a name nobody has") || !strings.Contains(page, "a Python script") {
 		t.Fatalf("signed-in touch: %s", page)
 	}

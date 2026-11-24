@@ -2,7 +2,7 @@
 
 ## What it is
 
-Every questionnaire in Steady, built in or added by a psychologist, is a written definition that the server checks, presents and scores in the same way. Four come built in: PHQ-9, GAD-7, PCL-5 and WHO-5 (each has its own topic). Psychologists can add more by writing one in the app, uploading a file, or importing a FHIR Questionnaire or an instrument from the open ReproSchema library.
+Every questionnaire in Steady, built in or added by a clinician, is a written definition that the server checks, presents and scores in the same way. Four come built in: PHQ-9, GAD-7, PCL-5 and WHO-5 (each has its own topic). Clinicians can add more by writing one in the app, uploading a file, or importing a FHIR Questionnaire or an instrument from the open ReproSchema library.
 
 ## How it came about
 
@@ -42,8 +42,8 @@ Each instrument has a licence status: **cleared**, **review**, **blocked** or **
 
 - PHQ-9 and GAD-7 (Pfizer, free to use) and PCL-5 (public domain) ship cleared.
 - WHO-5 ships as review. Its licence (CC BY-NC-SA 3.0 IGO) is non-commercial, so each practice confirms that it covers its own use before sending it.
-- An instrument written in Steady is custom: the practice's own. So is an uploaded Steady file that the psychologist marks as their own work.
-- Other uploads and all imports start at review. A psychologist confirms the practice may use the instrument by ticking a confirmation, and Steady records who and when.
+- An instrument written in Steady is custom: the practice's own. So is an uploaded Steady file that the clinician marks as their own work.
+- Other uploads and all imports start at review. A clinician confirms the practice may use the instrument by ticking a confirmation, and Steady records who and when.
 - Blocked instruments, marked copyright protected in the ReproSchema library, can't be imported or cleared.
 
 ### Importing
@@ -54,7 +54,7 @@ Each instrument has a licence status: **cleared**, **review**, **blocked** or **
 
 ### Sending and repeats
 
-You send an instrument once, daily or weekly, with an optional note to the patient (up to 280 characters). It is available at once, and the patient is told "From your psychologist". When the patient completes a repeating one, the next becomes available at the start of their next local day (daily), or seven days on (weekly), counted from when they completed it, not from when you first sent it. At 07:00 South African time, patients with something newly available are told "Ready for today". Patients can't start a questionnaire themselves, and stopping a patient's access cancels everything waiting.
+You send an instrument once, daily or weekly, with an optional note to the patient (up to 280 characters). It is available at once, and the patient is told "From your clinician". When the patient completes a repeating one, the next becomes available at the start of their next local day (daily), or seven days on (weekly), counted from when they completed it, not from when you first sent it. At 07:00 South African time, patients with something newly available are told "Ready for today". Patients can't start a questionnaire themselves, and stopping a patient's access cancels everything waiting.
 
 ## Limits
 

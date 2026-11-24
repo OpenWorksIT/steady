@@ -77,7 +77,7 @@ every update) and from backups kept on the server (keep those elsewhere).
 
 | Server | Patients per psychiatrist list | Patients per practice | Notes |
 |---|---|---|---|
-| KLX1 (1 core, 2 GB, 25 GB) | about 2 000 (list 1.4 s) | 20 000 (measured) | A psychology practice, or several psychiatrists |
+| KLX1 (1 core, 2 GB, 25 GB) | about 2 000 (list 1.4 s) | 20 000 (measured) | A small practice, or several psychiatrists |
 | KLX2 (2 cores, 4 GB, 60 GB) | up to about 2 000 per psychiatrist | 20 000 or more | Several psychiatrists working at once; heavy exports don't hold others up |
 
 Beyond about 2 000 active patients per psychiatrist, the list needs search-first or paging (a

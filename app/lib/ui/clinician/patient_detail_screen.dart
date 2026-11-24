@@ -27,7 +27,7 @@ class _Detail {
 class PatientDetailScreen extends StatefulWidget {
   final String patientId, name;
 
-  /// A colleague's patient shared with this psychologist: read only, [owner] is the colleague.
+  /// A colleague's patient shared with this clinician: read only, [owner] is the colleague.
   final bool shared;
   final String owner;
   const PatientDetailScreen({required this.patientId, required this.name, this.shared = false, this.owner = '', super.key});
@@ -170,7 +170,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
                   'things, rename or stop access. $_name can see who it\'s shared with, and every view is logged.',
                   style: TextStyle(color: c.sc.ink2)),
               const SizedBox(height: 8),
-              if (list.isEmpty) Text('There are no other psychologists at the practice yet.', style: TextStyle(color: c.sc.ink2)),
+              if (list.isEmpty) Text('There are no other clinicians at the practice yet.', style: TextStyle(color: c.sc.ink2)),
               for (final col in list)
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -307,6 +307,24 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> with SingleTi
               Text('Calls themselves ${d.summary.selfName} in the app', style: TextStyle(color: context.sc.ink2)),
               const SizedBox(height: 10),
             ],
+            // whether they agreed to be contacted about what they share in Steady
+            Row(children: [
+              Icon(d.summary.contact == 'no' ? Icons.speaker_notes_off_outlined : Icons.forum_outlined,
+                  size: 18, color: d.summary.contact == 'no' ? context.sc.warn : context.sc.ink3),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  switch (d.summary.contact) {
+                    'yes' => 'Agreed to be contacted about what they share in Steady${d.summary.contactAt == null ? '' : ' (${relTime(d.summary.contactAt)})'}',
+                    'no' => 'Would rather not be contacted about what they share in Steady${d.summary.contactAt == null ? '' : ' (${relTime(d.summary.contactAt)})'}. '
+                        'You can still contact them about their care as usual.',
+                    _ => 'Not asked yet whether they may be contacted about what they share: Steady asks next time they open it.',
+                  },
+                  style: context.tt.bodySmall?.copyWith(color: context.sc.ink2),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 10),
             if (d.summary.stable) ...[
               Card(
                 child: ListTile(

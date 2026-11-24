@@ -457,7 +457,7 @@ class RadrFlagChip extends StatelessWidget {
 
 /* ---------------- the order of the list ---------------- */
 
-/// How the psychologist's list is ordered (core.js attention on the server).
+/// How the clinician's list is ordered (core.js attention on the server).
 class ListOrderNote extends StatelessWidget {
   const ListOrderNote({super.key});
   @override

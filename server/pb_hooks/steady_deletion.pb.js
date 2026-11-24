@@ -1,5 +1,5 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Steady 1.0.2 - deleting a patient's account. The patient asks in the app; their psychologist
+// Steady 1.0.2 - deleting a patient's account. The patient asks in the app; their clinician
 // (or the master clinician) keeps what the law requires in the practice's own records and then
 // deletes the account here. See lib/deletion.js.
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -40,7 +40,7 @@ routerAdd("POST", "/api/steady/me/delete-request", (e) => {
   return e.json(200, { requestedAt: at, days: D.DAYS, emailed: emailed });
 }, $apis.requireAuth());
 
-// The practice deletes it: the patient's own psychologist or the master clinician, after
+// The practice deletes it: the patient's own clinician or the master clinician, after
 // confirming it's them. Only once the patient has asked, or after the account was stopped.
 routerAdd("POST", "/api/steady/patients/{id}/delete-account", (e) => {
   const s = require(`${__hooks}/lib/server.js`);

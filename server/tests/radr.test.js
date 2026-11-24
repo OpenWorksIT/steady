@@ -170,3 +170,60 @@ test("demo data: PHQ-9 answers add up and stay in range; item 9 only in the disr
     assert.equal(item9, p.key === "disruption", p.key);
   }
 });
+
+// Someone who joined at a bad time: 6 weeks of short, late, restless sleep and few steps, then
+// better from day 42 on. Small day-to-day wobble so the spreads are realistic.
+function badThenBetter() {
+  const byDay = {}, ck = {};
+  const start = Date.UTC(2026, 7, 1);
+  for (let i = 0; i < 100; i++) {
+    const day = new Date(start + i * 86400000).toISOString().slice(0, 10);
+    const better = i >= 42;
+    const w = Math.sin(i * 1.7) * 0.5;
+    const sleep = better ? 450 + 15 * w : 270 + 20 * w;
+    const onset = better ? 1380 + 10 * w : 1560 + 40 * w; // minutes after the previous midnight
+    byDay[day] = { sleep_min: sleep, sleep_onset: onset, sleep_wake: onset + sleep, steps: better ? 8000 + 600 * w : 2500 + 300 * w, rhr: better ? 62 + w : 74 + w };
+    ck[day] = better ? { mood: 4, anxiety: 2, sleep: 4, energy: 4 } : { mood: 2, anxiety: 4, sleep: 2, energy: 2 };
+  }
+  return { byDay, ck, change: new Date(start + 42 * 86400000).toISOString().slice(0, 10), last: new Date(start + 99 * 86400000).toISOString().slice(0, 10) };
+}
+
+test("RADR baseline started again: better days stop counting as away from usual, and earlier days keep their rating", () => {
+  const { byDay, ck, change, last } = badThenBetter();
+  const first = Object.keys(byDay).sort()[0];
+  const plain = R.rate(byDay, ck, first, last);
+  // without it: the better sleep is far from their (bad) usual for weeks
+  const after = (res, from, to) => res.days.filter((d) => d.day >= from && d.day <= to && d.watch !== null);
+  assert.ok(after(plain, R.addDays(change, 7), R.addDays(change, 25)).some((d) => d.domains.sleep >= 1.5 && d.convergent >= 1));
+
+  const restarted = R.rate(byDay, ck, first, last, { baselineFrom: change });
+  assert.equal(restarted.baselineFrom, change);
+  assert.equal(restarted.ratedAgainFrom, R.addDays(change, 21));
+  // days before keep their rating exactly
+  const before = (res) => res.days.filter((d) => d.day < change).map((d) => [d.day, d.watch, d.self, d.convergent]);
+  assert.deepEqual(before(restarted), before(plain));
+  assert.ok(restarted.days.filter((d) => d.day < change).every((d) => !d.restarted));
+  // from the change: not rated until there are 14 days of the new baseline
+  const gap = restarted.days.filter((d) => d.day >= change && d.day < R.addDays(change, 21));
+  assert.ok(gap.length === 21 && gap.every((d) => d.watch === null && d.restarted));
+  // then compared only with the better days: usual again
+  const later = after(restarted, R.addDays(change, 23), last);
+  assert.ok(later.length >= 30);
+  assert.ok(later.every((d) => d.convergent === 0 && d.watch < 1), JSON.stringify(later.slice(0, 3)));
+  assert.ok(later.every((d) => d.self === null || d.self < 1));
+
+  // explained the same way, with the baseline from the change on
+  const ex = R.explain(byDay, ck, R.addDays(change, 30), { baselineFrom: change });
+  assert.equal(ex.baselineFrom, change);
+  assert.equal(ex.watch, later.find((d) => d.day === R.addDays(change, 30)).watch);
+  assert.ok(ex.measures.sleep_min.baseline.from >= change);
+  assert.ok(ex.measures.sleep_min.baseline.values.every((v) => v.day >= change));
+  const waiting = R.explain(byDay, ck, R.addDays(change, 5), { baselineFrom: change });
+  assert.equal(waiting.rated, false);
+  assert.match(waiting.words, /baseline was started again on/);
+  assert.match(waiting.measures.steps.words, /baseline was started again on/);
+  // a day before the change is explained as before
+  assert.equal(R.explain(byDay, ck, R.addDays(change, -1), { baselineFrom: change }).baselineFrom, null);
+  // nonsense is ignored
+  assert.deepEqual(R.rate(byDay, ck, first, last, { baselineFrom: "yesterday" }).days.map((d) => d.watch), plain.days.map((d) => d.watch));
+});

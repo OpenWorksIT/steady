@@ -42,7 +42,7 @@ python3 smoke.py https://steady-test.<your domain>   # through the tunnel
 
 1. Download `steady-test.apk` from the repo's **Releases > Test build** (or `gh release download test-build -R OpenWorksIT/steady -p steady-test.apk`) and copy it to the phone. Allow installing from that source when asked.
 2. Notifications come through Google's Firebase Cloud Messaging, so the phone needs Google Play services (every phone from the Play Store has them). They reach this PC's test stack only once the Firebase service-account key is in `deploy/test/secrets/fcm.json` (docs/DEPLOY.md, step 3a); without it everything else works and new items show when the app is opened.
-3. Open Steady and read the privacy notice. A new patient taps **Scan invite QR code** and scans the code from the psychologist's Invite screen: Steady connects to the server and fills in the code. Otherwise enter the address and sign in. Allow notifications. Under Settings in the app, Notifications should say On.
+3. Open Steady and read the privacy notice. A new patient taps **Scan invite QR code** and scans the code from the clinician's Invite screen: Steady connects to the server and fills in the code. Otherwise enter the address and sign in. Allow notifications. Under Settings in the app, Notifications should say On.
 4. Watch data (as a patient): make sure Samsung Health shares with Health Connect (Samsung Health > Settings > Health Connect), then tap **Connect your watch** on the Steady home screen and allow all the data types. The clinician sees it on the patient's Overview and in the Wearable tab.
 
 ## 4. iPhone (Friday)
@@ -52,4 +52,4 @@ Install Steady from the [App Store](https://apps.apple.com/za/app/steady-check-i
 ## Trying both directions
 
 - Clinician on one phone, patient on the other: the clinician taps **Invite**, the patient taps **I have an invite code** on the sign-in screen.
-- Swap roles by signing out (Settings) and creating a second clinician in the app (master clinician: Practice > Add psychologist) or with `../accounts.sh --test add-clinician "Name" email`.
+- Swap roles by signing out (Settings) and creating a second clinician in the app (master clinician: Practice > Add clinician) or with `../accounts.sh --test add-clinician "Name" email`.

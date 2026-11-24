@@ -44,7 +44,7 @@ class _ScanScreenState extends State<_ScanScreen> {
             child: const Padding(
               padding: EdgeInsets.all(12),
               child: Text(
-                'Point the camera at the QR code from your psychologist.',
+                'Point the camera at the QR code from your clinician.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white, fontSize: 16),
               ),

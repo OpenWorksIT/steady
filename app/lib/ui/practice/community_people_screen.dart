@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Settings > Practice > Community (the master psychologist): which of the practice's staff are in
+// Settings > Practice > Community (the master clinician): which of the practice's staff are in
 // Steady Community. Someone switched on can open the Community tab once OpenWorks IT has approved
 // them in its fleet view; someone switched off is out straight away (the bridge's list follows).
 // Practice administrators see the Steady manual only, there.
@@ -61,7 +61,7 @@ class _CommunityPeopleScreenState extends State<CommunityPeopleScreen> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(p.name),
-                subtitle: Text('${p.role == 'admin' ? 'Administrator' : 'Psychologist'} · ${p.email}'),
+                subtitle: Text('${p.role == 'admin' ? 'Administrator' : 'Clinician'} · ${p.email}'),
                 value: _changed[p.id] ?? p.community,
                 onChanged: _busy.contains(p.id) ? null : (v) => _set(p, v),
               ),

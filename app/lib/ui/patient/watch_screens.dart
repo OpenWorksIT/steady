@@ -74,7 +74,7 @@ class _WatchCardState extends State<WatchCard> {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('Connect your watch', style: context.tt.titleMedium),
-                  Text('Optional. Share heart rate, sleep, steps and blood oxygen with your psychologist.',
+                  Text('Optional. Share heart rate, sleep, steps and blood oxygen with your clinician.',
                       style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
                 ]),
               ),
@@ -111,7 +111,7 @@ class _WatchCardState extends State<WatchCard> {
 }
 
 /// The patient's own watch data (1.2.4): the daily summaries they shared, the same charts their
-/// psychologist sees. From the watch card on the home screen and from Settings.
+/// clinician sees. From the watch card on the home screen and from Settings.
 class MyWatchDataScreen extends StatelessWidget {
   const MyWatchDataScreen({super.key});
 
@@ -123,7 +123,7 @@ class MyWatchDataScreen extends StatelessWidget {
       body: SafeArea(
         child: WearableTab.own(
           header: Text(
-            'The daily summaries you shared from your watch: heart rate, sleep, steps and blood oxygen. Your psychologist '
+            'The daily summaries you shared from your watch: heart rate, sleep, steps and blood oxygen. Your clinician '
             'sees the same, to follow how you are doing between sessions. Steady reads them from $storeName and doesn\'t '
             'measure anything itself. The shaded band is your own usual range.',
             style: TextStyle(color: context.sc.ink2),
@@ -157,7 +157,7 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
       return;
     }
     state.changed();
-    messenger.showSnackBar(const SnackBar(content: Text('Watch connected. Your psychologist can now see your watch data.')));
+    messenger.showSnackBar(const SnackBar(content: Text('Watch connected. Your clinician can now see your watch data.')));
     nav.pop(true);
   }
 
@@ -181,7 +181,7 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
           children: [
             Text(
               'Steady doesn\'t measure anything itself. It reads what your watch has already saved in $storeName and shares '
-              'a daily summary with your psychologist. This is optional and you can stop at any time.',
+              'a daily summary with your clinician. This is optional and you can stop at any time.',
               style: context.tt.bodyLarge,
             ),
             const SizedBox(height: 16),
@@ -197,17 +197,17 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
             bullet('Only daily totals and averages leave your phone, not every reading.'),
             bullet('You can see what you shared too: tap the watch card on your home screen.'),
             bullet('Up to the last 30 days are shared when you connect, then new days as you use Steady.'),
-            bullet('Your psychologist at $practice can see it, and a colleague there if your psychologist shares your record with them '
+            bullet('Your clinician at $practice can see it, and a colleague there if your clinician shares your record with them '
                 '(for example while they are away). It helps them understand how you are doing between sessions, and may be used, '
                 'without your name, to improve care.'),
-            bullet('Nobody watches this data around the clock and it does not raise alarms. It can help your psychologist decide whose '
+            bullet('Nobody watches this data around the clock and it does not raise alarms. It can help your clinician decide whose '
                 'information to look at first. If you need help, call one of the numbers at the bottom of this page.'),
             bullet('To stop, open Settings in Steady and tap "Stop sharing watch data". You can also remove Steady\'s access in $storeName.'),
             const SizedBox(height: 10),
             Text('Your clinical record', style: context.tt.titleMedium),
             const SizedBox(height: 6),
             bullet('Watch data you share may be added to your clinical record at $practice.'),
-            bullet('Once it is in your clinical record, your psychologist decides how to use it in your care.'),
+            bullet('Once it is in your clinical record, your clinician decides how to use it in your care.'),
             bullet('If you stop sharing, nothing new is added. What you already shared stays in your record.'),
             const SizedBox(height: 12),
             Card(
@@ -215,7 +215,7 @@ class _ConnectWatchScreenState extends State<ConnectWatchScreen> {
                 value: _agree,
                 onChanged: (v) => setState(() => _agree = v ?? false),
                 controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('I agree to share my watch data with my psychologist as described above'),
+                title: const Text('I agree to share my watch data with my clinician as described above'),
               ),
             ),
             if (_error != null) ...[

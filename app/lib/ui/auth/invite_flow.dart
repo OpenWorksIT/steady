@@ -18,14 +18,14 @@ Future<void> scanAndJoin(BuildContext context) async {
   if (raw == null || !context.mounted) return;
   final inv = parseInviteLink(raw);
   if (inv == null) {
-    showSnack(context, "That QR code isn't a Steady invite. Ask your psychologist to show it again.");
+    showSnack(context, "That QR code isn't a Steady invite. Ask your clinician to show it again.");
     return;
   }
   final api = state.api;
   final current = normaliseServerUrl(api.serverUrl);
   if (inv.server != current) {
     if (api.serverLocked) {
-      showSnack(context, 'This invite is for a different practice server. Ask your psychologist for a new code.');
+      showSnack(context, 'This invite is for a different practice server. Ask your clinician for a new code.');
       return;
     }
     final host = Uri.parse(inv.server).host;
@@ -33,7 +33,7 @@ Future<void> scanAndJoin(BuildContext context) async {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Connect to your practice?'),
-        content: Text('This invite connects Steady to $host. Only continue if your psychologist gave you this code.'),
+        content: Text('This invite connects Steady to $host. Only continue if your clinician gave you this code.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Connect')),

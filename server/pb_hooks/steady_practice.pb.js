@@ -396,8 +396,8 @@ routerAdd("GET", "/api/steady/me/care-team", (e) => {
  * ===================================================================== */
 
 // Who may reset whom (the person gets a temporary password and must choose a new one):
-//   patient           their psychologist, the master clinician, the practice admin
-//   psychologist      the master clinician, the practice admin, OpenWorks support
+//   patient           their clinician, the master clinician, the practice admin
+//   clinician      the master clinician, the practice admin, OpenWorks support
 //   practice admin    the master clinician, OpenWorks support
 //   master clinician  OpenWorks support
 //   OpenWorks support only on the server (deploy/accounts.sh)
@@ -424,12 +424,12 @@ routerAdd("POST", "/api/steady/people/{id}/reset-password", (e) => {
   if (target !== "patient" && !D.required() && (b.twoStep === true || !s.twoStepOn(u))) {
     throw s.badRequest("This server can't email device codes yet, so this reset would let whoever does it sign in as them. Set up email first (docs/DEPLOY.md, 5a), or reset on the server with accounts.sh.");
   }
-  // A patient's reset by anyone but their own psychologist is finished only with a code emailed to
+  // A patient's reset by anyone but their own clinician is finished only with a code emailed to
   // the patient: whoever reset it then can't choose the new password and read the patient's data.
   const M = require(`${__hooks}/lib/mail.js`);
   const byOther = target === "patient" && u.getString("clinician") !== e.auth.id;
   if (byOther && !M.ready()) {
-    throw s.badRequest("This server can't email patients a code yet, so only their own psychologist can reset their password.");
+    throw s.badRequest("This server can't email patients a code yet, so only their own clinician can reset their password.");
   }
   D.requireConfirmed(e, "a password reset");
   let emailed = "";
@@ -511,7 +511,7 @@ routerAdd("GET", "/api/steady/admin/people", (e) => {
   return e.json(200, out);
 }, $apis.requireAuth());
 
-// Active psychologists, for sharing a patient or choosing whom an invite is for.
+// Active clinicians, for sharing a patient or choosing whom an invite is for.
 routerAdd("GET", "/api/steady/clinicians", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireRole(e, ["clinician", "admin"]);
@@ -537,7 +537,7 @@ routerAdd("POST", "/api/steady/admin/invites", (e) => {
   return e.json(200, inv);
 }, $apis.requireAuth());
 
-// Move a patient to another psychologist (for example when someone leaves the practice).
+// Move a patient to another clinician (for example when someone leaves the practice).
 routerAdd("POST", "/api/steady/admin/patients/{id}/reassign", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireManager(e);
@@ -546,14 +546,14 @@ routerAdd("POST", "/api/steady/admin/patients/{id}/reassign", (e) => {
   const c = s.activeClinician($app, String(s.body(e).clinician || ""));
   const old = p.getString("clinician");
   if (old === c.id) throw s.badRequest("They're already with " + c.getString("name") + ".");
-  // a move opens the patient's whole history to the new psychologist: nobody moves a patient to
-  // themselves while the patient's psychologist is still working here
+  // a move opens the patient's whole history to the new clinician: nobody moves a patient to
+  // themselves while the patient's clinician is still working here
   if (c.id === e.auth.id) {
     const cur = old ? s.findUser($app, old) : null;
-    if (cur && cur.getBool("active")) throw new ForbiddenError("You can't move a patient to yourself while their psychologist is active. Ask another manager, or stop their psychologist's account first.");
+    if (cur && cur.getBool("active")) throw new ForbiddenError("You can't move a patient to yourself while their clinician is active. Ask another manager, or stop their clinician's account first.");
   }
   p.set("clinician", c.id);
-  // the old psychologist's sharing decisions don't carry over
+  // the old clinician's sharing decisions don't carry over
   p.set("sharedWith", []);
   $app.save(p);
   $app.findRecordsByFilter("assignments", "patient = {:p} && status = 'pending'", "", 1000, 0, { p: p.id })
@@ -565,7 +565,7 @@ routerAdd("POST", "/api/steady/admin/patients/{id}/reassign", (e) => {
   return e.json(200, { id: p.id, clinician: { id: c.id, name: c.getString("name") } });
 }, $apis.requireAuth());
 
-// Stop or restore an account. Patients: their psychologist, the master clinician or the
+// Stop or restore an account. Patients: their clinician, the master clinician or the
 // practice admin. Staff: easy to lock down, hard to restore. Stopping a staff account (signed out
 // everywhere at once) is open to the master clinician, the practice admin and OpenWorks support;
 // restoring one only to OpenWorks support. OpenWorks accounts are managed on the server.
@@ -707,7 +707,7 @@ routerAdd("POST", "/api/steady/patients/{id}/heidi-export", (e) => {
   return e.json(200, mark);
 }, $apis.requireAuth());
 
-// All of the psychologist's own patients, stopped ones included. The last 12 months unless
+// All of the clinician's own patients, stopped ones included. The last 12 months unless
 // asked for a longer period: ten years of everyone is too much to build on a phone.
 routerAdd("GET", "/api/steady/export", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
@@ -802,7 +802,7 @@ routerAdd("POST", "/api/steady/ops/accounts", (e) => {
     u.set("name", s.core.str(b.name, 80));
   }
   if (typeof b.master === "boolean") {
-    if (b.master && u.getString("role") !== "clinician") throw s.badRequest("Only a psychologist can be the master clinician.");
+    if (b.master && u.getString("role") !== "clinician") throw s.badRequest("Only a clinician can be the master clinician.");
     u.set("master", b.master);
   }
   if (typeof b.serverAdmin === "boolean") u.set("serverAdmin", b.serverAdmin);

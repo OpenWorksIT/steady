@@ -1,6 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Steady 1.0 - the five kinds of account and what each sees beyond their own work:
-//   OpenWorks support : psychologists and the practice's other staff (names, status, app
+//   OpenWorks support : clinicians and the practice's other staff (names, status, app
 //                       version) and the system; no patients at all.
 //   practice admin    : every patient's connection and agreement status (no data), the audit
 //                       report, the server's health, feedback as tickets.
@@ -43,7 +43,7 @@ routerAdd("POST", "/api/steady/me/app", (e) => {
 
 /* ---------- reminding a patient to reconnect their watch ---------- */
 
-// Their psychologist, the master clinician or the practice admin. At most once in 12 hours.
+// Their clinician, the master clinician or the practice admin. At most once in 12 hours.
 routerAdd("POST", "/api/steady/patients/{id}/remind-watch", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireRole(e, ["clinician", "admin"]);

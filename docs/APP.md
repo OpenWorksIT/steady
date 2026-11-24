@@ -63,9 +63,9 @@ For a private practice app, Apple's **unlisted app distribution** keeps it off A
 
 Google Play's health policy (November 2026 review):
 - **Not a medical device.** The description has to say that Steady is not a medical device and doesn't diagnose, treat, cure or prevent any medical condition. The app says it too, on the sign-in screen and in Settings (`kNotMedicalDevice`, 1.2.3).
-- **Health Connect, one declaration per data type.** For heart rate, steps, sleep and blood oxygen, say what it's for, where it shows in the app and how it helps the patient, framed as medical care (direct care with their own psychologist): the patient sees each in Your watch data (1.2.4), and the psychologist as daily charts in the patient's record, and sleep, steps and resting heart rate in RADR. Ask only for the four types the app reads (`app/scripts/patch_android.py`). The second review (16 Nov 2026) turned down declarations that named only the psychologist's side.
+- **Health Connect, one declaration per data type.** For heart rate, steps, sleep and blood oxygen, say what it's for, where it shows in the app and how it helps the patient, framed as medical care (direct care with their own clinician): the patient sees each in Your watch data (1.2.4), and the clinician as daily charts in the patient's record, and sleep, steps and resting heart rate in RADR. Ask only for the four types the app reads (`app/scripts/patch_android.py`). The second review (16 Nov 2026) turned down declarations that named only the clinician's side.
 - **The person who shares it sees it.** Since 1.2.4 the patient sees the watch data they shared (`MyWatchDataScreen`, from the watch card and Settings), and Health Connect's "why does Steady need this" opens `ui/health_data_use.dart` (each data type: what, where, why; then the privacy notice) instead of the sign-in screen. Keep that page, the consent screen and the declarations saying the same.
-- **Reviewers see where it's used.** Give reviewers a psychologist's login with fictional patients as well as a patient's, both on the test server, never a practice's.
+- **Reviewers see where it's used.** Give reviewers a clinician's login with fictional patients as well as a patient's, both on the test server, never a practice's.
 
 ## Android settings
 
@@ -147,18 +147,18 @@ so do a password change, removing a device, a reset, stopping or locking the acc
 A patient without signal (or while the practice's server restarts) can still use the phone app:
 
 - **The home screen and the calm start** show the copy the phone kept the last time it reached
-  the practice: what the psychologist sent, the week's moods (no notes) and the exercises, with a
+  the practice: what the clinician sent, the week's moods (no notes) and the exercises, with a
   card saying Steady can't reach the practice and how old the copy is.
 - **Check-ins, questionnaires and exercises** are kept on the phone when they can't be sent
   (`app/lib/services/outbox.dart`). The patient is told "Saved on this phone. Steady sends it to
-  your psychologist as soon as it can reach the practice." A card on the home screen counts what's
+  your clinician as soon as it can reach the practice." A card on the home screen counts what's
   waiting and has Send now.
 - **They're sent**, oldest first, when the home screen opens, when the app comes back to the
   front, and every two minutes while it's open. Each carries the phone's own id for it, so one sent
   twice (the reply was lost) is stored once, and how long it waited, so the practice files it at
   the time it was given (`answeredAt` on check-ins, `completedAt` on activities). The
-  psychologist's notification says so ("answered 4 h before it arrived").
-- **The server can still say no**: a questionnaire the psychologist withdrew meanwhile, an account
+  clinician's notification says so ("answered 4 h before it arrived").
+- **The server can still say no**: a questionnaire the clinician withdrew meanwhile, an account
   that was stopped. Those are dropped, and the home screen says which one and why. A wait of more
   than 30 days isn't filed. An expired session keeps everything until the patient signs in again.
 - **Kept safe**: secure storage, for that account only, at most 60 answers. Signing out deletes
@@ -279,7 +279,7 @@ Patients can optionally share a daily summary from their watch. Steady reads it 
 - **iPhone**: needs the native app (Apple Developer account). Add the HealthKit capability in Xcode and these to `ios/Runner/Info.plist`:
   ```xml
   <key>NSHealthShareUsageDescription</key>
-  <string>Steady shares a daily summary of your watch data with your psychologist, only if you choose to connect it.</string>
+  <string>Steady shares a daily summary of your watch data with your clinician, only if you choose to connect it.</string>
   ```
   The `health` plugin needs iOS 15 or later.
 

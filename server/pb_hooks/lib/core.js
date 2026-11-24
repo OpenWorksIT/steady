@@ -362,7 +362,7 @@ function dailySeries(checkins, key, nowMs, days, tzOffsetMinutes) {
 function reviewFlags(checkins, assignments, nowMs) {
   var out = [];
   var cs = checkins.slice().sort(function (a, b) { return b.ts - a.ts; });
-  // each flag has a key (stable, so a psychologist can mark it as reviewed) and the time of
+  // each flag has a key (stable, so a clinician can mark it as reviewed) and the time of
   // what raised it (for ordering the patient list)
   assignments.forEach(function (a) {
     if (a.status !== "done" || !a.score || !a.completedAt) return;
@@ -393,7 +393,7 @@ function reviewFlags(checkins, assignments, nowMs) {
 }
 
 /**
- * Where a patient goes in the psychologist's list, and why, in plain words for the app. An
+ * Where a patient goes in the clinician's list, and why, in plain words for the app. An
  * ordering of data, not alerts. Highest first:
  *   4 to 6  an answer not yet marked as reviewed (a questionnaire's flag or band, a run of low
  *           check-ins), by its severity
