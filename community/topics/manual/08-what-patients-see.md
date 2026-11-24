@@ -26,7 +26,7 @@ Patients see a slow, calm version of Steady: no dashboards, no scores. Crisis nu
 
    ![The daily check-in](images/87-patient-check-in.webp)
 
-3. Anything you've sent, one at a time: "Your psychologist sent you a questionnaire" (or an exercise), with your note. They tap **Begin**, or **Later**.
+3. Anything you've sent, one at a time: "Your clinician sent you a questionnaire" (or an exercise), with your note. They tap **Begin**, or **Later**.
 
    ![Something you sent](images/88-patient-sent-item.webp)
 
@@ -34,13 +34,13 @@ Patients see a slow, calm version of Steady: no dashboards, no scores. Crisis nu
 
 ## The home screen
 
-The patient's home shows whether they've checked in today (**Check in again** is always there), **From your psychologist** (what's waiting), **Your week** (mood over the last seven days, and **See your check-ins**), and **Whenever you need it**: exercises they can do any time. On a phone, they can also connect a watch here (optional).
+The patient's home shows whether they've checked in today (**Check in again** is always there), **From your clinician** (what's waiting), **Your week** (mood over the last seven days, and **See your check-ins**), and **Whenever you need it**: exercises they can do any time. On a phone, they can also connect a watch here (optional).
 
 ![The patient's home screen](images/89-patient-home.webp)
 
 ## A questionnaire
 
-They answer each question and tap **Send answers**. They see "Your answers have been sent to your psychologist." They never see a score, a band or a flag.
+They answer each question and tap **Send answers**. They see "Your answers have been sent to your clinician." They never see a score, a band or a flag.
 
 ![A questionnaire](images/90-patient-questionnaire.webp)
 
@@ -62,7 +62,7 @@ Breathing exercises guide them round by round. They can tap **Finish early**. Yo
 
 The gear on the home screen opens **Settings**:
 
-- **Who sees what you send**: their psychologist, and anyone you've shared them with.
+- **Who sees what you send**: their clinician, and anyone you've shared them with.
 - **Change password**, **Change email** (with a code sent to the new address), and **Two-step sign-in**, which is optional for patients.
 - **Lock Steady** (phone app only): asks for the phone's screen lock when they open Steady and after two minutes away. It's off unless they turn it on.
 - **Stop sharing watch data**, if they've connected a watch.
@@ -75,14 +75,14 @@ The gear on the home screen opens **Settings**:
 ## Deleting their account
 
 1. In **Settings**, the patient taps **Delete my account**.
-2. Steady explains what happens and why the practice keeps clinical records (South African law requires it), and suggests talking to their psychologist first if things are hard.
+2. Steady explains what happens and why the practice keeps clinical records (South African law requires it), and suggests talking to their clinician first if things are hard.
 3. They type **Your password** and tap **Ask to delete my account**.
 
    ![Delete my account](images/95-patient-delete.webp)
 
    ![The request is received](images/96-patient-delete-sent.webp)
 
-The request goes to their psychologist (see [When a patient asks to delete their account](#when-a-patient-asks-to-delete-their-account)). If they change their mind, they tell their psychologist.
+The request goes to their clinician (see [When a patient asks to delete their account](#when-a-patient-asks-to-delete-their-account)). If they change their mind, they tell their clinician.
 
 ## When the consent statement changes
 

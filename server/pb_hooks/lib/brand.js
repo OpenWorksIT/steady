@@ -83,7 +83,7 @@ function consent() {
 
 /** The practice's contact details for Steady's own statement (see consent()). Never throws. */
 function contactLine() {
-  var fallback = "Your practice. Its Information Officer is its master psychologist unless the practice names someone else; your psychologist can give you their details.";
+  var fallback = "Your practice. Its Information Officer is its master clinician unless the practice names someone else; your clinician can give you their details.";
   try {
     var O = require(__hooks + "/lib/operator.js");
     var last = O.signatures($app, 1)[0];

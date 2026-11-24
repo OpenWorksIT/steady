@@ -1,7 +1,7 @@
 /*
  * Steady - loads a patient's watch data, check-ins and questionnaire totals and works out RADR
  * (lib/radr.js) for a range of local days. Used by the RADR tab, its explanations and reviews,
- * the order of the psychologist's list, and exports.
+ * the order of the clinician's list, and exports.
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
@@ -38,12 +38,25 @@ function load(app, p, from, to) {
 
 function excluded(p) { return exclusions(p).map(function (x) { return x.domain; }); }
 
+/** The baseline started again for this patient: { from, by, at, reason }, or null. */
+function baseline(p) {
+  var v = s.readJson(p, "radrBaseline");
+  return v && R.isDay(v.from) ? { from: v.from, by: String(v.by || ""), at: String(v.at || ""), reason: String(v.reason || "") } : null;
+}
+
+/** What rate() and explain() need from the patient's settings. */
+function opts(p) {
+  var b = baseline(p);
+  return { exclude: excluded(p), baselineFrom: b ? b.from : null };
+}
+
 /** from, to: YYYY-MM-DD in the patient's local time. */
 function forPatient(app, p, from, to) {
   var tz = p.getInt("tzOffset") || 120;
   var d = load(app, p, from, to);
-  var out = R.rate(d.byDay, d.checkins, from, to, { exclude: excluded(p) });
+  var out = R.rate(d.byDay, d.checkins, from, to, opts(p));
   out.exclusions = exclusions(p);
+  out.baseline = baseline(p);
 
   // questionnaire totals in the period, for the chart
   var names = {};
@@ -97,7 +110,7 @@ function current(app, p) {
   for (var i = 0; i < LOOK.length; i++) {
     var from = R.addDays(to, -(LOOK[i] - 1));
     var d = load(app, p, from, to);
-    r = R.rate(d.byDay, d.checkins, from, to, { exclude: excluded(p) });
+    r = R.rate(d.byDay, d.checkins, from, to, opts(p));
     fl = R.flags(r.days);
     if (!fl.some(function (f) { return f.open; })) break;
   }
@@ -109,8 +122,9 @@ function current(app, p) {
 /** One day explained (lib/radr.js explain), with what is switched off for this patient. */
 function explain(app, p, day) {
   var d = load(app, p, day, day);
-  var out = R.explain(d.byDay, d.checkins, day, { exclude: excluded(p) });
+  var out = R.explain(d.byDay, d.checkins, day, opts(p));
   out.exclusions = exclusions(p);
+  out.baseline = baseline(p);
   out.demo = p.getBool("demo");
   return out;
 }
@@ -165,6 +179,7 @@ function compact(r) {
     version: r.version,
     method: r.method,
     exclusions: r.exclusions || [],
+    baseline: r.baseline || null,
     from: r.from,
     to: r.to,
     wearDays: r.wearDays,
@@ -183,6 +198,6 @@ function compact(r) {
 }
 
 module.exports = {
-  forPatient: forPatient, compact: compact, exclusions: exclusions, refreshLatest: refreshLatest,
+  forPatient: forPatient, compact: compact, exclusions: exclusions, baseline: baseline, refreshLatest: refreshLatest,
   current: current, explain: explain, reviews: reviews, markReviewed: markReviewed
 };

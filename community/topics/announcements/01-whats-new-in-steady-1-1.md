@@ -6,7 +6,7 @@ Steady 1.1 is the first large update since VR Clinical Psychology's own server s
 
 The bar now has three tabs: **Patients**, **Alerts** and **Community**. The gear at the top opens **Settings** as a page of its own, and **Settings > Practice** holds what used to be tabs, each for whoever had it before:
 
-- **Library**: questionnaires, exercises and daily words (every psychologist)
+- **Library**: questionnaires, exercises and daily words (every clinician)
 - **People**: patients and staff, invites and access (the master clinician)
 - **Audit report**: who opened or changed what (the master clinician and the practice admin)
 - **Feedback tickets**: what the practice raised with the Feedback button, and where it stands

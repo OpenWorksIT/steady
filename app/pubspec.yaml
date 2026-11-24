@@ -1,8 +1,8 @@
 name: steady
-description: "Steady: between-session check-ins, questionnaires and exercises for a psychology practice."
+description: "Steady: between-session check-ins, questionnaires and exercises for mental healthcare practices."
 publish_to: "none"
 # Steady's version: the same as VERSION at the top of the repository (CI checks; docs/VERSIONS.md)
-version: 1.2.8+128
+version: 1.3.0+130
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -21,7 +21,7 @@ dependencies:
   local_auth: ^3.0.0
   # Reads watch data from Health Connect / Apple Health (MIT)
   health: ^13.3.2
-  # Invite QR codes: drawn for the psychologist (BSD-3), scanned by the patient with ZXing (MIT, no Google services)
+  # Invite QR codes: drawn for the clinician (BSD-3), scanned by the patient with ZXing (MIT, no Google services)
   qr_flutter: ^4.1.0
   flutter_zxing: ^3.1.1
   # Opens the app download in the browser (BSD-3)

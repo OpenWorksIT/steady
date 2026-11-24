@@ -1,4 +1,4 @@
-// Steady - between-session check-ins for a psychology practice.
+// Steady - between-session check-ins for mental healthcare practices.
 // Copyright (C) 2026 OpenWorks IT (Pty) Ltd
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
@@ -93,7 +93,9 @@ class RootGate extends StatelessWidget {
     if (state.isClinician) return const OperatorAgreementGate(child: ClinicianShell());
     if (state.isAdmin) return const AdminShell();
     if (state.isSupport) return const SupportShell();
-    if (state.isPatient) return state.needsConsentAgain ? const ConsentAgainScreen() : const PatientGate();
+    if (state.isPatient) {
+      return state.needsConsentAgain || state.needsContactAnswer ? const ConsentAgainScreen() : const PatientGate();
+    }
     return const SignInScreen(message: "This account can't use the app. Ask the practice to check its role.");
   }
 }

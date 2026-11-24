@@ -158,12 +158,12 @@ notes in OPERATOR-AGREEMENT.md).
 
 | Who | Can | Can't |
 |---|---|---|
-| Psychologist | Invite patients, see and send to their own patients, keep notes, mark flags as reviewed (RADR flags also for a patient shared with them), set a patient as stable or archived and switch RADR measures off for them, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records (PDF, Excel, AI note-taking) | See other psychologists' patients unless shared with them |
-| Master clinician | All of the above, plus create psychologist and practice admin accounts, reset their passwords, stop their accounts, invite patients for and move patients to any psychologist, see every patient's connection status, read the audit report, and install server updates from Settings | Restore a stopped staff account, clear someone's authenticator, or reset their own password (OpenWorks support does these) |
-| Practice admin | Patients' names and whether each is set up and connected (no data); invite a patient for a chosen psychologist, reset patients' and psychologists' passwords, stop accounts, move patients, remind a patient to reconnect their watch, read the audit report and server health; feedback as tickets | See check-ins, scores, notes or watch data; create psychologist accounts; restore accounts; install updates |
+| Clinician | Invite patients, see and send to their own patients, keep notes, mark flags as reviewed (RADR flags also for a patient shared with them), set a patient as stable or archived and switch RADR measures off for them, reset their own patients' passwords, share a patient (read only) with a colleague, export their own patients' records (PDF, Excel, AI note-taking) | See other clinicians' patients unless shared with them |
+| Master clinician | All of the above, plus create clinician and practice admin accounts, reset their passwords, stop their accounts, invite patients for and move patients to any clinician, see every patient's connection status, read the audit report, and install server updates from Settings | Restore a stopped staff account, clear someone's authenticator, or reset their own password (OpenWorks support does these) |
+| Practice admin | Patients' names and whether each is set up and connected (no data); invite a patient for a chosen clinician, reset patients' and clinicians' passwords, stop accounts, move patients, remind a patient to reconnect their watch, read the audit report and server health; feedback as tickets | See check-ins, scores, notes or watch data; create clinician accounts; restore accounts; install updates |
 | OpenWorks support | The practice's staff (names, status, app versions), the server and its updates, feedback in full; reset any staff password, including a full reset after a lost phone; restore stopped or locked accounts | See anything about patients, including their names |
 
-Every one of these actions is in the audit log, and the psychologist is told when someone else
+Every one of these actions is in the audit log, and the clinician is told when someone else
 resets their patient's password or moves a patient. Staff **must use two-step sign-in** (a 6-digit
 code from Aegis, 2FAS, Google or Microsoft Authenticator) unless `STEADY_REQUIRE_2FA=off`; until
 they set it up, their account can't see anything.
@@ -407,14 +407,14 @@ sign the operator agreement the first time they open Steady.
 
 **Updating** is `sudo ./update.sh` in `/opt/steady/deploy`, or from the app (below).
 
-**6. Updates from the app (optional).** Lets psychologists you trust check for and install
+**6. Updates from the app (optional).** Lets clinicians you trust check for and install
 updates from Settings > Server and updates, the way Shap does; the server also checks every night.
 
 ```bash
 sudo /opt/steady/deploy/ctl/install.sh
 ```
 
-The master clinician and OpenWorks support can use it straight away (the practice admin sees server health only); for another psychologist, `sudo ./accounts.sh set <email> server-admin on`. The app
+The master clinician and OpenWorks support can use it straight away (the practice admin sees server health only); for another clinician, `sudo ./accounts.sh set <email> server-admin on`. The app
 only leaves a request; `deploy/ctl/steady-ctl.sh` does the work as root (outside the app), saves a
 copy of the data to `/var/backups/steady/` first (the last 5 are kept, root only, encrypted for
 the backup key when `secrets/backup.age.pub` exists) and then runs `update.sh`.
@@ -434,4 +434,4 @@ these folders up (a server from before 1.0 is moved over by its next update).
 | No notifications on Android | `docker compose logs pusher`: "FCM off" means no `secrets/fcm.json` (step 3a); `fcm 403` or `401` a key without the Firebase Cloud Messaging API Admin role, or from another Firebase project than the app's. On the phone, Steady's Settings says why notifications are off: not allowed in the phone's settings, or a copy of the app built without Firebase (a fork or a local build). |
 | "Key creation is disabled" when making the Firebase key | An organisation policy (`iam.disableServiceAccountKeyCreation`, on by default for Google Cloud organisations made since 2024). An organisation admin allows it for the Firebase project only: IAM & Admin > Organisation policies > Disable service account key creation > Manage policy > Override, Off. |
 | "Can't reach the server" in the app | The app was built with the wrong `STEADY_SERVER`, or DNS/TLS isn't ready. |
-| Psychologist can't sign in | `active` must be ticked and `role` set to clinician. |
+| Clinician can't sign in | `active` must be ticked and `role` set to clinician. |

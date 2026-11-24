@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Settings > Server and updates, for the master clinician, administrators and psychologists marked serverAdmin. The server does the
+// Settings > Server and updates, for the master clinician, administrators and clinicians marked serverAdmin. The server does the
 // work (deploy/ctl/steady-ctl.sh, as root); this screen asks for it and shows how it went.
 import 'dart:async';
 

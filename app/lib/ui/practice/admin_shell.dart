@@ -25,7 +25,7 @@ class _AdminShellState extends State<AdminShell> {
   int _tab = 0;
   @override
   Widget build(BuildContext context) {
-    // the Steady community, when this practice's server is set up for it (as for psychologists)
+    // the Steady community, when this practice's server is set up for it (as for clinicians)
     final forum = AppScope.of(context).config.communityUrl;
     final community = forum.isNotEmpty && communityTabHere(forum);
     if (!community) return const PeopleScreen(home: true);

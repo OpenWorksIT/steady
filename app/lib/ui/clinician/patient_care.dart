@@ -13,7 +13,7 @@ import '../widgets.dart';
 
 /* ---------------- notes ---------------- */
 
-/// The Notes tab: newest first. [canWrite]: the patient's own psychologist (colleagues a
+/// The Notes tab: newest first. [canWrite]: the patient's own clinician (colleagues a
 /// patient is shared with can read).
 class NotesTab extends StatefulWidget {
   final String patientId;
@@ -144,7 +144,7 @@ Future<bool> reviewFlagFlow(BuildContext context, String patientId, Flag flag) a
   }
 }
 
-/// A flag chip that opens the review dialog (the patient's own psychologist), or shows who
+/// A flag chip that opens the review dialog (the patient's own clinician), or shows who
 /// reviewed it.
 class ReviewableFlag extends StatelessWidget {
   final Flag flag;
@@ -186,8 +186,13 @@ const radrDomainNames = {'sleep': 'Sleep', 'circadian': 'Body clock', 'activity'
 class _Settings {
   final String careStatus;
   final List<Map<String, dynamic>> exclusions;
-  _Settings(this.careStatus, this.exclusions);
+  /// the RADR baseline started again: {from, by, at, reason}, or empty
+  final Map<String, dynamic> baseline;
+  _Settings(this.careStatus, this.exclusions, this.baseline);
 }
+
+const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+String radrDayText(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
 
 /// Seeing them / stable / archived, and RADR measures switched off for this person.
 class PatientSettingsScreen extends StatefulWidget {
@@ -204,7 +209,76 @@ class _PatientSettingsScreenState extends State<PatientSettingsScreen> {
     final api = AppScope.api(context);
     final r = await Future.wait([api.patientSummary(widget.patientId), api.radr(widget.patientId, days: 14)]);
     final radr = r[1] as Map<String, dynamic>;
-    return _Settings((r[0] as PatientSummary).careStatus, asList(radr['exclusions']).map(asMap).toList());
+    return _Settings((r[0] as PatientSummary).careStatus, asList(radr['exclusions']).map(asMap).toList(), asMap(radr['baseline']));
+  }
+
+  /// Starts the RADR baseline again from a chosen day (with why), or goes back to all their data.
+  Future<void> _restartBaseline() async {
+    final api = AppScope.api(context);
+    final today = DateTime.now();
+    final day = await showDatePicker(
+      context: context,
+      helpText: 'Start the baseline again from',
+      initialDate: DateTime(today.year, today.month, today.day),
+      firstDate: today.subtract(const Duration(days: 400)),
+      lastDate: today,
+    );
+    if (day == null || !mounted) return;
+    final ctl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('Start ${widget.name}\'s baseline again from ${radrDayText(day)}?'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+              'From that day on, RADR compares each day only with ${widget.name}\'s data from then, not with what came before. '
+              'It rates again once there are 2 weeks of it to compare with, about 3 weeks after that day. '
+              'Days before it keep their rating, nothing is deleted, and you can undo it.',
+              style: TextStyle(color: c.sc.ink2)),
+          const SizedBox(height: 12),
+          TextField(
+            // keyboards don't learn from what's typed here
+            enableIMEPersonalizedLearning: false,
+            controller: ctl,
+            autofocus: true,
+            maxLength: 200,
+            decoration: const InputDecoration(
+                labelText: 'Why', hintText: 'e.g. joined during a crisis, now settled', border: OutlineInputBorder()),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Start again')),
+        ],
+      ),
+    );
+    final reason = ctl.text.trim();
+    ctl.dispose();
+    if (ok != true || !mounted) return;
+    if (reason.isEmpty) {
+      showSnack(context, 'Say briefly why. It shows wherever RADR does.');
+      return;
+    }
+    try {
+      final again = await api.setRadrBaseline(widget.patientId, day, reason: reason);
+      if (!mounted) return;
+      showSnack(context, again == null ? 'Baseline started again' : 'Baseline started again. RADR rates again from about ${radrDayText(again)}.');
+      setState(() => _key = UniqueKey());
+    } catch (e) {
+      if (mounted) showSnack(context, errorText(e));
+    }
+  }
+
+  Future<void> _undoBaseline() async {
+    final api = AppScope.api(context);
+    try {
+      await api.setRadrBaseline(widget.patientId, null);
+      if (!mounted) return;
+      showSnack(context, 'RADR uses all their data again');
+      setState(() => _key = UniqueKey());
+    } catch (e) {
+      if (mounted) showSnack(context, errorText(e));
+    }
   }
 
   Future<void> _status(String status) async {
@@ -309,6 +383,32 @@ class _PatientSettingsScreenState extends State<PatientSettingsScreen> {
                   value: off[d] == null,
                   onChanged: (v) => _toggle(d, v),
                 ),
+              const SizedBox(height: 16),
+              const SectionHeader('RADR baseline'),
+              Text(
+                'RADR compares each day with this person\'s own usual. If they joined Steady at a bad time in their life and are now '
+                'doing better, start the baseline again from the day things changed, so the better days count as their usual.',
+                style: context.tt.bodySmall?.copyWith(color: context.sc.ink2),
+              ),
+              Builder(builder: (context) {
+                final from = DateTime.tryParse('${st.baseline['from'] ?? ''}');
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(from == null ? 'From all their data' : 'Started again from ${radrDayText(from)}'),
+                  subtitle: from == null
+                      ? const Text('The usual: each day compared with the 4 weeks before it.')
+                      : Text('By ${st.baseline['by'] ?? ''}: ${st.baseline['reason'] ?? ''}'),
+                  trailing: from == null ? null : TextButton(onPressed: _undoBaseline, child: const Text('Undo')),
+                );
+              }),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _restartBaseline,
+                  icon: const Icon(Icons.restart_alt),
+                  label: const Text('Start the baseline again…'),
+                ),
+              ),
             ]);
           },
         ),

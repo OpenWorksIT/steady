@@ -33,13 +33,13 @@ MIN_IOS = "15.0"
 INFO = {
     "CFBundleDisplayName": "Steady",
     "NSHealthShareUsageDescription":
-        "Steady shares a daily summary of your watch data with your psychologist, only if you choose to connect it.",
+        "Steady shares a daily summary of your watch data with your clinician, only if you choose to connect it.",
     "NSHealthUpdateUsageDescription":
         "Steady never writes anything to Apple Health. It only reads the daily summary you choose to share.",
     "NSFaceIDUsageDescription":
         "Steady unlocks with Face ID or the phone's passcode, so what's in it stays private if someone else has your phone.",
     "NSCameraUsageDescription":
-        "Steady uses the camera only to scan the invite QR code from your psychologist.",
+        "Steady uses the camera only to scan the invite QR code from your clinician.",
     "NSMicrophoneUsageDescription":
         "Steady never records sound. iOS asks because the QR scanner uses the camera.",
     "NSPhotoLibraryUsageDescription":

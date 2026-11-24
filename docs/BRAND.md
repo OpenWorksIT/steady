@@ -32,7 +32,7 @@ never touches it), holding:
   patients who agreed to an earlier one to read and agree to it the next time they open the app
   (Steady 1.0.4 and later); set `"consentVersion"` in `brand.json` to name versions yourself.
 
-OpenWorks IT installs it; psychologists can't change it in the app. It takes effect at once,
+OpenWorks IT installs it; clinicians can't change it in the app. It takes effect at once,
 with no restart: the apps pick it up the next time they open.
 
 ```sh

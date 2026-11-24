@@ -37,7 +37,7 @@ All exports ask you to confirm it's you and are recorded in the audit report.
 
 ## Sharing a patient with a colleague
 
-*Purpose: let another psychologist read a patient's record, for supervision or cover.*
+*Purpose: let another clinician read a patient's record, for supervision or cover.*
 
 1. On the patient's page, tap ⋮ and choose **Share with a colleague**.
 2. Switch on the colleague's name. Switch it off to stop sharing.

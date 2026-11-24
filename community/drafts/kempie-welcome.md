@@ -4,7 +4,7 @@ Hello, and welcome.
 
 I'm Kempie van Rooyen, a clinical psychologist at VR Clinical Psychology in Gqeberha, and I lead this community.
 
-Steady grew out of my research, and VR's psychologists and patients have shaped it through two rounds of testing. One practice sees its own patients. Several practices, comparing notes, can see much more: which questionnaires work in our setting, which exercises patients actually do, what helps between sessions and what doesn't. That is what this place is for.
+Steady grew out of my research, and VR's clinicians and patients have shaped it through two rounds of testing. One practice sees its own patients. Several practices, comparing notes, can see much more: which questionnaires work in our setting, which exercises patients actually do, what helps between sessions and what doesn't. That is what this place is for.
 
 A few places to start:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup on the server: lets psychologists marked "serverAdmin" check for and install
+# One-time setup on the server: lets clinicians marked "serverAdmin" check for and install
 # updates from the app (Settings > Server and updates), checks every night, and records disk,
 # memory and load every 5 minutes for Settings > Server health, and runs the security and privacy
 # check (audit-server.sh) every 6 hours for OpenWorks' fleet view.

@@ -83,7 +83,7 @@ env:
   DISCOURSE_LOGIN_REQUIRED: true
   DISCOURSE_INVITE_ONLY: false
   ## The only way in: Steady's Community tab, as whoever is signed in to Steady there (password,
-  ## authenticator code, linked device), through the sign-in bridge, which lets in psychologists
+  ## authenticator code, linked device), through the sign-in bridge, which lets in clinicians
   ## and OpenWorks support only. The forum's own two-step sign-in is off: Steady asks for the
   ## code, and Discourse doesn't allow both. See docs/COMMUNITY.md, "Signing in through Steady".
   DISCOURSE_ENABLE_DISCOURSE_CONNECT: true

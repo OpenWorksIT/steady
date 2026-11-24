@@ -41,15 +41,17 @@ routerAdd("GET", "/api/steady/config", (e) => {
     crisisNotice: s.env("STEADY_CRISIS_NOTICE", "This app isn't monitored around the clock. If you need help now, call one of these numbers."),
     consentVersion: consent.version,
     consentText: consent.text,
+    // patients are asked whether the practice may contact them about what they share (1.3.0)
+    contactAsk: true,
     // Steady's own draft (or placeholders left): the practice still has to write its statement
     consentDraft: consent.draft,
-    // "staff": psychologists and administrators sign in with a code from an authenticator app
+    // "staff": clinicians and administrators sign in with a code from an authenticator app
     twoStep: s.env("STEADY_REQUIRE_2FA", "staff") === "off" ? "off" : "staff",
     // staff sign in only from devices they've linked with a code by email
     deviceLink: require(`${__hooks}/lib/devices.js`).required(),
     // the newest Android build on this server, so older copies can offer the update
     app: require(`${__hooks}/lib/dist.js`).appInfo(s.publicDir()),
-    // the Steady community for psychologists and practice admins (docs/COMMUNITY.md): its
+    // the Steady community for clinicians and practice admins (docs/COMMUNITY.md): its
     // Community tab opens it, signed in through Steady; only when this server is set up for it
     // (lib/community.js)
     communityUrl: (require(`${__hooks}/lib/community.js`).config() || { forum: "" }).forum,
@@ -109,7 +111,7 @@ routerAdd("GET", "/download/steady.apk", (e) => {
   return e.fileFS($os.dirFS(dir), "steady.apk");
 });
 
-// A patient joins with the invite code their psychologist gave them.
+// A patient joins with the invite code their clinician gave them.
 routerAdd("POST", "/api/steady/join", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const core = s.core;
@@ -128,7 +130,7 @@ routerAdd("POST", "/api/steady/join", (e) => {
   let invite = null;
   try { invite = $app.findFirstRecordByFilter("invites", "code = {:c}", { c: code }); } catch (_) { invite = null; }
   if (!invite || invite.getString("usedBy") || s.toMs(invite, "expiresAt") < s.nowMs()) {
-    throw s.badRequest("This invite code has expired or was already used. Ask your psychologist for a new one.");
+    throw s.badRequest("This invite code has expired or was already used. Ask your clinician for a new one.");
   }
 
   let user = null;
@@ -140,7 +142,7 @@ routerAdd("POST", "/api/steady/join", (e) => {
     // checked again inside the transaction: two people joining at once can't both use one code
     const inv = tx.findRecordById("invites", invite.id);
     if (inv.getString("usedBy") || s.toMs(inv, "expiresAt") < s.nowMs()) {
-      throw s.badRequest("This invite code has expired or was already used. Ask your psychologist for a new one.");
+      throw s.badRequest("This invite code has expired or was already used. Ask your clinician for a new one.");
     }
     const users = tx.findCollectionByNameOrId("users");
     user = new Record(users);
@@ -154,6 +156,12 @@ routerAdd("POST", "/api/steady/join", (e) => {
     user.set("active", true);
     user.set("consentAt", new DateTime());
     user.set("consentVersion", require(`${__hooks}/lib/brand.js`).consent().version);
+    // "my practice may contact me about what I share in Steady" (an app before 1.3.0 doesn't ask:
+    // left empty, and asked when the patient next opens a newer app)
+    if (typeof b.contact === "boolean") {
+      user.set("contactConsent", b.contact ? "yes" : "no");
+      user.set("contactConsentAt", new DateTime());
+    }
     const tz = Number(b.tzOffset);
     user.set("tzOffset", isFinite(tz) ? Math.max(-720, Math.min(840, Math.round(tz))) : 120);
     tx.save(user);
@@ -163,6 +171,7 @@ routerAdd("POST", "/api/steady/join", (e) => {
   });
 
   s.audit($app, e, "patient.join", "invite:" + invite.id, user.id);
+  if (typeof b.contact === "boolean") s.audit($app, e, "consent.contact" + (b.contact ? "" : ".no"), "version:" + s.CONTACT_VERSION, user.id);
   // the "New invite: <name>" notice a colleague's invite left: now it's about this patient, so
   // it goes with the account if that is ever deleted
   try {
@@ -200,7 +209,7 @@ routerAdd("GET", "/api/steady/overview", (e) => {
   // archived patients (no longer being seen) aren't on the list at all
   const patients = $app.findRecordsByFilter("users", "role = 'patient' && clinician = {:c} && active = true && careStatus != 'archived'", "name", 20000, 0, { c: e.auth.id });
   const out = s.patientSummaries($app, patients, tz);
-  // colleagues' patients shared with this psychologist (read only)
+  // colleagues' patients shared with this clinician (read only)
   const names = {};
   const shared = $app.findRecordsByFilter("users", "role = 'patient' && active = true && careStatus != 'archived' && sharedWith.id ?= {:c}", "name", 20000, 0, { c: e.auth.id });
   s.patientSummaries($app, shared, tz).forEach((row, i) => {
@@ -227,7 +236,7 @@ routerAdd("GET", "/api/steady/patients/{id}/summary", (e) => {
   return e.json(200, out);
 }, $apis.requireAuth());
 
-// The psychologist renames a patient on their own screens (the patient's own name is unchanged).
+// The clinician renames a patient on their own screens (the patient's own name is unchanged).
 routerAdd("POST", "/api/steady/patients/{id}/label", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireRole(e, "clinician");
@@ -449,7 +458,7 @@ routerAdd("POST", "/api/steady/assignments/{id}/complete", (e) => {
   const cid = s.clientId(b0.clientId);
   // sent again from the app's outbox: it's here already
   if (cid && a.getString("status") === "done" && a.getString("completionId") === cid) return e.json(200, { id: a.id, status: "done", duplicate: true });
-  if (a.getString("status") === "cancelled") throw s.badRequest("Your psychologist withdrew this one, so your answers weren't sent.");
+  if (a.getString("status") === "cancelled") throw s.badRequest("Your clinician withdrew this one, so your answers weren't sent.");
   if (a.getString("status") !== "pending") throw s.badRequest("This one is already done.");
   const now = s.nowMs();
   // when the patient finished it, if it waited on the phone
@@ -528,7 +537,7 @@ routerAdd("POST", "/api/steady/self-start", (e) => {
   const answered = now - wait;
   const inst = s.instrumentDef($app, s.core.str(b.instrument, 30));
   if (inst.def.kind !== "exercise" || !s.sendable(inst.rec)) throw s.badRequest("Only exercises can be started from the app.");
-  // a psychologist's own exercise only once it has been sent to this patient (it may be
+  // a clinician's own exercise only once it has been sent to this patient (it may be
   // written for one person); the built-in ones for everyone
   if (!inst.rec.getBool("builtin")) {
     let sent = [];
@@ -598,13 +607,26 @@ routerAdd("POST", "/api/steady/consent", (e) => {
     }
     user.set("consentAt", new DateTime());
     user.set("consentVersion", version);
+  } else if (b.kind === "contact") {
+    // "my practice may contact me about what I share in Steady": yes or no, changeable in Settings
+    if (user.getString("role") !== "patient") throw s.badRequest("Only patients are asked this.");
+    if (typeof b.accepted !== "boolean") throw s.badRequest("accepted must be true or false.");
   } else {
-    throw s.badRequest("kind must be 'privacy', 'wearable' or 'consent'.");
+    throw s.badRequest("kind must be 'privacy', 'wearable', 'consent' or 'contact'.");
+  }
+  // the contact question goes with the consent statement (or on its own)
+  const contact = (b.kind === "consent" && typeof b.contact === "boolean") ? b.contact : (b.kind === "contact" ? b.accepted : null);
+  if (contact !== null) {
+    user.set("contactConsent", contact ? "yes" : "no");
+    user.set("contactConsentAt", new DateTime());
   }
   $app.save(user);
-  const what = b.kind === "consent" ? "statement" : b.kind + (b.kind === "wearable" && b.accepted !== true ? ".withdrawn" : "");
-  s.audit($app, e, "consent." + what, "version:" + version, user.getString("role") === "patient" ? user.id : "");
-  return e.json(200, { kind: b.kind, version: version, accepted: b.kind !== "wearable" || b.accepted === true });
+  if (b.kind !== "contact") {
+    const what = b.kind === "consent" ? "statement" : b.kind + (b.kind === "wearable" && b.accepted !== true ? ".withdrawn" : "");
+    s.audit($app, e, "consent." + what, "version:" + version, user.getString("role") === "patient" ? user.id : "");
+  }
+  if (contact !== null) s.audit($app, e, "consent.contact" + (contact ? "" : ".no"), "version:" + s.CONTACT_VERSION, user.id);
+  return e.json(200, { kind: b.kind, version: version, accepted: b.kind === "contact" ? b.accepted === true : (b.kind !== "wearable" || b.accepted === true) });
 }, $apis.requireAuth());
 
 /* =====================================================================
@@ -650,7 +672,7 @@ routerAdd("POST", "/api/steady/biometrics", (e) => {
     $app.save(rec);
     saved++;
   });
-  // the patient's latest RADR day, for the order of their psychologist's list
+  // the patient's latest RADR day, for the order of their clinician's list
   if (saved) {
     try { require(`${__hooks}/lib/radr_data.js`).refreshLatest($app, $app.findRecordById("users", e.auth.id)); } catch (err) {
       $app.logger().warn("steady: radr refresh failed", "error", String(err));
@@ -670,7 +692,7 @@ routerAdd("GET", "/api/steady/patients/{id}/biometrics", (e) => {
   return e.json(200, out);
 }, $apis.requireAuth());
 
-// The patient's own watch data (1.2.4): the daily summaries they shared, as their psychologist
+// The patient's own watch data (1.2.4): the daily summaries they shared, as their clinician
 // sees them. Only their own; what was shared stays theirs to see after they stop sharing.
 routerAdd("GET", "/api/steady/me/biometrics", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
@@ -718,7 +740,7 @@ onRecordAfterCreateSuccess((e) => {
         recipient: r.getString("patient"),
         kind: "assigned",
         assignment: r.id,
-        title: "From your psychologist",
+        title: "From your clinician",
         body: name + (r.getString("note") ? ": " + r.getString("note") : ""),
         severity: "none"
       });
@@ -735,7 +757,7 @@ onRecordCreateRequest((e) => {
     mood: r.getInt("mood"), anxiety: r.getInt("anxiety"), sleep: r.getInt("sleep"), energy: r.getInt("energy"), note: r.getString("note")
   });
   if (!v.ok) throw s.badRequest("Please answer all four questions.", v.errors);
-  if (!e.auth.getString("clinician")) throw s.badRequest("Your account isn't linked to a psychologist yet.");
+  if (!e.auth.getString("clinician")) throw s.badRequest("Your account isn't linked to a clinician yet.");
   // from the app's outbox: the phone's own id (sent twice, stored once) and how long it waited
   const cid = s.clientId(r.getString("clientId"));
   if (r.getString("clientId") && !cid) throw s.badRequest("That check-in's id isn't one the app makes.");
@@ -760,7 +782,7 @@ onRecordAfterCreateSuccess((e) => {
   if (patient && patient.getString("clinician")) {
     const recent = e.app.findRecordsByFilter("checkins", "patient = {:p}", "-created", 3, 0, { p: patient.id });
     const lowRun = recent.length === 3 && recent.every((c) => c.getInt("mood") <= 2);
-    // archived patients (no longer being seen) don't buzz their psychologist's phone
+    // archived patients (no longer being seen) don't buzz their clinician's phone
     const archived = patient.getString("careStatus") === "archived";
     s.notify(e.app, {
       push: !archived,
@@ -779,7 +801,7 @@ onRecordAfterCreateSuccess((e) => {
 // Access logging: record each time a clinician reads patient data. Written from the records
 // actually returned (one row per patient), before the answer goes out, and if a row can't be
 // written the read is refused: the filter's text is never trusted to say whose data it was.
-// Notifications count: a psychologist's carry the patient's name and mood and anxiety ratings.
+// Notifications count: a clinician's carry the patient's name and mood and anxiety ratings.
 onRecordsListRequest((e) => {
   if (e.auth && e.auth.getString("role") === "clinician") {
     const s = require(`${__hooks}/lib/server.js`);
@@ -819,7 +841,7 @@ onRecordEnrich((e) => {
 
 /* ---------- accounts and devices ---------- */
 
-// Stopping an account (by a psychologist or in the dashboard) signs it out everywhere:
+// Stopping an account (by a clinician or in the dashboard) signs it out everywhere:
 // a new token key makes every token issued before it invalid.
 onRecordUpdate((e) => {
   const r = e.record;
@@ -851,7 +873,7 @@ onRecordUpdateRequest((e) => {
 }, "devices");
 
 // A name someone types for themselves: no control or invisible characters (they can make it
-// read as someone else's, or break the psychologist's exports), at most 80 characters.
+// read as someone else's, or break the clinician's exports), at most 80 characters.
 onRecordUpdateRequest((e) => {
   const core = require(`${__hooks}/lib/core.js`);
   const name = e.record.getString("name");
@@ -862,7 +884,7 @@ onRecordUpdateRequest((e) => {
 }, "users");
 
 /* =====================================================================
- * Server updates (for psychologists marked serverAdmin; the work is done on the
+ * Server updates (for clinicians marked serverAdmin; the work is done on the
  * server by deploy/ctl/steady-ctl.sh, which this only leaves a request for)
  * ===================================================================== */
 
@@ -950,7 +972,7 @@ cronAdd("steady_cleanup", "30 2 * * *", () => {
   try { require(`${__hooks}/lib/signin.js`).prune($app); } catch (_) { /* ignore */ }
 });
 
-// A patient's request to delete their account: the practice has 30 days. Its psychologist is
+// A patient's request to delete their account: the practice has 30 days. Its clinician is
 // reminded after 7 and 21 days, and the master clinicians from day 25, so it isn't forgotten.
 cronAdd("steady_deletion_reminders", "40 6 * * *", () => {
   const s = require(`${__hooks}/lib/server.js`);
