@@ -61,7 +61,7 @@ Questions, disagreements and better wording are welcome in the replies.
 
 - `app/lib/ui/patient/checkin_screen.dart`, `CheckinForm`: the questions and anchors
 - `server/pb_hooks/lib/core.js`, `validateCheckin` (whole numbers 1 to 5, a note of up to 1,000 characters) and `dailySeries` (daily means)
-- `server/pb_hooks/steady.pb.js`, the `checkins` record hooks: saving, and the notification to the psychologist
+- `server/pb_hooks/steady.pb.js`, the `checkins` record hooks: saving, and the notification to the clinician
 - `app/lib/ui/patient/daily_flow.dart` (when the check-in is offered) and `app/lib/ui/patient/history_screen.dart` (the patient's own view)
 
 ## References

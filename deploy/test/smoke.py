@@ -192,7 +192,7 @@ def main():
 
     s, r = call("GET", "/api/collections/users/records", pat)
     ids = {u["id"] for u in r.get("items", [])}
-    check(s == 200 and pat_id in ids and doc_id in ids and len(ids) == 2, "patient sees only themselves and their psychologist", r)
+    check(s == 200 and pat_id in ids and doc_id in ids and len(ids) == 2, "patient sees only themselves and their clinician", r)
 
     s, r = call("POST", "/api/collections/checkins/records", pat,
                 {"patient": pat_id, "mood": 1, "anxiety": 5, "sleep": 2, "energy": 1, "note": "smoke test note"})
@@ -207,9 +207,9 @@ def main():
     s, ov = call("GET", "/api/steady/overview", doc)
     mine = [p for p in ov.get("patients", []) if p["id"] == pat_id]
     check(mine and mine[0]["name"] == "Smoke Patient (clinic)" and mine[0].get("selfName") == "Smoke Patient",
-          "psychologist sees the invite name; the patient keeps their own", mine)
+          "clinician sees the invite name; the patient keeps their own", mine)
     s, me = call("GET", f"/api/collections/users/records/{pat_id}", pat)
-    check(s == 200 and "clinicianLabel" not in me, "the patient can't see the psychologist's name for them", me)
+    check(s == 200 and "clinicianLabel" not in me, "the patient can't see the clinician's name for them", me)
 
     s, insts = call("GET", "/api/collections/instruments/records", doc, query={"perPage": 50})
     by_key = {i["key"]: i for i in insts.get("items", [])}
@@ -291,7 +291,7 @@ def main():
           "the item 9 answer still comes first: RADR orders below answers, and is no alert", me[0].get("attention") if me else ov)
     for f in flags:
         s, r = call("POST", f"/api/steady/patients/{pat_id}/radr/review", doc, {"key": f["key"], "note": "smoke"})
-        check(s == 200 and (r.get("reviewed") or {}).get("by"), f"the psychologist marks {f['domain']} as reviewed", r)
+        check(s == 200 and (r.get("reviewed") or {}).get("by"), f"the clinician marks {f['domain']} as reviewed", r)
     s, ov = call("GET", "/api/steady/overview", doc)
     me = [p for p in ov.get("patients", []) if p["id"] == pat_id]
     check(me and (me[0].get("radr") or {}).get("level") == "reviewed" and all(f.get("reviewed") for f in me[0]["radr"]["flags"]),

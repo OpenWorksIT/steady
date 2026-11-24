@@ -27,7 +27,7 @@ function range(q, maxDays, defaultDays) {
 /**
  * opts.answers: include item-level answers (exports yes; the Sorted feed no).
  * opts.notes: include the patient's own words.
- * opts.clinical: the psychologist's own exports: their notes for the period, whether each flag
+ * opts.clinical: the clinician's own exports: their notes for the period, whether each flag
  *   was marked as reviewed, the methods used, where things stood just before the period, and
  *   the last Heidi export (for "since the last export").
  */

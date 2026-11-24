@@ -444,7 +444,7 @@ test("full flow: invite, join, check-in, assign, complete, notify", () => {
   // the code is single-use
   assert.equal(rt.call("POST", "/api/steady/join", { body: { code: inv.data.code, email: "x@example.org", name: "X", password: "long-enough-pw", consent: true } }).status, 400);
   assert.ok(rt.store.notifications.some((n) => n.getString("recipient") === doc.id && /^Lerato joined/.test(n.getString("title")) && /call themselves Lee/.test(n.getString("body"))));
-  // the patient's app uses their own name; the psychologist sees the invite name
+  // the patient's app uses their own name; the clinician sees the invite name
   assert.equal(pat.getString("name"), "Lee");
   const ov0 = rt.call("GET", "/api/steady/overview", { auth: doc });
   assert.equal(ov0.data.patients[0].name, "Lerato");
@@ -585,7 +585,7 @@ test("answers kept on the phone while offline arrive once, with the time they we
   assert.match(old.error, /more than 30 days/);
   const odd = rt.create("checkins", pat, { patient: pat.id, mood: 3, anxiety: 3, sleep: 3, energy: 3, waited: -50, answeredAt: "2020-01-01 00:00:00.000Z" });
   assert.equal(odd.record.getString("answeredAt"), "", "the phone can't set the time directly");
-  // the psychologist's summary orders by when it was answered: the one from 4 hours ago isn't the latest
+  // the clinician's summary orders by when it was answered: the one from 4 hours ago isn't the latest
   const sum = rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc });
   assert.equal(sum.status, 200);
   assert.equal(sum.data.lastCheckin.ts, rt.now());
@@ -594,7 +594,7 @@ test("answers kept on the phone while offline arrive once, with the time they we
   const phq = rt.store.instruments.find((r) => r.getString("key") === "phq9");
   const as = rt.create("assignments", doc, { patient: pat.id, clinician: doc.id, instrument: phq.id, repeat: "daily", completionId: "zzzzzzzzzzzzzzz" });
   assert.equal(as.status, 200);
-  assert.equal(as.record.getString("completionId"), "", "a psychologist can't set the phone's id");
+  assert.equal(as.record.getString("completionId"), "", "a clinician can't set the phone's id");
   const answers = { phq9_1: 1, phq9_2: 1, phq9_3: 0, phq9_4: 0, phq9_5: 0, phq9_6: 0, phq9_7: 0, phq9_8: 0, phq9_9: 0 };
   const evening = rt.now() - 14 * 3600e3;
   const body = { answers, clientId: "qqqqqqqqqqqqqqq", waited: 14 * 3600 };
@@ -749,7 +749,7 @@ test("wearable: consent gates uploads, values merge, clinician sees baselines", 
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/biometrics`, { auth: other }).status, 404);
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/biometrics`, { auth: pat }).status, 403);
 
-  // 1.2.4: the patient sees their own, exactly as their psychologist does (Google Play wants the
+  // 1.2.4: the patient sees their own, exactly as their clinician does (Google Play wants the
   // person who shares it to see it); only their own, and staff use the route above
   const mine = rt.call("GET", "/api/steady/me/biometrics", { auth: pat, query: { from: "2026-10-09", to: "2026-10-15" } });
   assert.equal(mine.status, 200, JSON.stringify(mine));
@@ -876,7 +876,7 @@ test("security: clinician reads of watch data are audited", () => {
   rt.app.save = save;
   assert.equal(refused, 500);
   assert.equal(shown, false);
-  // a psychologist's notifications carry the patient's name and ratings: their reads count too
+  // a clinician's notifications carry the patient's name and ratings: their reads count too
   assert.equal(typeof rt.hooks.list.notifications, "function");
   before = rt.store.auditlog.length;
   let sentN = false;
@@ -887,7 +887,7 @@ test("security: clinician reads of watch data are audited", () => {
   assert.deepEqual(nrows.map((r) => [r.getString("action"), r.getString("patient")]), [["list.notifications", p2.id]]);
 });
 
-test("names: the psychologist can rename a patient on their own screens only", () => {
+test("names: the clinician can rename a patient on their own screens only", () => {
   const rt = makeRuntime({ env: ENV });
   const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
   const other = rt.makeUser({ name: "Dr Other", role: "clinician", active: true, email: "o@example.org" });
@@ -1022,7 +1022,7 @@ test("consent: Steady's own statement, versioned by its text; a practice's own f
   assert.equal(c0.consentDraft, false);
   assert.match(c0.consentVersion, /^steady-[0-9a-f]{12}$/);
   assert.doesNotMatch(c0.consentText, /DRAFT|\{contact\}|\[Practice|Heidi/);
-  assert.match(c0.consentText, /Its Information Officer is its master psychologist/);
+  assert.match(c0.consentText, /Its Information Officer is its master clinician/);
   // the practice's statement, installed with brand.sh: its own version, no draft
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "steady-consent-"));
   fs.writeFileSync(path.join(dir, "brand.json"), JSON.stringify({ name: "VR Clinical Psychology", consentVersion: "vr-2026-11" }));
@@ -1448,7 +1448,7 @@ test("feedback: staff send love, dislikes and bugs with a trail; the master clin
   const sup = rt.makeUser({ name: "OpenWorks", role: "support", active: true, email: "s@openworks.test" });
   assert.equal(rt.call("GET", "/api/steady/feedback").status, 401);
   assert.equal(rt.call("GET", "/api/steady/feedback", { auth: pat }).status, 403);
-  // a psychologist who isn't the master clinician sees only the tickets they raised
+  // a clinician who isn't the master clinician sees only the tickets they raised
   const own = rt.call("GET", "/api/steady/feedback", { auth: doc }).data;
   assert.equal(own.full, false);
   assert.ok(own.items.every((i) => i.whoName === "Dr Doc"));
@@ -1641,13 +1641,118 @@ test("roles: an administrator sees names only and can't open patient data", () =
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: adm }).status, 403);
   assert.equal(rt.call("GET", `/api/steady/patients/${pat.id}/export`, { auth: adm }).status, 403);
   assert.equal(rt.call("POST", "/api/steady/admin/people", { auth: adm, body: { role: "clinician", name: "X", email: "x@x.test" } }).status, 403);
-  // without email for the patient's code, the admin can't reset a patient (their psychologist can)
+  // without email for the patient's code, the admin can't reset a patient (their clinician can)
   assert.equal(rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: adm }).status, 400);
   const reset = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc });
   assert.equal(reset.status, 200);
   assert.match(reset.data.temporaryPassword, /^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/);
   assert.equal(rt.app.findRecordById("users", pat.id).getBool("mustChangePassword"), true);
   assert.equal(rt.call("GET", "/api/steady/me/care-team", { auth: rt.app.findRecordById("users", pat.id) }).status, 403, "nothing but a new password");
+});
+
+test("contact consent: asked at join (ticked unless unticked), changeable later, shown to staff, logged", () => {
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ role: "clinician", name: "Dr A", email: "a@x.test", active: true });
+  const adm = rt.makeUser({ role: "admin", name: "Admin", email: "admin@x.test", active: true });
+  assert.equal(rt.call("GET", "/api/steady/config").data.contactAsk, true);
+  const join = (email, contact) => {
+    const inv = rt.call("POST", "/api/steady/invites", { auth: doc, body: { label: email } });
+    const body = { code: inv.data.code, email, name: "P", password: "long-enough-pw", consent: true };
+    if (contact !== undefined) body.contact = contact;
+    const r = rt.call("POST", "/api/steady/join", { body });
+    assert.equal(r.status, 200, JSON.stringify(r));
+    return rt.app.findRecordById("users", r.data.record.id);
+  };
+  const yes = join("yes@x.test", true), no = join("no@x.test", false), old = join("old@x.test");
+  assert.equal(yes.getString("contactConsent"), "yes");
+  assert.ok(yes.getString("contactConsentAt"));
+  assert.equal(no.getString("contactConsent"), "no");
+  // an app from before 1.3.0 doesn't ask: not answered, and asked next time
+  assert.equal(old.getString("contactConsent"), "");
+  assert.equal(old.getString("contactConsentAt"), "");
+
+  // answering later, or changing it in Settings
+  const ask = (who, body) => rt.call("POST", "/api/steady/consent", { auth: rt.app.findRecordById("users", who.id), body });
+  assert.equal(ask(old, { kind: "contact", version: "contact-1" }).status, 400, "yes or no, nothing else");
+  assert.equal(ask(old, { kind: "contact", version: "contact-1", accepted: true }).status, 200);
+  assert.equal(rt.app.findRecordById("users", old.id).getString("contactConsent"), "yes");
+  assert.equal(ask(yes, { kind: "contact", version: "contact-1", accepted: false }).status, 200);
+  assert.equal(rt.app.findRecordById("users", yes.id).getString("contactConsent"), "no");
+  // with a new consent statement, the same tick box goes with it
+  const ver = rt.call("GET", "/api/steady/config").data.consentVersion;
+  assert.equal(ask(no, { kind: "consent", version: ver, contact: true }).status, 200);
+  assert.equal(rt.app.findRecordById("users", no.id).getString("contactConsent"), "yes");
+  // staff aren't asked
+  assert.equal(rt.call("POST", "/api/steady/consent", { auth: doc, body: { kind: "contact", version: "contact-1", accepted: true } }).status, 400);
+
+  // the clinician and the practice admin see the answer, with when
+  const sum = rt.call("GET", "/api/steady/patients/" + yes.id + "/summary", { auth: doc }).data;
+  assert.equal(sum.contact.answer, "no");
+  assert.ok(sum.contact.at > 0);
+  const people = rt.call("GET", "/api/steady/admin/people", { auth: adm }).data.patients;
+  assert.deepEqual(people.map((p) => [p.id, p.status.consent.contact]).sort(), [[yes.id, "no"], [no.id, "yes"], [old.id, "yes"]].sort());
+  // every answer is in the access log, with the wording's version
+  const log = rt.store.auditlog.filter((a) => /^consent\.contact/.test(a.getString("action"))).map((a) => [a.getString("action"), a.getString("patientRef")]);
+  assert.deepEqual(log, [["consent.contact", yes.id], ["consent.contact.no", no.id], ["consent.contact", old.id], ["consent.contact.no", yes.id], ["consent.contact", no.id]]);
+  assert.ok(rt.store.auditlog.filter((a) => /^consent\.contact/.test(a.getString("action"))).every((a) => /contact-1/.test(a.getString("target"))));
+  // nobody sets it through the REST API
+  assert.ok(/contactConsent:isset = false/.test(String(rt.app.findCollectionByNameOrId("users").updateRule)));
+  assert.ok(/contactConsentAt:isset = false/.test(String(rt.app.findCollectionByNameOrId("users").updateRule)));
+  assert.ok(/radrBaseline:isset = false/.test(String(rt.app.findCollectionByNameOrId("users").updateRule)));
+});
+
+test("RADR baseline started again: from a chosen day, with who and why; undone the same way", () => {
+  const G = require(path.join(HOOKS, "lib", "research_demo.js"));
+  const rt = makeRuntime({ env: ENV });
+  const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
+  const col = rt.makeUser({ name: "Dr Colleague", role: "clinician", active: true, email: "col@example.org" });
+  const c = rt.makeUser({ name: "Demo C", role: "patient", clinician: doc.id, active: true, email: "c@example.org", tzOffset: 120 });
+  c.set("wearableConsentAt", "2026-09-01 00:00:00.000Z");
+  rt.app.save(c);
+  G.generate(rt.now(), 120).find((p) => p.key === "disruption").days.forEach((d) => rt.makeRecord("biometrics", { patient: c.id, day: d.day, values: d.values }));
+  const url = "/api/steady/patients/" + c.id + "/radr-baseline";
+  const radr = () => rt.call("GET", "/api/steady/patients/" + c.id + "/radr", { auth: doc }).data;
+  const level = () => (rt.call("GET", "/api/steady/overview", { auth: doc }).data.patients[0].radr || { level: "none" }).level;
+  assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr-exclusions", { auth: doc, body: { domain: "sleep", excluded: false } }).status, 200);
+  assert.equal(level(), "away");
+  const today = radr().to;
+  const R = require(path.join(HOOKS, "lib", "radr.js"));
+  // a day, and why: both needed; not in the future, not over 400 days back
+  assert.equal(rt.call("POST", url, { auth: doc, body: { from: today } }).status, 400);
+  assert.equal(rt.call("POST", url, { auth: doc, body: { from: R.addDays(today, 1), reason: "x" } }).status, 400);
+  assert.equal(rt.call("POST", url, { auth: doc, body: { from: R.addDays(today, -401), reason: "x" } }).status, 400);
+  assert.equal(rt.call("POST", url, { auth: doc, body: { from: "2026-02-31", reason: "x" } }).status, 400);
+  // only the patient's own clinician, not a colleague or the patient
+  assert.equal(rt.call("POST", url, { auth: col, body: { from: today, reason: "x" } }).status, 404);
+  assert.equal(rt.call("POST", url, { auth: c, body: { from: today, reason: "x" } }).status, 403);
+
+  const from = R.addDays(today, -10);
+  const set = rt.call("POST", url, { auth: doc, body: { from: from, reason: "joined during a crisis, now settled" } });
+  assert.equal(set.status, 200);
+  assert.equal(set.data.ratedAgainFrom, R.addDays(from, 21));
+  const r = radr();
+  assert.deepEqual({ from: r.baseline.from, by: r.baseline.by, reason: r.baseline.reason }, { from: from, by: "Dr Demo", reason: "joined during a crisis, now settled" });
+  assert.equal(r.baselineFrom, from);
+  // the days from then wait for a baseline of their own: nothing away from usual to order by now
+  assert.ok(r.days.filter((d) => d.day >= from).every((d) => d.watch === null));
+  assert.ok(r.days.filter((d) => d.day < from).some((d) => d.watch !== null), "days before keep their rating");
+  assert.equal(level(), "none");
+  const ex = rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc, query: { day: today } }).data;
+  assert.match(ex.words, /baseline was started again on/);
+  assert.equal(ex.baseline.reason, "joined during a crisis, now settled");
+  // exports say so
+  const out = rt.call("GET", "/api/steady/patients/" + c.id + "/export", { auth: doc, query: { from: "2020-01-01", to: "2027-01-01" } }).data.patients[0];
+  assert.equal(out.radr.baseline.from, from);
+  // undone: all their data again
+  assert.equal(rt.call("POST", url, { auth: doc, body: { from: "" } }).status, 200);
+  assert.equal(radr().baseline, null);
+  assert.equal(level(), "away");
+  // the access log has both, without the reason (the practice admin reads it)
+  const log = rt.store.auditlog.filter((a) => /^patient\.radr\.baseline/.test(a.getString("action")));
+  assert.deepEqual(log.map((a) => a.getString("action")), ["patient.radr.baseline", "patient.radr.baseline.undo"]);
+  assert.equal(log[0].getString("patientRef"), c.id);
+  assert.equal(log[0].getString("target"), "from:" + from);
+  assert.ok(!log.some((a) => a.getString("target").includes("crisis")));
 });
 
 test("care: answers waiting for review first, then RADR; stable at the bottom, archived off the list", () => {
@@ -1685,7 +1790,7 @@ test("care: answers waiting for review first, then RADR; stable at the bottom, a
   assert.deepEqual(radr.excluded.sort(), ["circadian", "sleep"]);
   assert.equal(radr.exclusions[0].reason, "shift worker");
   assert.equal(radr.latest.domains.sleep, null);
-  // only the patient's own psychologist changes settings
+  // only the patient's own clinician changes settings
   assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/radr-exclusions", { auth: col, body: { domain: "activity", excluded: true, reason: "x" } }).status, 404);
   assert.equal(rt.call("POST", "/api/steady/patients/" + c.id + "/care", { auth: c, body: { status: "stable" } }).status, 403);
 
@@ -1725,7 +1830,7 @@ test("care: answers waiting for review first, then RADR; stable at the bottom, a
   assert.deepEqual(list.map((p) => p.name), ["Demo B", "Demo C"]);
   assert.equal(list[1].careStatus, "stable");
   assert.deepEqual(rt.call("GET", "/api/steady/patients-archived", { auth: doc }).data.patients.map((p) => p.name), ["Demo A"]);
-  // an archived patient's check-in doesn't buzz the psychologist's phone
+  // an archived patient's check-in doesn't buzz the clinician's phone
   rt.makeRecord("devices", { user: doc.id, platform: "ios", provider: "apns", token: "ab".repeat(32) });
   rt.pushes.length = 0;
   assert.equal(rt.create("checkins", a, { patient: a.id, mood: 4, anxiety: 2, sleep: 4, energy: 4 }).status, 200);
@@ -1802,7 +1907,7 @@ test("RADR: every number explained with its data, flags reviewed by staff who ma
     assert.equal(rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: doc, query: { day: bad } }).status, 400, bad);
   }
 
-  // who may read and mark it: the patient's psychologist and a colleague it's shared with
+  // who may read and mark it: the patient's clinician and a colleague it's shared with
   const key = x.flags[0].key;
   for (const [who, status] of [[other, 404], [col, 404], [c, 403], [adm, 403], [sup, 403]]) {
     assert.equal(rt.call("GET", "/api/steady/patients/" + c.id + "/radr/explain", { auth: who }).status, status, who.getString("name"));
@@ -1860,7 +1965,7 @@ test("RADR: every number explained with its data, flags reviewed by staff who ma
   assert.ok(require(path.join(HOOKS, "lib", "deletion.js")).OWNED.some((o) => o[0] === "radrreviews"));
 });
 
-test("care: notes are the psychologist's own, shared colleagues read them, patients never", () => {
+test("care: notes are the clinician's own, shared colleagues read them, patients never", () => {
   const rt = makeRuntime({ env: ENV });
   const doc = rt.makeUser({ name: "Dr Demo", role: "clinician", active: true, email: "dr@example.org" });
   const col = rt.makeUser({ name: "Dr Colleague", role: "clinician", active: true, email: "col@example.org" });
@@ -1906,14 +2011,14 @@ test("roles 1.0: who resets whom, easy to lock down and hard to restore, OpenWor
   assert.equal(reset(adm, fresh), 400);
   assert.equal(reset(master, fresh), 400);
   assert.equal(reset(sup, fresh), 400);
-  // patients: their psychologist, the master clinician, the practice admin; not OpenWorks
+  // patients: their clinician, the master clinician, the practice admin; not OpenWorks
   assert.equal(reset(doc, pat), 200);
   // (the master clinician and practice admin need email for the patient's code: tested on its own)
   assert.equal(reset(master, pat), 400);
   assert.equal(reset(adm, pat), 400);
   assert.equal(reset(sup, pat), 404);
   assert.equal(reset(doc2, pat), 404);
-  // psychologists: the master clinician, the practice admin, OpenWorks; not a colleague
+  // clinicians: the master clinician, the practice admin, OpenWorks; not a colleague
   assert.equal(reset(doc2, doc), 403);
   assert.equal(reset(adm, doc), 200);
   assert.equal(reset(master, doc), 200);
@@ -1963,7 +2068,7 @@ test("roles 1.0: who resets whom, easy to lock down and hard to restore, OpenWor
   assert.equal(rt.call("GET", "/api/steady/audit", { auth: doc }).status, 403);
 });
 
-test("app version and watch permissions: reported by the app, seen by the psychologist and reception", () => {
+test("app version and watch permissions: reported by the app, seen by the clinician and reception", () => {
   const rt = makeRuntime({ env: ENV });
   const doc = rt.makeUser({ role: "clinician", name: "Dr Doc", email: "d@x.test", active: true });
   const adm = rt.makeUser({ role: "admin", name: "Reception", email: "r@x.test", active: true });
@@ -1981,7 +2086,7 @@ test("app version and watch permissions: reported by the app, seen by the psycho
   const row = rt.call("GET", "/api/steady/admin/people", { auth: adm }).data.patients[0];
   assert.equal(row.status.watch.lapsed, true);
   assert.equal(row.status.watch.permission, "missing");
-  // a reminder: their psychologist or reception, at most once in 12 hours
+  // a reminder: their clinician or reception, at most once in 12 hours
   assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/remind-watch`, { auth: adm }).status, 200);
   assert.equal(rt.call("POST", `/api/steady/patients/${pat.id}/remind-watch`, { auth: doc }).status, 400);
   assert.ok(rt.store.notifications.some((n) => n.getString("recipient") === pat.id && n.getString("title") === "Reconnect your watch"));
@@ -2082,7 +2187,7 @@ test("staff sign-in 1.0: linked devices, emailed codes, confirm it's you, lockin
   assert.ok(!rt.settings.smtp.password && !rt.settings.smtp.host);
 });
 
-test("app reviewers (test server only): a psychologist with fictional patients, no two-step or device code, nothing it can lock", () => {
+test("app reviewers (test server only): a clinician with fictional patients, no two-step or device code, nothing it can lock", () => {
   const env = Object.assign({}, ENV, { STEADY_REQUIRE_2FA: "staff", STEADY_SUPERUSER_API: "open", STEADY_SMTP_HOST: "mail.test", STEADY_MAIL_FROM: "noreply@steadyapp.co.za" });
   const su = { isSuperuser: () => true, getString: () => "", id: "" };
   const phone = { key: "r".repeat(40), name: "Pixel", platform: "android" };
@@ -2120,11 +2225,11 @@ test("app reviewers (test server only): a psychologist with fictional patients, 
   assert.equal(r.data.linkDevice, undefined);
   assert.equal(r.data.token, "token-for-" + rev.id);
   assert.equal(rt.mails.length, 0);
-  // a real psychologist still gets the emailed code on a new device
+  // a real clinician still gets the emailed code on a new device
   doc.setPassword("doctor-password"); rt.app.save(doc);
   assert.equal(rt.call("POST", "/api/steady/auth/sign-in", { body: { email: "dr@example.org", password: "doctor-password", device: phone } }).data.linkDevice, true);
 
-  // the fictional patients are its own; a real psychologist's patients aren't
+  // the fictional patients are its own; a real clinician's patients aren't
   rt.makeUser({ name: "Pat", role: "patient", clinician: doc.id, active: true, email: "p@example.org" });
   const demo = rt.call("POST", "/api/steady/ops/demo", { auth: su, body: { clinician: "review@openworks.co.za" } });
   assert.equal(demo.status, 200, JSON.stringify(demo));
@@ -2163,7 +2268,7 @@ test("app reviewers (test server only): a psychologist with fictional patients, 
   assert.equal(stop.data.stopped, true);
   assert.equal(signIn(again.data.password).status, 400);
 
-  // the switch off again (the account left behind on a server without it): a normal psychologist,
+  // the switch off again (the account left behind on a server without it): a normal clinician,
   // who needs two-step like everyone else
   const back = makeRuntime({ env });
   const left = back.makeUser({ name: "App reviewer", role: "clinician", demo: true, active: true, email: "review@openworks.co.za", passwordHash: "pw:x", totpEnabledAt: "2026-11-12 08:00:00.000Z" });
@@ -2185,8 +2290,8 @@ test("1.0 hardening: patients never get scores, wrong tries rest the account, li
   assert.ok(next);
   hidden.length = 0;
   rt.hooks.enrich.assignments({ record: rec, requestInfo: { auth: doc }, next: () => {} });
-  assert.deepEqual(hidden, [], "the psychologist sees the score");
-  // of their psychologist, a patient sees the name only
+  assert.deepEqual(hidden, [], "the clinician sees the score");
+  // of their clinician, a patient sees the name only
   doc.hide = (...f) => hidden.push(...f);
   rt.hooks.enrich.users({ record: doc, requestInfo: { auth: pat }, next: () => {} });
   assert.ok(hidden.includes("email") && hidden.includes("master") && hidden.includes("totpEnabledAt") && !hidden.includes("name"));
@@ -2263,7 +2368,7 @@ test("patient resets by the practice admin or master clinician finish only with 
   assert.equal(change({ emailCode: "000000" }).status, 400);
   assert.equal(change({ emailCode: code }).status, 200);
   assert.equal(pat.getBool("emailCodeNeeded"), false);
-  // the patient's own psychologist: no code (they already see the data)
+  // the patient's own clinician: no code (they already see the data)
   rt.makeRecord("staffdevices", { user: doc.id, keyHash: require("crypto").createHash("sha256").update("d".repeat(40)).digest("hex"), platform: "android", confirmedAt: "2099-01-01 00:00:00.000Z" });
   const own = rt.call("POST", `/api/steady/people/${pat.id}/reset-password`, { auth: doc, headers: { "X-Steady-Device": "d".repeat(40) } });
   assert.equal(own.status, 200);
@@ -2275,7 +2380,7 @@ test("patient resets by the practice admin or master clinician finish only with 
   const change2 = (c) => rt.call("POST", "/api/steady/me/password", { auth: pat, body: { password: r2.data.temporaryPassword, newPassword: "Another-pass-12", emailCode: c } });
   for (let i = 0; i < 5; i++) change2("111111");
   assert.match(change2(code2).error, /expired/);
-  // without email settings, only their own psychologist resets a patient
+  // without email settings, only their own clinician resets a patient
   const plain = makeRuntime({ env: ENV });
   const d2 = plain.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
   const a2 = plain.makeUser({ name: "Admin", role: "admin", active: true, email: "a@example.org" });
@@ -2284,7 +2389,7 @@ test("patient resets by the practice admin or master clinician finish only with 
   assert.equal(plain.call("POST", `/api/steady/people/${p2.id}/reset-password`, { auth: d2 }).status, 200);
 });
 
-test("a patient asks to delete their account; their psychologist deletes it after keeping the records", () => {
+test("a patient asks to delete their account; their clinician deletes it after keeping the records", () => {
   const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_SMTP_HOST: "mail.test" }) });
   const doc = rt.makeUser({ name: "Dr", role: "clinician", active: true, email: "d@example.org" });
   const other = rt.makeUser({ name: "Dr Other", role: "clinician", active: true, email: "o@example.org" });
@@ -2316,8 +2421,8 @@ test("a patient asks to delete their account; their psychologist deletes it afte
   assert.ok(r.data.requestedAt > 0);
   assert.ok(pat.getDateTime("deletionRequestedAt").unix() > 0);
   const note = rt.store.notifications.find((n) => n.getString("recipient") === doc.id && n.getString("title") === "Account deletion request");
-  assert.ok(note, "their psychologist is told in the app");
-  assert.ok(!rt.store.notifications.some((n) => n.getString("recipient") === master.id), "the master clinician isn't, while the psychologist is active");
+  assert.ok(note, "their clinician is told in the app");
+  assert.ok(!rt.store.notifications.some((n) => n.getString("recipient") === master.id), "the master clinician isn't, while the clinician is active");
   const mail = rt.mails.find((m) => m.to[0].address === "pat@example.org");
   assert.ok(mail && /30 days/.test(mail.text), "the patient is emailed when it will happen");
   // and nothing in it says therapy to someone else reading the inbox (the why is in the app)
@@ -2329,12 +2434,12 @@ test("a patient asks to delete their account; their psychologist deletes it afte
   // staff and other patients can't ask on someone's behalf
   assert.equal(rt.call("POST", "/api/steady/me/delete-request", { auth: doc, body: { password: "x" } }).status, 403);
 
-  // their psychologist sees the request on the patient's summary
+  // their clinician sees the request on the patient's summary
   const sum = rt.call("GET", `/api/steady/patients/${pat.id}/summary`, { auth: doc, headers: H.doc });
   assert.equal(sum.status, 200);
   assert.ok(sum.data.deletionRequestedAt > 0);
 
-  // another psychologist can't delete it; the patient's own can, after confirming it's them
+  // another clinician can't delete it; the patient's own can, after confirming it's them
   assert.equal(del(other, H.other).status, 404);
   assert.equal(del(doc).status, 403, "not without confirming it's them");
   const done = del(doc, H.doc);
@@ -2494,7 +2599,7 @@ test("demo patients on a test server: a new day every night, only with STEADY_DE
   assert.equal(count(t.rt, "checkins", t.real.id), 0);
 });
 
-test("community: a signed note for the sign-in bridge, for psychologists, practice admins and support with two-step on", () => {
+test("community: a signed note for the sign-in bridge, for clinicians, practice admins and support with two-step on", () => {
   const crypto = require("crypto");
   const KEY = "k".repeat(20) + "-community-key-0123";
   const R = "/api/steady/community/sign-in";
@@ -2554,7 +2659,7 @@ test("community: a signed note for the sign-in bridge, for psychologists, practi
   const s = own.call("POST", R, { auth: op.sup });
   assert.equal(s.status, 200, JSON.stringify(s));
   assert.equal(JSON.parse(new URL(s.data.url).searchParams.get("p")).role, "support");
-  assert.equal(own.call("POST", R, { auth: op.doc }).status, 200, "its psychologists still come in as before");
+  assert.equal(own.call("POST", R, { auth: op.doc }).status, 200, "its clinicians still come in as before");
 
   // the practice admin too, as admin: the bridge gives them the Steady manual only
   const a = rt.call("POST", R, { auth: p.adm });
@@ -2566,7 +2671,7 @@ test("community: a signed note for the sign-in bridge, for psychologists, practi
 
   const pat = rt.call("POST", R, { auth: p.pat });
   assert.equal(pat.status, 403, "never patients");
-  assert.match(pat.error, /psychologists, practice administrators and OpenWorks IT/);
+  assert.match(pat.error, /clinicians, practice administrators and OpenWorks IT/);
   const bare = rt.call("POST", R, { auth: p.bare });
   assert.equal(bare.status, 403, "two-step sign-in on, even where the server doesn't require it");
   assert.match(bare.error, /two-step/);
@@ -2710,7 +2815,7 @@ test("fleet view: a staff password reset that only the person can finish, and fe
   assert.ok(toPerson, "the code goes to the person");
   assert.ok(!toPerson.text.includes(r.data.temporaryPassword), "never the temporary password by email");
   const code = /^\s+(\d{6})$/m.exec(toPerson.text)[1];
-  assert.ok(rt.mails.slice(before).some((m) => m.to[0].address === "master@example.org" && /OpenWorks reset a password/.test(m.subject)), "the master psychologist is told");
+  assert.ok(rt.mails.slice(before).some((m) => m.to[0].address === "master@example.org" && /OpenWorks reset a password/.test(m.subject)), "the master clinician is told");
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "fleet.account.reset-password" && a.getString("target").startsWith("user:" + doc.id)), "in the access log");
 
   // the temporary password alone doesn't finish it; with the code it does
@@ -2732,7 +2837,7 @@ test("fleet view: a staff password reset that only the person can finish, and fe
   assert.equal(reset({ email: "master@example.org" }).status, 429);
 });
 
-test("community run from the fleet view: settings it sends, the master psychologist's switch, members for approval", () => {
+test("community run from the fleet view: settings it sends, the master clinician's switch, members for approval", () => {
   const FLEET = "fleet-key-0123456789abcdefgh";
   const KEY = "f".repeat(20) + "-fleet-community-key";
   const R = "/api/steady/community/sign-in";
@@ -2762,10 +2867,10 @@ test("community run from the fleet view: settings it sends, the master psycholog
   assert.equal(rt.call("GET", "/api/steady/config").data.communitySupport, false);
   assert.ok(rt.store.auditlog.some((a) => a.getString("action") === "fleet.community.on"));
 
-  // the master psychologist puts people in: until then, they're asked to ask
+  // the master clinician puts people in: until then, they're asked to ask
   assert.match(rt.call("POST", R, { auth: doc }).error, /hasn't added you to the community/);
   const sw = (who, user, value) => rt.call("POST", "/api/steady/practice/community", { auth: who, body: { user: user.id, on: value } });
-  assert.equal(sw(doc, doc, true).status, 403, "not every psychologist: the master");
+  assert.equal(sw(doc, doc, true).status, 403, "not every clinician: the master");
   assert.equal(sw(master, pat, true).status, 400, "staff only");
   assert.equal(sw(master, doc, true).status, 200);
   assert.equal(sw(master, master, true).status, 200);
@@ -3009,7 +3114,7 @@ test("tripwires: a touch keeps what happened, never a decoy or a patient, and ge
   assert.equal(p.referer, "https://x.example/?k=\u2026(" + value.length + ")");
   const k = trips.find((t) => t.ip === "198.51.100.8");
   assert.deepEqual({ where: k.where, query: k.query, account: k.account, status: k.status },
-    { where: "the query (key)", query: "key=\u2026(" + value.length + ")", account: "a psychologist's account: took@vr.example.org", status: 404 });
+    { where: "the query (key)", query: "key=\u2026(" + value.length + ")", account: "a clinician's account: took@vr.example.org", status: 404 });
   const h = trips.find((t) => t.ip === "198.51.100.9");
   assert.deepEqual({ where: h.where, account: h.account, status: h.status }, { where: "the X-Api-Key header", account: "a patient's account", status: 200 });
   // the decoy itself, and who the patient is, never leave the server

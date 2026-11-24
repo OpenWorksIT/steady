@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The Feedback button on psychologists' and administrators' screens (never patients'): "Love this",
+// The Feedback button on clinicians' and administrators' screens (never patients'): "Love this",
 // "Don't like this" and "Bug found", as in Sorted. A bug report carries a screenshot of the screen
 // as it was when the button was pressed, always blurred so no one can be read from it (OpenWorks
 // IT reads it and never sees patients), and the last 60 steps (trail.dart). Read in Settings > Practice >
-// Feedback tickets (psychologists and administrators) and by OpenWorks IT with deploy/feedback.sh.
+// Feedback tickets (clinicians and administrators) and by OpenWorks IT with deploy/feedback.sh.
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -233,7 +233,7 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Text('Feedback', style: context.tt.titleLarge),
           const SizedBox(height: 4),
-          Text('Goes to OpenWorks IT, who build Steady, and to your practice\'s master psychologist and administrator. '
+          Text('Goes to OpenWorks IT, who build Steady, and to your practice\'s master clinician and administrator. '
               'Never about a patient.',
               style: TextStyle(color: context.sc.ink2)),
           const SizedBox(height: 14),

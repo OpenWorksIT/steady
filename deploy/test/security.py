@@ -316,9 +316,9 @@ def run(su):
     check(A, "a patient can't open another patient's account", s == 404, r)
     s, r = call("GET", "/api/collections/users/records", patB)
     ids = {i["id"] for i in items(r)}
-    check(A, "a patient sees only themselves and their own psychologist", ids <= {b, d1} and b in ids, sorted(ids))
+    check(A, "a patient sees only themselves and their own clinician", ids <= {b, d1} and b in ids, sorted(ids))
     s, r = call("GET", f"/api/steady/patients/{a}/summary", patB)
-    check(A, "a patient can't use the psychologist routes", s in (401, 403), r)
+    check(A, "a patient can't use the clinician routes", s in (401, 403), r)
     s, r = call("GET", "/api/steady/overview", patB)
     check(A, "a patient can't list patients", s in (401, 403), r)
     s, r = call("POST", f"/api/steady/assignments/{asgA['id']}/complete", patB, {"answers": {}})
@@ -351,43 +351,43 @@ def run(su):
     check(A, "expanding relations doesn't pull in other patients", s == 400 or (s == 200 and not leaked), (s, leaked))
     s, r = call("GET", "/api/collections/assignments/records", patA, query={"expand": "clinician"})
     exp = [i.get("expand", {}).get("clinician", {}) for i in items(r)]
-    check(A, "a patient sees their psychologist's name, not their email", s == 400 or (s == 200 and all(not e.get("email") for e in exp)), (s, exp))
+    check(A, "a patient sees their clinician's name, not their email", s == 400 or (s == 200 and all(not e.get("email") for e in exp)), (s, exp))
     s, r = call("GET", "/api/collections/biometrics/records", patB, query={"filter": f"patient='{a}'"})
     check(A, "another patient's watch data stays hidden", s == 200 and not items(r), r)
     s, r = call("GET", "/api/collections/notifications/records", patB)
     check(A, "a patient sees only their own notifications", s == 200 and all(i["recipient"] == b for i in items(r)), r)
 
-    # ---- psychologists can't reach other psychologists' patients
+    # ---- clinicians can't reach other clinicians' patients
     C = "clinician isolation"
     s, r = call("GET", "/api/collections/checkins/records", doc2, query={"perPage": 200})
-    check(C, "a psychologist lists only their own patients' check-ins", s == 200 and all(i["patient"] == c for i in items(r)), [i["patient"] for i in items(r)])
+    check(C, "a clinician lists only their own patients' check-ins", s == 200 and all(i["patient"] == c for i in items(r)), [i["patient"] for i in items(r)])
     s, r = call("GET", "/api/collections/checkins/records", doc2, query={"filter": f"patient.clinician='{d1}'"})
-    check(C, "filtering by another psychologist returns nothing", s == 200 and not items(r), r)
+    check(C, "filtering by another clinician returns nothing", s == 200 and not items(r), r)
     s, r = call("GET", f"/api/steady/patients/{a}/summary", doc2)
-    check(C, "another psychologist's patient summary is refused", s == 404, r)
+    check(C, "another clinician's patient summary is refused", s == 404, r)
     s, r = call("GET", f"/api/steady/patients/{a}/biometrics", doc2)
-    check(C, "another psychologist's patient watch data is refused", s == 404, r)
+    check(C, "another clinician's patient watch data is refused", s == 404, r)
     s, r = call("POST", "/api/collections/assignments/records", doc2,
                 {"patient": a, "clinician": d2, "instrument": phq9, "status": "pending"})
     check(C, "sending a questionnaire to someone else's patient is refused", s in (400, 403, 404), r)
     s, r = call("POST", f"/api/steady/assignments/{asgA['id']}/cancel", doc2)
-    check(C, "cancelling another psychologist's activity is refused", s == 404, r)
+    check(C, "cancelling another clinician's activity is refused", s == 404, r)
     s, r = call("POST", f"/api/steady/patients/{a}/deactivate", doc2)
-    check(C, "stopping another psychologist's patient is refused", s == 404, r)
+    check(C, "stopping another clinician's patient is refused", s == 404, r)
     s, r = call("POST", f"/api/steady/patients/{a}/label", doc2, {"label": "x"})
-    check(C, "renaming another psychologist's patient is refused", s == 404, r)
+    check(C, "renaming another clinician's patient is refused", s == 404, r)
     s, r = call("GET", "/api/collections/users/records", doc2, query={"perPage": 200})
     ids = {i["id"] for i in items(r)}
-    check(C, "a psychologist sees only their own patients' accounts", a not in ids and b not in ids and d1 not in ids, sorted(ids))
+    check(C, "a clinician sees only their own patients' accounts", a not in ids and b not in ids and d1 not in ids, sorted(ids))
     s, r = call("GET", "/api/collections/invites/records", doc2)
-    check(C, "invite codes are private to the psychologist who made them", s == 200 and all(i["clinician"] == d2 for i in items(r)), r)
+    check(C, "invite codes are private to the clinician who made them", s == 200 and all(i["clinician"] == d2 for i in items(r)), r)
     s, ov = call("GET", "/api/steady/overview", doc2)
-    check(C, "the overview lists only the psychologist's own patients", s == 200 and {p["id"] for p in ov["patients"]} == {c}, ov)
+    check(C, "the overview lists only the clinician's own patients", s == 200 and {p["id"] for p in ov["patients"]} == {c}, ov)
 
     # ---- hidden fields can't be read or used as an oracle
     H = "hidden fields"
     s, r = call("GET", f"/api/collections/users/records/{a}", patA, query={"fields": "*,clinicianLabel"})
-    check(H, "a patient can't read the psychologist's name for them", s == 200 and "clinicianLabel" not in r, r)
+    check(H, "a patient can't read the clinician's name for them", s == 200 and "clinicianLabel" not in r, r)
     s, r = call("GET", "/api/collections/users/records", patA, query={"filter": "clinicianLabel ~ 'Alice'"})
     check(H, "filtering on the hidden name can't confirm it", s == 400 or (s == 200 and not items(r)), r)
     s, r = call("GET", f"/api/collections/users/records/{a}", doc1)
@@ -397,14 +397,20 @@ def run(su):
     T = "tampering"
     s, r = call("PATCH", f"/api/collections/users/records/{a}", patA, {"clinicianLabel": "renamed by patient"})
     s2, row = call("GET", f"/api/collections/users/records/{a}", su)
-    check(T, "a patient can't change what the psychologist calls them", row.get("clinicianLabel") == "Alice (D1)", [s, row.get("clinicianLabel")])
+    check(T, "a patient can't change what the clinician calls them", row.get("clinicianLabel") == "Alice (D1)", [s, row.get("clinicianLabel")])
     for field, value in [("role", "clinician"), ("clinician", d2), ("active", True), ("consentAt", "2020-01-01 00:00:00.000Z"),
                          ("consentVersion", "x"), ("serverAdmin", True),
-                         ("wearableConsentAt", "2020-01-01 00:00:00.000Z"), ("verified", True)]:
+                         ("wearableConsentAt", "2020-01-01 00:00:00.000Z"), ("verified", True),
+                         ("contactConsent", "no"), ("contactConsentAt", "2020-01-01 00:00:00.000Z")]:
         s, r = call("PATCH", f"/api/collections/users/records/{a}", patA, {field: value})
         check(T, f"a patient can't set their own '{field}'", s in (400, 403, 404), r)
+    # hidden fields (a clinician's settings) are dropped from what a patient sends: not stored
+    for field, value in [("radrBaseline", {"from": "2020-01-01", "reason": "x"}), ("radrExclusions", [{"domain": "sleep"}]), ("careStatus", "stable")]:
+        call("PATCH", f"/api/collections/users/records/{a}", patA, {field: value})
+        s2, row = call("GET", f"/api/collections/users/records/{a}", su)
+        check(T, f"a patient can't set their clinician's '{field}'", not row.get(field), row.get(field))
     s, r = call("PATCH", f"/api/collections/users/records/{d1}", doc1, {"serverAdmin": True})
-    check(T, "a psychologist can't make themselves a server admin", s in (400, 403, 404), r)
+    check(T, "a clinician can't make themselves a server admin", s in (400, 403, 404), r)
     s, r = call("PATCH", f"/api/collections/users/records/{a}", patA, {"email": "taken@sec.test"})
     check(T, "an email can't be changed without the email-change flow", s in (400, 403, 404), r)
     s, r = call("PATCH", f"/api/collections/checkins/records/{ckA['id']}", patA, {"mood": 5})
@@ -423,7 +429,7 @@ def run(su):
     s, r = call("POST", "/api/collections/auditlog/records", doc1, {"action": "x"})
     check(T, "nobody but the superuser touches the audit log", s in (400, 403), r)
     s, r = call("GET", "/api/collections/auditlog/records", doc1)
-    check(T, "psychologists can't read the audit log", s == 403 or (s == 200 and not items(r)), r)
+    check(T, "clinicians can't read the audit log", s == 403 or (s == 200 and not items(r)), r)
     s, r = call("POST", "/api/collections/devices/records", patB,
                 {"user": a, "platform": "android", "provider": "fcm", "token": "sec" + tag + ":APA91b" + "x" * 140})
     check(T, "a push registration can't be made for someone else", (s in (400, 403)) or (s == 200 and r.get("user") == b), r)
@@ -470,7 +476,7 @@ def run(su):
     S = "server admin"
     for path, method in [("/api/steady/system", "GET"), ("/api/steady/system/request", "POST")]:
         s, r = call(method, path, doc2, {"action": "check"} if method == "POST" else None)
-        check(S, f"{method} {path} is refused to a psychologist who isn't the master clinician", s == 403, r)
+        check(S, f"{method} {path} is refused to a clinician who isn't the master clinician", s == 403, r)
         s, r = call(method, path, patA, {"action": "update"} if method == "POST" else None)
         check(S, f"{method} {path} is refused to a patient", s == 403, r)
     s, r = call("GET", "/api/steady/system", doc1)
@@ -478,7 +484,7 @@ def run(su):
     s, r = call("GET", "/api/steady/health")
     check(S, "server health needs a sign-in or the monitor key", s == 401, r)
     s, r = call("GET", "/api/steady/health", doc2)
-    check(S, "server health is refused to a psychologist who isn't the master clinician", s == 403, r)
+    check(S, "server health is refused to a clinician who isn't the master clinician", s == 403, r)
     s, r = call("GET", "/api/steady/health", patA)
     check(S, "server health is refused to a patient", s == 403, r)
     s, r = call("GET", "/api/steady/health", doc1)
@@ -487,7 +493,7 @@ def run(su):
     s, r = call("POST", "/api/steady/feedback", patA, {"kind": "love"})
     check(S, "patients can't send feedback (the button is for staff)", s == 403, r)
     s, r = call("POST", "/api/steady/feedback", doc2, {"kind": "bug", "message": "test report", "trail": "[]"})
-    check(S, "a psychologist can send feedback", s == 200 and "id" in r, r)
+    check(S, "a clinician can send feedback", s == 200 and "id" in r, r)
     s, r = call("GET", "/api/steady/feedback", doc2)
     tick = r.get("items", []) if s == 200 else []
     check(S, "other staff see feedback as tickets only", s == 200 and r.get("full") is False and tick, r)
@@ -567,7 +573,7 @@ def run(su):
     time.sleep(2.0)
     rt2.close()
     got2 = [json.loads(ev.get("data", "{}")).get("record", {}).get("patient") for ev in rt2.events if ev.get("event") == "checkins"]
-    check(R, "live updates never reach another psychologist", a not in got2, got2)
+    check(R, "live updates never reach another clinician", a not in got2, got2)
 
     # ---- accountability
     Z = "audit"
@@ -577,9 +583,9 @@ def run(su):
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"actor='{d1}'", "perPage": 200})
     actions = {i["action"] for i in items(logs)}
     for act in ("patient.summary", "list.checkins", "patient.biometrics"):
-        check(Z, f"'{act}' by a psychologist is in the audit log", act in actions, sorted(actions))
+        check(Z, f"'{act}' by a clinician is in the audit log", act in actions, sorted(actions))
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"actor='{d2}'", "perPage": 200})
-    check(Z, "refused attempts by another psychologist leave no data-read entries", all(i["patient"] != a for i in items(logs)), [i["action"] for i in items(logs)])
+    check(Z, "refused attempts by another clinician leave no data-read entries", all(i["patient"] != a for i in items(logs)), [i["action"] for i in items(logs)])
 
     practice(su, tag, S1, S2, a, b, c, patA, patC, phq9)
 
@@ -609,7 +615,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     W = "two-step sign-in"
     S3 = staff(su, f"c3-{tag}@sec.test", "Dr Three", two_step=False)
     s, r = call("GET", "/api/steady/overview", S3.token)
-    check(W, "staff without two-step sign-in can't use the psychologist routes", s == 403, r)
+    check(W, "staff without two-step sign-in can't use the clinician routes", s == 403, r)
     for coll in ("users", "checkins", "invites"):
         s, r = call("GET", f"/api/collections/{coll}/records", S3.token)
         check(W, f"staff without two-step sign-in read no {coll} through the collections", s in (401, 403) or (s == 200 and not items(r)), r)
@@ -821,18 +827,18 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("POST", "/api/collections/assignments/records", adm, {"patient": a, "clinician": d1, "instrument": phq9, "status": "pending"})
     check(M, "the administrator can't send questionnaires", s in (400, 403, 404), r)
     s, inv = call("POST", "/api/steady/admin/invites", adm, {"label": "New (for D2)", "clinician": d2})
-    check(M, "the administrator invites a patient for a chosen psychologist", s == 200 and inv.get("clinician", {}).get("id") == d2, inv)
+    check(M, "the administrator invites a patient for a chosen clinician", s == 200 and inv.get("clinician", {}).get("id") == d2, inv)
     s, r = call("GET", "/api/collections/invites/records", doc2)
-    check(M, "the invite appears for that psychologist", any(i["id"] == inv.get("id") for i in items(r)), r)
+    check(M, "the invite appears for that clinician", any(i["id"] == inv.get("id") for i in items(r)), r)
     s, r = call("POST", "/api/steady/admin/people", adm, {"role": "clinician", "name": "Fake", "email": f"fake-{tag}@sec.test"})
-    check(M, "the administrator can't create psychologist accounts (that would open patient data)", s == 403, r)
+    check(M, "the administrator can't create clinician accounts (that would open patient data)", s == 403, r)
     S4 = staff(su, f"c4-{tag}@sec.test", "Dr Four")
     s, r = call("POST", f"/api/steady/people/{S4.id}/reset-password", adm, {"twoStep": True})
-    check(M, "the administrator can't clear a psychologist's authenticator (only OpenWorks)", s == 403, r)
+    check(M, "the administrator can't clear a clinician's authenticator (only OpenWorks)", s == 403, r)
     s, r = call("POST", f"/api/steady/people/{S4.id}/reset-password", adm)
-    check(M, "the administrator resets a psychologist's password", s == 200 and r.get("temporaryPassword"), r)
+    check(M, "the administrator resets a clinician's password", s == 200 and r.get("temporaryPassword"), r)
     s, r = call("POST", f"/api/steady/admin/people/{S4.id}/active", adm, {"active": False})
-    check(M, "the administrator stops a psychologist's account", s == 200 and r.get("active") is False, r)
+    check(M, "the administrator stops a clinician's account", s == 200 and r.get("active") is False, r)
     s, r = call("POST", "/api/collections/users/auth-with-password", body={"identity": S4.email, "password": S4.password})
     check(M, "a stopped account can't sign in", s in (400, 403) and not r.get("token"), r)
     s, r = call("POST", f"/api/steady/admin/people/{S4.id}/active", adm, {"active": True})
@@ -847,7 +853,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("POST", f"/api/steady/admin/people/{MX.id}/active", MX.token, {"active": True})
     check(M, "a locked master clinician can't unlock themselves", s in (401, 403), r)
     s, r = call("GET", "/api/steady/admin/people", doc2)
-    check(M, "a psychologist who isn't the master clinician can't list the practice", s == 403, r)
+    check(M, "a clinician who isn't the master clinician can't list the practice", s == 403, r)
     s, r = call("GET", "/api/steady/system", adm)
     check(M, "the administrator doesn't start updates", s == 403, r)
     s, r = call("GET", "/api/steady/health", adm)
@@ -855,7 +861,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("GET", "/api/steady/audit", adm, query={"days": 30})
     check(M, "the administrator reads the audit report", s == 200 and isinstance(r.get("rows"), list), r)
     s, r = call("GET", "/api/steady/audit", doc2)
-    check(M, "a psychologist who isn't the master clinician can't read the audit report", s == 403, r)
+    check(M, "a clinician who isn't the master clinician can't read the audit report", s == 403, r)
     s, r = call("GET", "/api/steady/audit", patA)
     check(M, "patients can't read the audit report", s == 403, r)
     s, r = call("GET", "/api/steady/audit", adm, query={"days": 1})
@@ -896,7 +902,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
         url = ENV.get("MAILSINK_URL", "http://127.0.0.1:8025").rstrip("/")
         with urllib.request.urlopen(url + "/latest?" + urllib.parse.urlencode({"to": emailF, "subject": "finish a password reset"}), timeout=10) as resp:
             m = json.loads(resp.read())
-        check(P, "the patient's email names no practice or psychologist", not any(w in (m.get("text", "") + m.get("subject", "")).lower() for w in ("psycholog", "practice", "clinical", "dr one")), m)
+        check(P, "the patient's email names no practice or clinician", not any(w in (m.get("text", "") + m.get("subject", "")).lower() for w in ("psycholog", "practice", "clinical", "dr one")), m)
         code = {"emailCode": re.search(r"is:\s+(\d{6})", m.get("text", "")).group(1)}
     s, ch = call("POST", "/api/steady/me/password", tt, dict({"password": temp, "newPassword": "Fran-new-password-1"}, **code))
     check(P, "the patient chooses a new password", s == 200 and ch.get("record", {}).get("mustChangePassword") is False and ch.get("token"), ch)
@@ -904,13 +910,13 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(P, "after choosing a new password the patient sees their data again", s == 200 and items(r), r)
     s, r = call("GET", "/api/collections/notifications/records", doc1, query={"perPage": 200, "sort": "-created"})
     if mail:
-        check(P, "the psychologist is told when someone else reset their patient's password", any("Password reset for Fran" in i["title"] for i in items(r)), [i["title"] for i in items(r)][:5])
+        check(P, "the clinician is told when someone else reset their patient's password", any("Password reset for Fran" in i["title"] for i in items(r)), [i["title"] for i in items(r)][:5])
     s, r = call("POST", f"/api/steady/people/{b}/reset-password", doc2)
-    check(P, "a psychologist can't reset another psychologist's patient", s == 404, r)
+    check(P, "a clinician can't reset another clinician's patient", s == 404, r)
     s, r = call("POST", f"/api/steady/people/{c}/reset-password", doc2)
-    check(P, "a psychologist resets their own patient's password", s == 200 and r.get("temporaryPassword"), r)
+    check(P, "a clinician resets their own patient's password", s == 200 and r.get("temporaryPassword"), r)
     s, r = call("POST", f"/api/steady/people/{d1}/reset-password", doc2)
-    check(P, "a psychologist can't reset a colleague's password", s == 403, r)
+    check(P, "a clinician can't reset a colleague's password", s == 403, r)
     s, r = call("POST", f"/api/steady/people/{d1}/reset-password", adm)
     check(P, "nobody in the app resets the master clinician's password", s == 403, r)
     s, r = call("POST", f"/api/steady/people/{d1}/reset-password", doc1)
@@ -922,9 +928,9 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("POST", "/api/steady/admin/people", doc1, {"role": "clinician", "name": "Dup", "email": S2.email})
     check(P, "an email can only have one account", s == 400, r)
     s, r = call("POST", f"/api/steady/people/{S3.id}/reset-password", doc1, {"twoStep": True})
-    check(P, "the master clinician can't clear a psychologist's authenticator (only OpenWorks)", s == 403, r)
+    check(P, "the master clinician can't clear a clinician's authenticator (only OpenWorks)", s == 403, r)
     s, r = call("POST", f"/api/steady/people/{S3.id}/reset-password", doc1)
-    check(P, "the master clinician resets a psychologist's password", s == 200 and r.get("temporaryPassword"), r)
+    check(P, "the master clinician resets a clinician's password", s == 200 and r.get("temporaryPassword"), r)
     s, r = call("POST", "/api/steady/admin/people", doc1, {"role": "support", "name": "Fake OpenWorks", "email": f"fakesup-{tag}@sec.test"})
     check(P, "nobody in the app creates an OpenWorks account", s != 200 or r.get("role") != "support", r)
 
@@ -972,9 +978,9 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     # ---- sharing a patient with a colleague
     H = "sharing"
     s, r = call("POST", f"/api/steady/patients/{c}/share", doc1, {"clinician": d1, "shared": True})
-    check(H, "a psychologist can't share someone else's patient", s == 404, r)
+    check(H, "a clinician can't share someone else's patient", s == 404, r)
     s, r = call("POST", f"/api/steady/patients/{a}/share", doc1, {"clinician": d2, "shared": True})
-    check(H, "a psychologist shares their patient with a colleague", s == 200 and r.get("shared") is True, r)
+    check(H, "a clinician shares their patient with a colleague", s == 200 and r.get("shared") is True, r)
     s, ov = call("GET", "/api/steady/overview", doc2)
     row = [p for p in ov.get("patients", []) if p["id"] == a]
     check(H, "the colleague sees the shared patient, marked as shared", s == 200 and row and row[0].get("shared") is True and row[0].get("owner") == "Dr One", row)
@@ -989,7 +995,7 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
         s, r = call("POST", path, doc2, body)
         check(H, f"sharing is read only: {path.split('/')[-1]} is refused", s in (403, 404), r)
     s, r = call("GET", f"/api/steady/patients/{a}/export", doc2)
-    check(H, "only the patient's own psychologist can export their record", s == 404, r)
+    check(H, "only the patient's own clinician can export their record", s == 404, r)
     s, r = call("GET", f"/api/steady/patients/{b}/summary", doc2)
     check(H, "sharing one patient shares nothing else", s == 404, r)
     s, ct = call("GET", "/api/steady/me/care-team", patA)
@@ -1002,18 +1008,18 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("GET", "/api/collections/checkins/records", doc2, query={"filter": f"patient='{a}'"})
     check(H, "after unsharing the colleague reads no check-ins", s == 200 and not items(r), r)
 
-    # ---- moving a patient to another psychologist
+    # ---- moving a patient to another clinician
     V = "reassigning"
     tokG, g = patient(doc1, "Gita (D1)", "Gita")
     checkin(tokG, g, 4, "G's note")
     s, r = call("POST", f"/api/steady/admin/patients/{g}/reassign", doc2, {"clinician": d2})
-    check(V, "a psychologist can't take over a colleague's patient", s == 403, r)
+    check(V, "a clinician can't take over a colleague's patient", s == 403, r)
     s, r = call("POST", f"/api/steady/admin/patients/{g}/reassign", adm, {"clinician": d2})
-    check(V, "the administrator moves a patient to another psychologist", s == 200, r)
+    check(V, "the administrator moves a patient to another clinician", s == 200, r)
     s, r = call("GET", "/api/collections/checkins/records", doc2, query={"filter": f"patient='{g}'"})
-    check(V, "the new psychologist sees the history", s == 200 and items(r), r)
+    check(V, "the new clinician sees the history", s == 200 and items(r), r)
     s, r = call("GET", "/api/collections/checkins/records", doc1, query={"filter": f"patient='{g}'"})
-    check(V, "the previous psychologist no longer does", s == 200 and not items(r), r)
+    check(V, "the previous clinician no longer does", s == 200 and not items(r), r)
 
     # ---- stopping and restoring
     O = "stop and restore"
@@ -1031,11 +1037,11 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     E = "exports"
     s, ex = call("GET", f"/api/steady/patients/{a}/export", doc1)
     rec = (ex.get("patients") or [{}])[0]
-    check(E, "the psychologist exports a patient's record", s == 200 and len(rec.get("checkins", [])) >= 2 and rec.get("patient", {}).get("id") == a, list(ex))
+    check(E, "the clinician exports a patient's record", s == 200 and len(rec.get("checkins", [])) >= 2 and rec.get("patient", {}).get("id") == a, list(ex))
     check(E, "the export carries questionnaire answers and the questions", any(x.get("answers") for x in rec.get("assessments", [])) and "phq9" in rec.get("instruments", {}), rec.get("assessments"))
     s, allx = call("GET", "/api/steady/export", doc1)
     ids = {p["patient"]["id"] for p in allx.get("patients", [])}
-    check(E, "the full export has the psychologist's own patients only", s == 200 and a in ids and c not in ids and g not in ids, sorted(ids))
+    check(E, "the full export has the clinician's own patients only", s == 200 and a in ids and c not in ids and g not in ids, sorted(ids))
     s, r = call("GET", f"/api/steady/patients/{a}/export", patA)
     check(E, "patients can't use the export route", s == 403, r)
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"actor='{d1}' && action~'export'", "perPage": 50})
@@ -1054,16 +1060,16 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = call("POST", "/api/steady/me/delete-request", patX, {"password": xpw})
     check(X, "the patient asks, and is told how long it takes", s == 200 and r.get("days") == 30 and r.get("requestedAt"), r)
     s, r = call("GET", f"/api/steady/patients/{x}/summary", doc1)
-    check(X, "their psychologist sees the request", s == 200 and r.get("deletionRequestedAt"), r.get("deletionRequestedAt"))
+    check(X, "their clinician sees the request", s == 200 and r.get("deletionRequestedAt"), r.get("deletionRequestedAt"))
     s, r = call("GET", f"/api/collections/users/records/{x}", patX)
     check(X, "the patient can't clear the request themselves", s == 200, r)
     s, r = call("PATCH", f"/api/collections/users/records/{x}", patX, {"deletionRequestedAt": ""})
     s2, r2 = call("GET", f"/api/steady/patients/{x}/summary", doc1)
     check(X, "...through the records API either", r2.get("deletionRequestedAt"), [s, r])
     s, r = call("POST", f"/api/steady/patients/{x}/delete-account", doc2)
-    check(X, "another psychologist can't delete someone else's patient", s == 404, r)
+    check(X, "another clinician can't delete someone else's patient", s == 404, r)
     s, r = call("POST", f"/api/steady/patients/{x}/delete-account", doc1)
-    check(X, "their psychologist deletes the account", s == 200 and r.get("deleted") is True, r)
+    check(X, "their clinician deletes the account", s == 200 and r.get("deleted") is True, r)
     s, r = call("GET", "/api/collections/checkins/records", su, query={"filter": f"note~'DELETE-ME-{tag}'"})
     check(X, "the patient's check-ins went with it", s == 200 and not items(r), r)
     s, r = call("GET", "/api/collections/checkins/records", patX)
@@ -1075,12 +1081,12 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     community_sign_in(su, tag, adm, sup, doc2, patA, doc1, d2, AD.id)
     community_from_fleet(doc2)
 
-    # ---- RADR, its explanations and reviews, and the psychologist's own daily words
+    # ---- RADR, its explanations and reviews, and the clinician's own daily words
     Q = "RADR"
     s, r = call("GET", f"/api/steady/patients/{a}/radr", doc1)
-    check(Q, "the psychologist opens RADR for their patient", s == 200 and "days" in r and "concordance" in r, list(r)[:6])
+    check(Q, "the clinician opens RADR for their patient", s == 200 and "days" in r and "concordance" in r, list(r)[:6])
     s, r = call("GET", f"/api/steady/patients/{c}/radr", S2.token)
-    check(Q, "and another psychologist's own patient's RADR for theirs", s == 200, r)
+    check(Q, "and another clinician's own patient's RADR for theirs", s == 200, r)
     s, r = call("GET", f"/api/steady/patients/{a}/radr", doc2)
     check(Q, "RADR follows the same rules: someone else's patient is refused", s == 404, r)
     s, r = call("GET", f"/api/steady/patients/{a}/radr", adm)
@@ -1099,14 +1105,14 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     key = flags[0]["key"] if flags else "radr:sleep:2026-01-01"
     s, x = call("GET", f"/api/steady/patients/{rid}/radr/explain", doc1)
     sl = (x.get("measures") or {}).get("sleep_min", {}) if s == 200 else {}
-    check(Q, "the psychologist reads why, in plain words, with the data behind it",
+    check(Q, "the clinician reads why, in plain words, with the data behind it",
           s == 200 and "away from this person's usual" in x.get("words", "") and "Usually" in sl.get("words", "")
           and len((sl.get("baseline") or {}).get("values", [])) >= 14 and len(sl.get("window", [])) == 3, [s, x.get("words"), sl.get("words")])
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"action='patient.radr.explain' && patient='{rid}' && actor='{d1}'"})
     check(Q, "reading it is written to the access log", items(logs), logs)
-    # who may read and mark it: the patient's psychologist, or a colleague it's shared with
+    # who may read and mark it: the patient's clinician, or a colleague it's shared with
     patO, _ = patient(doc2, "Olu (D2)", "Olu")
-    for who, tok in (("another psychologist", doc2), ("the practice admin", adm), ("the patient", patR), ("another psychologist's patient", patO)):
+    for who, tok in (("another clinician", doc2), ("the practice admin", adm), ("the patient", patR), ("another clinician's patient", patO)):
         s, r = call("GET", f"/api/steady/patients/{rid}/radr/explain", tok)
         check(Q, f"{who} can't read RADR's reasoning", s in (403, 404), [s, str(r)[:120]])
         s, r = call("POST", f"/api/steady/patients/{rid}/radr/review", tok, {"key": key, "note": "x"})
@@ -1125,8 +1131,8 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     check(Q, "or read it", s == 404, r)
     s, rr = call("GET", f"/api/steady/patients/{rid}/radr", doc1)
     mine = [f for f in rr.get("flags", []) if f.get("key") == key]
-    check(Q, "the psychologist sees who reviewed it", mine and (mine[0].get("reviewed") or {}).get("by") == "Dr Two", mine)
-    for who, tok in (("the patient", patR), ("the psychologist", doc1), ("the practice admin", adm)):
+    check(Q, "the clinician sees who reviewed it", mine and (mine[0].get("reviewed") or {}).get("by") == "Dr Two", mine)
+    for who, tok in (("the patient", patR), ("the clinician", doc1), ("the practice admin", adm)):
         s, r = call("GET", "/api/collections/radrreviews/records", tok, query={"perPage": 200})
         check(Q, f"{who} reads no RADR reviews through the collections", s in (401, 403, 404) or (s == 200 and not items(r)), [s, str(r)[:120]])
     s, r = call("GET", f"/api/collections/users/records/{rid}", patR)
@@ -1137,15 +1143,15 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
           and row[0].get("attention", {}).get("why", {}).get("kind") in ("radr", "none", "other"), row[0].get("radr") if row else row)
     Q = "daily words"
     s, qd1 = call("POST", "/api/collections/quotes/records", doc1, {"text": "One step at a time.", "createdBy": d1, "active": True})
-    check(Q, "a psychologist adds words for their patients' daily start", s == 200, qd1)
+    check(Q, "a clinician adds words for their patients' daily start", s == 200, qd1)
     s, r = call("POST", "/api/collections/quotes/records", doc2, {"text": "Not mine to add.", "createdBy": d1, "active": True})
     check(Q, "nobody adds words in someone else's name", s in (400, 403), r)
     s, r = call("POST", "/api/collections/quotes/records", patA, {"text": "Patient words", "createdBy": a, "active": True})
     check(Q, "patients can't add words", s in (400, 403), r)
     s, r = call("GET", "/api/collections/quotes/records", patA)
-    check(Q, "a patient sees their own psychologist's words", s == 200 and any(i["id"] == qd1.get("id") for i in items(r)), r)
+    check(Q, "a patient sees their own clinician's words", s == 200 and any(i["id"] == qd1.get("id") for i in items(r)), r)
     s, r = call("GET", "/api/collections/quotes/records", patC)
-    check(Q, "another psychologist's patient doesn't", s == 200 and not any(i["id"] == qd1.get("id") for i in items(r)), r)
+    check(Q, "another clinician's patient doesn't", s == 200 and not any(i["id"] == qd1.get("id") for i in items(r)), r)
     s, r = call("PATCH", f"/api/collections/quotes/records/{qd1.get('id')}", doc2, {"text": "changed"})
     check(Q, "only the author edits them", s in (403, 404), r)
 
@@ -1166,14 +1172,14 @@ def practice(su, tag, S1, S2, a, b, c, patA, patC, phq9):
     s, r = feed("/api/steady/integration/patients", "x" * 40, S1.email)
     check(I, "a wrong key is refused", s == 401, r)
     s, r = feed("/api/steady/integration/patients", key, "nobody@sec.test")
-    check(I, "an unknown psychologist gets nothing", s == 404, r)
+    check(I, "an unknown clinician gets nothing", s == 404, r)
     s, r = feed("/api/steady/integration/patients", key, S1.email)
-    check(I, "Sorted lists the psychologist's own patients", s == 200 and a in {p["id"] for p in r.get("patients", [])} and c not in {p["id"] for p in r.get("patients", [])}, r)
+    check(I, "Sorted lists the clinician's own patients", s == 200 and a in {p["id"] for p in r.get("patients", [])} and c not in {p["id"] for p in r.get("patients", [])}, r)
     s, r = feed(f"/api/steady/integration/patients/{a}/feed", key, S1.email)
     check(I, "Sorted reads a patient's feed", s == 200 and r.get("checkins") and "flags" in r, list(r))
     check(I, "the feed leaves out item-level answers", all("answers" not in x for x in r.get("assessments", [])), r.get("assessments"))
     s, r = feed(f"/api/steady/integration/patients/{c}/feed", key, S1.email)
-    check(I, "Sorted can't read another psychologist's patient", s == 404, r)
+    check(I, "Sorted can't read another clinician's patient", s == 404, r)
     s, logs = call("GET", "/api/collections/auditlog/records", su, query={"filter": f"action='integration.feed' && patient='{a}'"})
     check(I, "feed reads are audit-logged", items(logs), logs)
 
@@ -1187,7 +1193,7 @@ def operator_agreement(su, tag, adm, sup, doc2, patA):
     brief = lambda r: {k: v for k, v in r.items() if k != "text"} if isinstance(r, dict) else r
     check(G, "the master clinician reads the agreement and may sign it",
           s == 200 and st.get("canSign") is True and "Operator agreement" in st.get("text", "") and st.get("version"), [s, brief(st)])
-    for label, tok in (("another psychologist", doc2), ("the practice admin", adm), ("OpenWorks support", sup)):
+    for label, tok in (("another clinician", doc2), ("the practice admin", adm), ("OpenWorks support", sup)):
         s, r = call("GET", OA, tok)
         check(G, f"{label} reads it, without the practice's details or the right to sign", s == 200 and r.get("canSign") is False and "prefill" not in r, [s, brief(r)])
     s, r = call("GET", OA, patA)
@@ -1195,7 +1201,7 @@ def operator_agreement(su, tag, adm, sup, doc2, patA):
     fields = {"practiceName": f"Security Test Practice {tag}", "registration": "PR 0000000", "address": "1 Test Street, Gqeberha",
               "email": "practice@sec.test", "phone": "041 000 0000", "informationOfficer": {"master": True}}
     body = {"version": st.get("version"), "sha256": st.get("sha256"), "authorised": True, "signature": "Dr Operator Example", "fields": fields}
-    for label, tok in (("another psychologist", doc2), ("the practice admin", adm), ("OpenWorks support", sup), ("a patient", patA)):
+    for label, tok in (("another clinician", doc2), ("the practice admin", adm), ("OpenWorks support", sup), ("a patient", patA)):
         s, r = call("POST", OA + "/sign", tok, body)
         check(G, f"{label} can't sign it", s == 403, r)
     s, r = call("POST", OA + "/sign", MO.token, body, confirm=False)
@@ -1221,7 +1227,7 @@ def operator_agreement(su, tag, adm, sup, doc2, patA):
         s, r = call("GET", OA + "/signed", tok)
         latest = (r.get("latest") or {}) if isinstance(r, dict) else {}
         check(G, f"{label} opens the signed copy", s == 200 and latest.get("id") == signed.get("id") and latest.get("text") == st.get("text"), [s, latest.get("id")])
-    for label, tok in (("another psychologist", doc2), ("a patient", patA)):
+    for label, tok in (("another clinician", doc2), ("a patient", patA)):
         s, r = call("GET", OA + "/signed", tok)
         check(G, f"{label} can't open the signed copy", s == 403, r)
     rid = signed.get("id", "x")
@@ -1243,8 +1249,8 @@ def operator_agreement(su, tag, adm, sup, doc2, patA):
 
 def community_sign_in(su, tag, adm, sup, doc2, patA, master, d2, adm_id):
     """The community, inside Steady: a short note for the sign-in bridge, signed with the
-    practice's key (HMAC-SHA256), for psychologists and the practice admin (the forum shows them
-    the Steady manual only) the master psychologist has added, and OpenWorks support, with
+    practice's key (HMAC-SHA256), for clinicians and the practice admin (the forum shows them
+    the Steady manual only) the master clinician has added, and OpenWorks support, with
     two-step sign-in on. Never for patients or staff without two-step sign-in."""
     G = "community sign-in"
     R = "/api/steady/community/sign-in"
@@ -1257,15 +1263,15 @@ def community_sign_in(su, tag, adm, sup, doc2, patA, master, d2, adm_id):
         check(G, "and the app gets no Community tab", cfg.get("communityUrl") == "", cfg.get("communityUrl"))
         return
     check(G, "the app gets the Community tab", cfg.get("communityUrl", "").startswith("https://"), cfg.get("communityUrl"))
-    # staff accounts made after 1.2 start outside the community: the master psychologist adds them
-    check(G, "a psychologist the practice hasn't added is refused", s == 403 and "added you" in str(r.get("message", "")), [s, r])
+    # staff accounts made after 1.2 start outside the community: the master clinician adds them
+    check(G, "a clinician the practice hasn't added is refused", s == 403 and "added you" in str(r.get("message", "")), [s, r])
     s, r = call("POST", "/api/steady/practice/community", doc2, {"user": d2, "on": True})
-    check(G, "only the master psychologist adds people", s == 403, [s, r])
+    check(G, "only the master clinician adds people", s == 403, [s, r])
     for uid in (d2, adm_id):
         s, r = call("POST", "/api/steady/practice/community", master, {"user": uid, "on": True})
-        check(G, "the master psychologist adds them", s == 200 and r.get("community") is True, [s, r])
+        check(G, "the master clinician adds them", s == 200 and r.get("community") is True, [s, r])
     s, r = call("POST", R, doc2, {})
-    check(G, "a psychologist gets a note for the bridge", s == 200 and str(r.get("url", "")).startswith(bridge + "/enter?p="), [s, r])
+    check(G, "a clinician gets a note for the bridge", s == 200 and str(r.get("url", "")).startswith(bridge + "/enter?p="), [s, r])
 
     def note_of(resp):
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(resp.get("url", "")).query)

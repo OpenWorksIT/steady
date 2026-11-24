@@ -177,7 +177,7 @@ func (a *App) enter(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: id, Path: "/discourse", MaxAge: 120, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	// always through the forum's sign-in, so the forum shows whoever is in Steady now (another
-	// psychologist may have used this browser before)
+	// clinician may have used this browser before)
 	http.Redirect(w, r, cfg.Forum+"/session/sso", http.StatusSeeOther)
 }
 
@@ -262,7 +262,7 @@ func (a *App) checkNote(n note, cfg *Config, p *Practice) (title, text, why stri
 		return "The community didn't open", "Close it and choose Community in Steady again.", "note ids"
 	case !validEmail(email):
 		return "This email address can't be used", "Your Steady account's email address can't be used in the community. Ask your practice to check it.", "note email"
-	// one list per practice covers its staff: psychologists and practice administrators
+	// one list per practice covers its staff: clinicians and practice administrators
 	case (n.Role == "clinician" || n.Role == "admin") && !listed(p.Emails, email):
 		return "This address isn't on the community's list", "Your email address isn't one " + p.Name + " has listed for the community. Ask the community lead to add it.", "email not on the practice's list"
 	case n.Role == "support" && !p.Support:
@@ -270,14 +270,14 @@ func (a *App) checkNote(n note, cfg *Config, p *Practice) (title, text, why stri
 	case n.Role == "support" && !listed(cfg.OpenWorks, email):
 		return "This address isn't on the community's list", "Only OpenWorks IT's listed addresses come in as OpenWorks support.", "support address not on the OpenWorks list"
 	case n.Role != "clinician" && n.Role != "admin" && n.Role != "support":
-		return forWhom, "Only psychologists, practice administrators and OpenWorks IT can open Steady Community.", "role " + n.Role
+		return forWhom, "Only clinicians, practice administrators and OpenWorks IT can open Steady Community.", "role " + n.Role
 	}
 	return "", "", ""
 }
 
-const forWhom = "The community is for psychologists, practice administrators and OpenWorks IT"
+const forWhom = "The community is for clinicians, practice administrators and OpenWorks IT"
 
-// groupsFor: psychologists join clinicians and their practice's own groups; practice
+// groupsFor: clinicians join clinicians and their practice's own groups; practice
 // administrators join practice-admins only (it sees the Steady manual, nothing else); OpenWorks
 // support joins openworks. Everyone leaves every other group the bridge hands out, so someone
 // whose role changed, or whose address moved to another practice's list (or to OpenWorks'),
@@ -287,7 +287,7 @@ func groupsFor(role string, p *Practice, cfg *Config) (add, remove []string) {
 	case "clinician":
 		add = append([]string{"clinicians"}, p.Groups...)
 	case "admin":
-		// never clinicians or the practice's own groups: those are for its psychologists
+		// never clinicians or the practice's own groups: those are for its clinicians
 		add = []string{"practice-admins"}
 	case "support":
 		add = []string{"openworks"}

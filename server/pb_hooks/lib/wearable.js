@@ -125,7 +125,7 @@ function baselines(byDay, from, to, metrics) {
 }
 
 /** What the watch charts show for one patient: the daily values from..to (the last 28 days when
- *  not given, 400 at most) and their own usual range for each day. The psychologist's Wearable
+ *  not given, 400 at most) and their own usual range for each day. The clinician's Wearable
  *  tab and, since 1.2.4, the patient's own watch data both show this. */
 function view(app, s, p, q) {
   var today = localDay(s.nowMs(), p.getInt("tzOffset") || 120);

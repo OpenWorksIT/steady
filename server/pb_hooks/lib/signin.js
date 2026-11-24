@@ -8,7 +8,7 @@
  *
  * The count is kept per email address, in its own collection (signinfails), for unknown
  * addresses exactly as for real accounts: the answers and timing are the same either way, so
- * nobody can tell whether an address has an account (at a psychology practice, that alone
+ * nobody can tell whether an address has an account (at a mental healthcare practice, that alone
  * says someone is a patient).
  * Uses PocketBase globals.
  * SPDX-License-Identifier: AGPL-3.0-or-later

@@ -192,7 +192,7 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 			f.mu.Unlock()
 			if b["email"] == "pat@example.org" {
 				w.WriteHeader(400)
-				w.Write([]byte(`{"message":"Patients' passwords are reset by their psychologist, or with the code Steady emails them."}`))
+				w.Write([]byte(`{"message":"Patients' passwords are reset by their clinician, or with the code Steady emails them."}`))
 				return
 			}
 			w.Write([]byte(`{"temporaryPassword":"Tmp-4821-quiet-otter","emailedTo":"t***@example.org","twoStepCleared":` + fmt.Sprint(b["twoStep"] == true) + `,"account":{"name":"Dr Two","role":"clinician"}}`))
@@ -1153,7 +1153,7 @@ func TestCommunityFromTheFleet(t *testing.T) {
 	if err := communityCmd(app.store, []string{short, "on"}, strings.NewReader("no\n"), &out); err == nil || !strings.Contains(err.Error(), "not confirmed") {
 		t.Fatalf("unconfirmed: %v", err)
 	}
-	// the practice already has its master psychologist in: --approve-all takes them
+	// the practice already has its master clinician in: --approve-all takes them
 	steady.mu.Lock()
 	steady.comm["members"] = []any{member("kempie@vrpsych.co.za", "Dr Kempie", "clinician")}
 	steady.mu.Unlock()
@@ -1177,7 +1177,7 @@ func TestCommunityFromTheFleet(t *testing.T) {
 		t.Fatalf("the bridge's file is %v", st.Mode().Perm())
 	}
 
-	// the master psychologist adds two more: they wait, and only listed staff can be approved
+	// the master clinician adds two more: they wait, and only listed staff can be approved
 	steady.mu.Lock()
 	steady.comm["members"] = []any{member("kempie@vrpsych.co.za", "Dr Kempie", "clinician"), member("two@vrpsych.co.za", "Dr Two", "clinician"), member("desk@vrpsych.co.za", "Front Desk", "admin")}
 	steady.mu.Unlock()
@@ -1304,7 +1304,7 @@ func TestEmptyPracticeOffTheBridge(t *testing.T) {
 	if len(bridge) != 1 || bridge[0].ID != "test" {
 		t.Fatalf("bridge file: %+v", bridge)
 	}
-	// updated, the practice has its master psychologist in: on again, and on the list
+	// updated, the practice has its master clinician in: on again, and on the list
 	steady.mu.Lock()
 	steady.comm = map[string]any{"on": true, "fleet": true, "members": []any{map[string]any{"email": "kempie@vrpsych.co.za", "name": "Dr Kempie", "role": "clinician"}}}
 	steady.commOld = false

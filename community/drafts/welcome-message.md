@@ -1,6 +1,6 @@
 Subject: Welcome to %{site_name}
 
-Welcome to %{site_name}, the community of psychologists at practices that use Steady.
+Welcome to %{site_name}, the community of clinicians at practices that use Steady.
 
 Three places to start:
 

@@ -6,7 +6,7 @@ import '../../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
-/// The patient's own check-ins over time, as their psychologist sees them: seeing themselves
+/// The patient's own check-ins over time, as their clinician sees them: seeing themselves
 /// over weeks helps people make sense of how they've been. No flags or research scores here.
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});

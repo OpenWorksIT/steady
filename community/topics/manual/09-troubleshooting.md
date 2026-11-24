@@ -16,7 +16,7 @@
 
 **I signed out on my computer and now my phone is signed out too.** **Sign out** signs you out on all your devices.
 
-**A patient doesn't appear on my list.** They may be archived (**Settings > Archived patients**), their access may have been stopped, or they may be another psychologist's patient who hasn't been shared with you.
+**A patient doesn't appear on my list.** They may be archived (**Settings > Archived patients**), their access may have been stopped, or they may be another clinician's patient who hasn't been shared with you.
 
 **Why is a patient at the top of my list?** Tap their flags or the ⓘ to see **Why [name] is here**. Mark flags as reviewed once you've dealt with them.
 
@@ -24,9 +24,9 @@
 
 **I can't send a questionnaire from the library.** It may still need a licence check: open it under **Needs a licence check** and confirm the practice may use it.
 
-**I don't see the Community tab.** Your practice may not take part in the community yet, or you may be using the web version on an address other than your practice's own Steady address. It's for psychologists and practice administrators.
+**I don't see the Community tab.** Your practice may not take part in the community yet, or you may be using the web version on an address other than your practice's own Steady address. It's for clinicians and practice administrators.
 
-**Can a patient see my notes or their scores?** No. Notes are for you and colleagues you share the patient with. Scores, bands and flags go only to the psychologist.
+**Can a patient see my notes or their scores?** No. Notes are for you and colleagues you share the patient with. Scores, bands and flags go only to the clinician.
 
 ---
 
@@ -34,4 +34,4 @@
 
 Email OpenWorks IT at **info@openworks.co.za**.
 
-You can also use the **Feedback** button in Steady to report a bug or suggest a change; it reaches OpenWorks IT and your practice's master psychologist and administrator. Please don't name patients in feedback or emails.
+You can also use the **Feedback** button in Steady to report a bug or suggest a change; it reaches OpenWorks IT and your practice's master clinician and administrator. Please don't name patients in feedback or emails.

@@ -19,7 +19,7 @@ class ExportFlag {
   /// Marked as reviewed in Steady: who, when, and their note. Null when not (yet) marked.
   final ({String by, DateTime? at, String note})? review;
   ExportFlag(this.label, this.severity, {this.key = '', this.at, this.review});
-  /// Flags a psychologist can mark as reviewed (not "no check-in for 3 days" and the like).
+  /// Flags a clinician can mark as reviewed (not "no check-in for 3 days" and the like).
   bool get reviewable => key.isNotEmpty;
   static ExportFlag fromJson(Object? raw) {
     final j = asMap(raw);
@@ -35,11 +35,11 @@ class ExportFlag {
     final r = review;
     if (!reviewable) return '';
     if (r == null) return 'not yet marked as reviewed in Steady';
-    return 'reviewed by ${r.by.isEmpty ? 'the psychologist' : r.by}${r.at == null ? '' : ' on ${date(r.at!)}'}${r.note.trim().isEmpty ? '' : ' ("${r.note.trim()}")'}';
+    return 'reviewed by ${r.by.isEmpty ? 'the clinician' : r.by}${r.at == null ? '' : ' on ${date(r.at!)}'}${r.note.trim().isEmpty ? '' : ' ("${r.note.trim()}")'}';
   }
 }
 
-/// A short dated note by the psychologist (never shown to the patient).
+/// A short dated note by the clinician (never shown to the patient).
 class ExportNote {
   final DateTime at;
   final String by, text;
@@ -112,6 +112,17 @@ class ExportRadr {
   Map<String, dynamic> method = const {};
   /// domains switched off for this patient: [{domain, since, by, reason}]
   List<Map<String, dynamic>> exclusions = const [];
+  /// the baseline started again for this patient: {from, by, at, reason}, or empty
+  Map<String, dynamic> baseline = const {};
+
+  /// "Baseline started again from 15 Nov 2026 by Dr X (reason): ..." for exports, or ''.
+  String baselineText(String Function(DateTime) date) {
+    final from = DateTime.tryParse('${baseline['from'] ?? ''}');
+    if (from == null) return '';
+    final by = '${baseline['by'] ?? ''}', why = '${baseline['reason'] ?? ''}'.trim();
+    return 'Baseline started again from ${date(from)}${by.isEmpty ? '' : ' by $by'}${why.isEmpty ? '' : ' ($why)'}: '
+        'from then on, each day is compared only with this person\'s data from that day on.';
+  }
   /// each measure's value and usual value on the first and latest rated days
   Map<String, dynamic> startFeatures = const {}, latestFeatures = const {};
   /// the flags on the latest day (when the period reaches today): [{key, domain, since, day, score,
@@ -135,7 +146,7 @@ class ExportRadr {
     final note = '${r['note'] ?? ''}'.trim();
     final review = r.isEmpty
         ? 'not yet marked as reviewed in Steady'
-        : 'marked as reviewed in Steady by ${by.isEmpty ? 'the psychologist' : by}${at == null ? '' : ' on ${date(at)}'}${note.isEmpty ? '' : ' ("$note")'}';
+        : 'marked as reviewed in Steady by ${by.isEmpty ? 'the clinician' : by}${at == null ? '' : ' on ${date(at)}'}${note.isEmpty ? '' : ' ("$note")'}';
     return '$name away from usual${since == null ? '' : ' since ${date(since)}'}: $review';
   }
 
@@ -169,6 +180,7 @@ class ExportRadr {
     r.version = '${j['version'] ?? ''}';
     r.method = asMap(j['method']);
     r.exclusions = asList(j['exclusions']).map(asMap).toList();
+    r.baseline = asMap(j['baseline']);
     r.startFeatures = asMap(asMap(j['start'])['features']);
     r.latestFeatures = asMap(asMap(j['latest'])['features']);
     r.flags = asList(j['flags']).map(asMap).toList();
@@ -187,7 +199,7 @@ class ExportPatient {
   final List<({String day, Map<String, dynamic> values})> wearableDays;
   final Map<String, ExportInstrument> instruments;
   final ExportRadr? radr;
-  /// the psychologist's own notes for the period
+  /// the clinician's own notes for the period
   final List<ExportNote> notes;
   /// how things were worked out: radr (version), checkins, questionnaireFlags, steadyBuild
   final Map<String, String> methods;

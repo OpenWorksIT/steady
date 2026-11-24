@@ -20,11 +20,11 @@ The exercises (box breathing, 4-7-8 breathing, slow paced breathing, 5-4-3-2-1 g
 
 ## WHO-5 and the non-commercial clause
 
-WHO-5 ships marked Check licence because its licence allows non-commercial use only, and a private practice charges for its services. Whether a practice's use with its own patients falls within that is for the practice to decide, with advice if it needs it. Once it has, a psychologist confirms it in the library: tap WHO-5, then **Confirm the practice may use this**.
+WHO-5 ships marked Check licence because its licence allows non-commercial use only, and a private practice charges for its services. Whether a practice's use with its own patients falls within that is for the practice to decide, with advice if it needs it. Once it has, a clinician confirms it in the library: tap WHO-5, then **Confirm the practice may use this**.
 
 ## Adding instruments
 
-- **From the ReproSchema library** (Library > Add > Import): Steady lists a selection from this open research library, each with Steady's own note: "Listed as free to use", "Check the licence before use", or "Copyright protected: not available". Everything imported waits as Check licence until a psychologist confirms the practice may use it.
+- **From the ReproSchema library** (Library > Add > Import): Steady lists a selection from this open research library, each with Steady's own note: "Listed as free to use", "Check the licence before use", or "Copyright protected: not available". Everything imported waits as Check licence until a clinician confirms the practice may use it.
 - **From a file** (a Steady or FHIR questionnaire): also Check licence, unless you tick "This is the practice's own questionnaire". Tick it only for material the practice wrote.
 - **Written in Steady**: marked Own and ready to send. See "Building your own questionnaire".
 

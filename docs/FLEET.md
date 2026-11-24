@@ -60,7 +60,7 @@ folder, never on a practice's server.
 - A password reset from the fleet is for staff only, and finishes only with **both** the
   temporary password (the dev tells the person by phone) and a code the server emails to the
   person. So the fleet key alone can't take an account over. The person and the practice's
-  master psychologists are emailed, and it's in the practice's access log. A server that can't
+  master clinicians are emailed, and it's in the practice's access log. A server that can't
   send email refuses; reset on the server with `accounts.sh` instead.
 - The server leaves the request for `deploy/ctl/steady-ctl.sh`, which does the work as root.
   **Update** first saves a copy of the data, then installs the newest release signed by
@@ -208,7 +208,7 @@ sudo /opt/steady-ops/fleet/fleet.sh reset vr thandi@vrpsych.co.za [--two-step]
 `reset` shows a temporary password once: tell the person by phone, never by email or message.
 They also need the code Steady emails them (24 hours). `--two-step` also clears their
 authenticator (a lost phone) and unlocks an account they locked. Patients' passwords aren't
-reset from here: their psychologist does it, or they use the emailed code themselves.
+reset from here: their clinician does it, or they use the emailed code themselves.
 
 **The community** (docs/COMMUNITY.md, "Adding a practice"):
 

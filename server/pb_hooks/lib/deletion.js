@@ -2,7 +2,7 @@
  * Deleting a patient's account, which the patient asks for in the app (Settings > Delete my
  * account) and the practice carries out.
  *
- * Why the practice, and not the app straight away: in South Africa a psychologist must keep
+ * Why the practice, and not the app straight away: in South Africa a clinician must keep
  * health records for at least six years after they become dormant, until a minor's 21st
  * birthday, and for life for a patient who is mentally incompetent (HPCSA Booklet 9, section 9).
  * So the practice first exports what belongs in its clinical record (PDF, Excel or Heidi), then
@@ -27,18 +27,18 @@ var OWNED = [
   ["devices", "user"],
   ["devicelinks", "user"],
   ["feedback", "who"],
-  // the invite they joined with (it carries the name the psychologist typed)
+  // the invite they joined with (it carries the name the clinician typed)
   ["invites", "usedBy"]
 ];
 
 var WHY = [
-  "South African law requires your psychologist to keep your clinical records: for at least six years after your last contact,",
+  "South African law requires your clinician to keep your clinical records: for at least six years after your last contact,",
   "until your 21st birthday if you're under 18, and for life in some cases (HPCSA Booklet 9). So your practice first copies what",
   "belongs in your clinical file, and then deletes your Steady account and everything Steady holds about you."
 ].join(" ");
 
-/** Who at the practice hears about a request: the patient's psychologist, or the master
- *  clinicians when that psychologist is no longer active. */
+/** Who at the practice hears about a request: the patient's clinician, or the master
+ *  clinicians when that clinician is no longer active. */
 function practiceContacts(app, patient) {
   var own = patient.getString("clinician");
   if (own) {

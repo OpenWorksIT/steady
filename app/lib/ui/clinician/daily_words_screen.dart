@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Words of encouragement for the daily start screen of this psychologist's patients, shown
+// Words of encouragement for the daily start screen of this clinician's patients, shown
 // alongside the ones built into Steady (content/daily_words.dart).
 import 'package:flutter/material.dart';
 
@@ -66,7 +66,10 @@ class _DailyWordsScreenState extends State<DailyWordsScreen> {
         builder: (context, mine, reload) => ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), children: [
           Text(
             'Each day your patients first see a few calm words and a breathing circle. Add your own here; '
-            'they\'re mixed in with the ${dailyWords.length} that come with Steady.',
+            'they\'re mixed in with the ${dailyWords.length} that come with Steady. They\'re supportive prompts, not a '
+            'treatment: they sit alongside the coping plans you make together. Avoid promising how someone will feel, and '
+            'offer anything about the body as a choice ("If it feels comfortable…"). Patients can hide any line, or '
+            'switch the words off.',
             style: TextStyle(color: context.sc.ink2),
           ),
           const SizedBox(height: 12),

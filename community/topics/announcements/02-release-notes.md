@@ -6,7 +6,7 @@ Each new version of Steady gets a reply in this topic, so the whole history is i
 Each reply follows the same outline:
 
 - **Version and date**: when it reached the practice servers
-- **For psychologists**: what you will see or do differently
+- **For clinicians**: what you will see or do differently
 - **For patients**: what changes on their side, and what they might ask you about
 - **For the practice**: anything for the master clinician or the practice admin
 - **To do**: anything you need to do, or "nothing"

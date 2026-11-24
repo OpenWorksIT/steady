@@ -29,7 +29,7 @@ Steady never diagnoses. Scores, bands, flags and RADR support your judgement. No
 
 ## Who decides
 
-VR Clinical Psychology signs off the science and clinical content of every Steady deployment: which questionnaires ship, how they are scored and banded, what is flagged, and the clinical wording that patients and psychologists read. OpenWorks IT writes and runs the code to match. Kempie van Rooyen leads this community.
+VR Clinical Psychology signs off the science and clinical content of every Steady deployment: which questionnaires ship, how they are scored and banded, what is flagged, and the clinical wording that patients and clinicians read. OpenWorks IT writes and runs the code to match. Kempie van Rooyen leads this community.
 
 A change to a method follows the same path each time: a short proposal with its reasons and evidence, discussion, written sign-off from VR Clinical Psychology, then building, testing and release. A method that carries a version name gets a new one when it changes (RADR is `radr-1` today), and exports state which version produced their numbers, so a file read later still says how it was made.
 
@@ -43,7 +43,7 @@ A change to a method follows the same path each time: a short proposal with its 
 
 ## Methods will change
 
-Steady is developed with the psychologists who use it, and its methods will move as practices report what works and what doesn't. When the code changes, the topic is edited to match, and a reply in the topic records what changed and when, so the history stays readable.
+Steady is developed with the clinicians who use it, and its methods will move as practices report what works and what doesn't. When the code changes, the topic is edited to match, and a reply in the topic records what changed and when, so the history stays readable.
 
 Questions about this section itself are welcome in the replies below.
 

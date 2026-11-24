@@ -10,7 +10,7 @@ This topic covers why RADR is built as it is. "RADR: how a day is rated" gives t
 
 ## Who approved it
 
-Kempie van Rooyen (VR Clinical Psychology) approved RADR for use in care. The ethics approval for research use, and its consent, sit with him. Patients agree to share watch data separately, in the watch consent (`wearable-2`), which says the data may be added to their clinical record and used, without their name, to improve care; the patient consent statement says the psychologist may compare check-ins and watch data with the patient's own usual pattern. If another practice wants to use RADR data for research beyond care, that practice decides whether it needs its own ethics approval and a research consent.
+Kempie van Rooyen (VR Clinical Psychology) approved RADR for use in care. The ethics approval for research use, and its consent, sit with him. Patients agree to share watch data separately, in the watch consent (`wearable-2`), which says the data may be added to their clinical record and used, without their name, to improve care; the patient consent statement says the clinician may compare check-ins and watch data with the patient's own usual pattern. If another practice wants to use RADR data for research beyond care, that practice decides whether it needs its own ethics approval and a research consent.
 
 ## What the research says
 

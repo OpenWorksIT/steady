@@ -6,11 +6,11 @@
  * risk score, prediction or diagnosis, and not watched around the clock. It follows what the
  * research on passive watch data reports: that single measures say little on their own, and that
  * change shows when several domains move away from the person's own normal at the same time, and
- * alongside what the person reports. In the psychologist's list it only orders patients (an
+ * alongside what the person reports. In the clinician's list it only orders patients (an
  * ordering of data, never an alert), below answers waiting for review (lib/core.js attention).
  *
  * Every number can be explained (explain(): the plain-words reasoning and the days and values
- * behind it), and each domain away from usual is a flag the psychologist can mark as reviewed
+ * behind it), and each domain away from usual is a flag the clinician can mark as reviewed
  * (flags(): a stable key per run of days away from usual).
  *
  * Method (docs/RADR.md has the sources). A day is rated once the baseline has 14 days of data.
@@ -32,6 +32,11 @@
  *  5. Concordance: rank correlation between the watch index and the self-report score, with the
  *     watch leading by 0 to 3 days: does passive data add anything over what the person tells
  *     us, and does it move first?
+ *  6. A baseline started again (opts.baselineFrom, set by the clinician, e.g. for someone who
+ *     joined Steady at a bad time in their life and is now doing better): from that day on, each
+ *     day is compared only with data from that day on, so it is rated again once there are 14
+ *     days of it (about 3 weeks, with the week's gap). Days before it keep their rating. Nothing
+ *     is deleted, and it can be undone.
  */
 
 var DAY_MS = 86400000;
@@ -84,6 +89,7 @@ function memo(fn) {
   };
 }
 function isNum(v) { return typeof v === "number" && isFinite(v); }
+function isDay(v) { return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v); }
 function r2(n) { return n === null ? null : Math.round(n * 100) / 100; }
 
 function median(xs) {
@@ -154,6 +160,31 @@ function rawSeries(byDay, checkins) {
   return s;
 }
 
+/** The series with only the days from `from` on (a baseline started again leaves out the rest). */
+function since(s, from) {
+  var out = {};
+  Object.keys(s).forEach(function (k) {
+    out[k] = {};
+    Object.keys(s[k]).forEach(function (d) { if (d >= from) out[k][d] = s[k][d]; });
+  });
+  return out;
+}
+
+/**
+ * What each day is rated with: the series and measures, or, from a baseline started again on,
+ * the series from that day only. baselineFrom: "YYYY-MM-DD" or nothing.
+ */
+function bases(s, baselineFrom) {
+  var all = { s: s, m: measures(s) };
+  if (!isDay(baselineFrom)) return function () { return all; };
+  var s2 = since(s, baselineFrom);
+  var cut = { s: s2, m: measures(s2), from: baselineFrom };
+  return function (day) { return day >= baselineFrom ? cut : all; };
+}
+
+/** The first day a baseline started on `from` can rate: BASELINE_MIN days of it, after the gap. */
+function firstRated(from) { return addDays(from, BASELINE_GAP + BASELINE_MIN); }
+
 /** Mean of the last SMOOTH days ending on day (at least 2 values), else null. */
 function smoothed(series, day) {
   var xs = [];
@@ -220,7 +251,7 @@ function dayRating(s, day, m, exclude) {
     activity: clip(neg(z("steps"))),
     cardiac: clip(maxOf([pos(z("rhr")), neg(z("hrv"))]))
   };
-  // domains the psychologist switched off for this patient (e.g. sleep for a shift worker):
+  // domains the clinician switched off for this patient (e.g. sleep for a shift worker):
   // still collected and shown, just not counted
   exclude.forEach(function (k) { if (domains.hasOwnProperty(k)) domains[k] = null; });
   var present = DOMAINS.filter(function (k) { return domains[k] !== null; });
@@ -308,10 +339,15 @@ function concordance(rows) {
 function rate(byDay, checkins, from, to, opts) {
   opts = opts || {};
   var exclude = (opts.exclude || []).filter(function (k) { return DOMAINS.indexOf(k) >= 0; });
-  var s = rawSeries(byDay, checkins);
-  var m = measures(s);
+  var baselineFrom = isDay(opts.baselineFrom) ? opts.baselineFrom : null;
+  var basis = bases(rawSeries(byDay, checkins), baselineFrom);
   var rows = [];
-  for (var d = from; d <= to; d = addDays(d, 1)) rows.push(dayRating(s, d, m, exclude));
+  for (var d = from; d <= to; d = addDays(d, 1)) {
+    var b = basis(d);
+    var row = dayRating(b.s, d, b.m, exclude);
+    if (b.from) row.restarted = true;
+    rows.push(row);
+  }
   var rated = rows.filter(function (r) { return r.watch !== null; });
   var last = rated.length ? rated[rated.length - 1] : null;
   return {
@@ -324,15 +360,18 @@ function rate(byDay, checkins, from, to, opts) {
     wearDays: Object.keys(byDay || {}).filter(function (d) { return d >= from && d <= to; }).length,
     checkinDays: Object.keys(checkins || {}).filter(function (d) { return d >= from && d <= to; }).length,
     excluded: exclude,
+    // the baseline started again on this day (each day from then compared only with data from then)
+    baselineFrom: baselineFrom,
+    ratedAgainFrom: baselineFrom ? firstRated(baselineFrom) : null,
     method: {
       baselineDays: BASELINE_DAYS, baselineGap: BASELINE_GAP, baselineMin: BASELINE_MIN,
-      smoothDays: SMOOTH, notable: NOTABLE, cap: CAP, domains: DOMAINS, labels: LABELS
+      smoothDays: SMOOTH, notable: NOTABLE, cap: CAP, domains: DOMAINS, labels: LABELS, baselineFrom: baselineFrom
     }
   };
 }
 
 /**
- * Where RADR puts a patient in their psychologist's list, from the latest day kept on their
+ * Where RADR puts a patient in their clinician's list, from the latest day kept on their
  * account (radr_data.js refreshLatest). An ordering of data, never an alert or a risk:
  *   "none"     nothing away from usual on a recent day (a day older than 3 days counts for nothing)
  *   "reviewed" domains away from usual, every one of them marked as reviewed: no higher in the list
@@ -348,7 +387,7 @@ function level(latest, today) {
   return "away";
 }
 
-/* ---------- flags: what the psychologist can mark as reviewed ---------- */
+/* ---------- flags: what the clinician can mark as reviewed ---------- */
 
 /* Days without a value for a domain (the watch wasn't worn) don't end a run of days away from
    usual, unless there are more than this many in a row. */
@@ -507,12 +546,14 @@ function windowOf(s, k, day) {
 }
 
 /** One measure on day: its value, the person's usual, how far, what counts, and the data behind it. */
-function measureDetail(s, m, k, day) {
+function measureDetail(s, m, k, day, baselineFrom) {
   var meta = MEASURES[k];
   var fn = m[k];
   var x = fn(day);
   if (!isNum(x)) x = null;
   var from = addDays(day, -(BASELINE_GAP + BASELINE_DAYS)), to = addDays(day, -(BASELINE_GAP + 1));
+  // a baseline started again: nothing before that day is in it
+  if (baselineFrom && baselineFrom > from) from = baselineFrom;
   var base = [], used = [];
   for (var i = BASELINE_GAP + BASELINE_DAYS; i >= BASELINE_GAP + 1; i--) {
     var d = addDays(day, -i);
@@ -561,8 +602,11 @@ function measureWords(d, day) {
       : meta.label + (meta.domain === "self" ? " in check-ins" : "") + ", averaged over the 3 " + meta.per + " to " + when + ": " + valueText(k, d.value) + ".");
   }
   if (d.usual === null) {
-    w.push("Not enough earlier data to know their usual yet: " + d.baseline.days + " of the " + d.baseline.needed + " " + meta.per + " needed, between " +
-      dayLabel(d.baseline.from) + " and " + dayLabel(d.baseline.to) + ".");
+    w.push(d.baseline.from > d.baseline.to
+      ? "Not enough earlier data to know their usual yet: the baseline was started again on " + dayLabel(d.baseline.from) +
+        ", and each day is compared with the days from then that end a week before it."
+      : "Not enough earlier data to know their usual yet: " + d.baseline.days + " of the " + d.baseline.needed + " " + meta.per + " needed, between " +
+        dayLabel(d.baseline.from) + " and " + dayLabel(d.baseline.to) + ".");
     return w.join(" ");
   }
   var low = k === "midpoint" ? d.low : Math.max(0, d.low);
@@ -598,9 +642,13 @@ function domainWords(k, row, det, off) {
   return w;
 }
 
-function overallWords(row, excluded) {
+function overallWords(row, excluded, baselineFrom) {
   var when = dayLabel(row.day);
   if (row.watch === null) {
+    if (baselineFrom && row.day >= baselineFrom) {
+      return "Not rated on " + when + ": the baseline was started again on " + dayLabel(baselineFrom) + ", so this day is compared only with data from then on. " +
+        "RADR needs " + BASELINE_MIN + " days of it, after a week's gap, and at least two areas with data: from about " + dayLabel(firstRated(baselineFrom)) + ".";
+    }
     return "Not rated on " + when + ": RADR needs " + BASELINE_MIN + " days of earlier data to compare with, and at least two areas with data.";
   }
   var counted = DOMAINS.length - excluded.length;
@@ -632,11 +680,12 @@ function selfWords(row, det) {
 function explain(byDay, checkins, day, opts) {
   opts = opts || {};
   var exclude = (opts.exclude || []).filter(function (k) { return DOMAINS.indexOf(k) >= 0; });
-  var s = rawSeries(byDay, checkins);
-  var m = measures(s);
+  var baselineFrom = isDay(opts.baselineFrom) ? opts.baselineFrom : null;
+  var b = bases(rawSeries(byDay, checkins), baselineFrom)(day);
+  var s = b.s, m = b.m;
   var row = dayRating(s, day, m, exclude);
   var det = {};
-  Object.keys(MEASURES).forEach(function (k) { det[k] = measureDetail(s, m, k, day); });
+  Object.keys(MEASURES).forEach(function (k) { det[k] = measureDetail(s, m, k, day, b.from || null); });
   var areas = {};
   DOMAINS.forEach(function (k) {
     var off = exclude.indexOf(k) >= 0;
@@ -655,11 +704,13 @@ function explain(byDay, checkins, day, opts) {
     convergent: row.convergent,
     away: row.away,
     shift: row.shift,
-    words: overallWords(row, exclude),
+    words: overallWords(row, exclude, baselineFrom),
     domains: areas,
     checkins: { score: row.self, measures: SELF_MEASURES, words: selfWords(row, det) },
     measures: det,
     excluded: exclude,
+    // this day is compared only with data from the day the baseline was started again
+    baselineFrom: b.from || null,
     method: { baselineDays: BASELINE_DAYS, baselineGap: BASELINE_GAP, baselineMin: BASELINE_MIN, smoothDays: SMOOTH, notable: NOTABLE, cap: CAP }
   };
 }
@@ -680,6 +731,8 @@ module.exports = {
   DOMAINS: DOMAINS,
   LABELS: LABELS,
   addDays: addDays,
+  firstRated: firstRated,
+  isDay: isDay,
   midpoint: midpoint,
   robustZ: robustZ,
   spearman: spearman,

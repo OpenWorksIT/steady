@@ -100,7 +100,7 @@ var upkeepItems = []UpkeepItem{
 	{"vps1-same", "vps1: the test server and the forum", "The same checks as a practice server, where they apply."},
 	{"vps1-track", "vps1: the test server and the forum", "It follows test and is on its newest commit."},
 	{"vps1-disk", "vps1: the test server and the forum", "Free disk: old images pruned if it's filling up."},
-	{"vps1-bridge", "vps1: the test server and the forum", "The community sign-in bridge's address lists still match each practice's psychologists and OpenWorks' support staff."},
+	{"vps1-bridge", "vps1: the test server and the forum", "The community sign-in bridge's address lists still match each practice's clinicians and OpenWorks' support staff."},
 	{"gh-alerts", "GitHub", "Security alerts: Dependabot, secret scanning, code scanning."},
 	{"gh-settings", "GitHub", "deploy/github-settings.sh still reports the rulesets and the signing environment as set."},
 	{"gh-access", "GitHub", "Who has access: collaborators, deploy keys, installed apps, Actions secrets and variables."},

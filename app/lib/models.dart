@@ -33,7 +33,7 @@ class CrisisLine {
 class AppConfig {
   final String practiceName, crisisNotice, consentVersion, consentText;
 
-  /// "staff": psychologists and administrators must use two-step sign-in. "off": optional.
+  /// "staff": clinicians and administrators must use two-step sign-in. "off": optional.
   final String twoStep;
 
   /// The newest Android build on the server ('' if none) and where to download it.
@@ -50,13 +50,18 @@ class AppConfig {
   /// colour like '#B0690C' and the logo's address on the server ('' when not set: plain Steady).
   final String brandTagline, brandAccent, brandLogo;
 
-  /// The Steady community for psychologists and practice admins ('' when this server has none).
+  /// The Steady community for clinicians and practice admins ('' when this server has none).
   final String communityUrl;
 
   /// Whether OpenWorks support opens the community from this server: only OpenWorks' own (the
   /// test server), never a practice's.
   final bool communitySupport;
+
+  /// Whether the server asks patients if the practice may contact them about what they share
+  /// (Steady 1.3.0 and later): a patient who hasn't answered is asked once.
+  final bool contactAsk;
   AppConfig({
+    this.contactAsk = false,
     this.communityUrl = '',
     this.communitySupport = false,
     required this.practiceName,
@@ -119,6 +124,7 @@ class AppConfig {
         brandLogo: '${asMap(j['brand'])['logo'] ?? ''}',
         communityUrl: '${j['communityUrl'] ?? ''}'.startsWith('https://') ? '${j['communityUrl']}' : '',
         communitySupport: j['communitySupport'] == true,
+        contactAsk: j['contactAsk'] == true,
       );
 }
 
@@ -275,7 +281,7 @@ class Instrument {
 
 /* ------------------------------------------------------------------ results */
 
-/// A review flag. [key] is stable, so the psychologist can mark it as reviewed; [reviewed] is
+/// A review flag. [key] is stable, so the clinician can mark it as reviewed; [reviewed] is
 /// who did and when (null if not yet).
 class Flag {
   final String label, key;
@@ -302,7 +308,7 @@ class FlagReview {
   factory FlagReview.fromJson(Map<String, dynamic> j) => FlagReview('${j['by'] ?? ''}', fromMs(j['at']), '${j['note'] ?? ''}');
 }
 
-/// A psychologist's short dated note on a patient (never shown to the patient).
+/// A clinician's short dated note on a patient (never shown to the patient).
 class Note {
   final String id, text, by;
   final DateTime? at;
@@ -502,7 +508,7 @@ class Biometrics {
 }
 
 class PatientSummary {
-  /// [name] is what the psychologist calls the patient; [selfName] is the patient's own.
+  /// [name] is what the clinician calls the patient; [selfName] is the patient's own.
   final String id, name, selfName;
   final bool active;
   final DateTime? lastCheckinAt;
@@ -512,7 +518,7 @@ class PatientSummary {
   final int pending;
   final WearableSummary wearable;
 
-  /// A colleague's patient, shared with this psychologist to read; [owner] is that colleague.
+  /// A colleague's patient, shared with this clinician to read; [owner] is that colleague.
   final bool shared;
   final String owner;
 
@@ -530,7 +536,14 @@ class PatientSummary {
 
   /// Why they are where they are in the list, in plain words (the server's attention.why).
   final String whyHere;
+
+  /// Whether the practice may contact them about what they share in Steady: 'yes', 'no' or ''
+  /// (not asked yet), and when they answered.
+  final String contact;
+  final DateTime? contactAt;
   PatientSummary({
+    this.contact = '',
+    this.contactAt,
     this.deletionRequestedAt,
     this.whyHere = '',
     this.watchLapsedSince,
@@ -579,6 +592,8 @@ class PatientSummary {
       appPlatform: '${asMap(j['app'])['platform'] ?? ''}',
       deletionRequestedAt: fromMs(j['deletionRequestedAt']),
       whyHere: '${asMap(asMap(j['attention'])['why'])['text'] ?? ''}',
+      contact: '${asMap(j['contact'])['answer'] ?? ''}',
+      contactAt: fromMs(asMap(j['contact'])['at']),
     );
   }
 

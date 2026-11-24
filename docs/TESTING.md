@@ -23,7 +23,7 @@ change isn't released until they pass.
   else; old UnifiedPush registrations are deleted and refused), the patient list order (most concerning first,
   stable last, archived off), notes, patient settings, the five kinds of account and who may
   reset, stop and restore whom, OpenWorks seeing no patients, RADR explanations and reviews (only the
-  patient's psychologist or a colleague it's shared with, logged, refused if the log can't be
+  patient's clinician or a colleague it's shared with, logged, refused if the log can't be
   written), the audit report, feedback tickets,
   app versions and watch permissions, exports (flag reviews, notes, methods, the AI note-taking series),
   and staff sign-in: device links with emailed codes (wrong, reused and expired codes), "confirm
@@ -57,7 +57,7 @@ by kind, nothing twice, no address or query string kept.
 mail catcher):
 
 - `deploy/test/security.py`, about 290 adversarial checks: what each kind of account must not
-  reach (other patients, other psychologists' patients, hidden fields, the collections API, the
+  reach (other patients, other clinicians' patients, hidden fields, the collections API, the
   dashboard, superuser routes), the reset and lock-down rules, OpenWorks seeing no patients,
   two-step sign-in (replayed codes, recovery codes), linked devices (codes, tickets, tries,
   removal, keys never returned), "confirm it's you" on every sensitive route, browser tab
@@ -91,7 +91,7 @@ is renewed.
 
 vps1 runs Steady as **Steady Test**, from the `test` branch (`STEADY_TRACK=test`), with plain Steady
 branding and only fictional patients or people who agreed to their data being used for testing.
-The three demo patients (`sudo ./accounts.sh demo-patients <psychologist email>`) keep it looking
+The three demo patients (`sudo ./accounts.sh demo-patients <clinician email>`) keep it looking
 in use: with `STEADY_DEMO_DAILY=on` in its `.env`, a nightly job adds each new day as a patient
 would (lib/demo_daily.js): last night's watch summary on most days, a check-in on most evenings,
 the PHQ-9 and GAD-7 on Sundays. Demo A stays steady, Demo B slides and recovers in a ten-week
@@ -102,13 +102,13 @@ marked as a test server.
 
 ## Before each release
 
-1. On a test server, sign in as a psychologist on a new phone: the emailed code links it; the app
+1. On a test server, sign in as a clinician on a new phone: the emailed code links it; the app
    locks after two minutes in the background and unlocks with the screen lock.
 2. Reset a patient's password: the app asks to confirm it's you first.
 3. As a patient on a phone, turn on Lock Steady in Settings, leave the app for two minutes and
    come back: it asks for the screen lock; cancel it: the crisis numbers show. Open the app
-   switcher: Steady's picture is blank (also as a psychologist, and on an iPhone).
-4. In a browser as a psychologist, keep the tab open for over an hour and use it: still signed
+   switcher: Steady's picture is blank (also as a clinician, and on an iPhone).
+4. In a browser as a clinician, keep the tab open for over an hour and use it: still signed
    in. Close the tab and open the site again: the sign-in screen.
 5. Invite a patient on another phone (one Android, one iPhone across releases), check in with
    mood 1, send and complete a PHQ-9 with item 9 above 0: the notification says "Steady" and

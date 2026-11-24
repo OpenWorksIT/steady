@@ -2,8 +2,8 @@
 
 Apple and Google review Steady with logins on OpenWorks' test server. A patient's login shows
 the patient's side only. The watch data a patient shares (heart rate, sleep, steps, blood
-oxygen) shows on the psychologist's side: daily charts in the patient's record, and RADR.
-Google wants to see each Health Connect data type in use, so reviewers need a psychologist's
+oxygen) shows on the clinician's side: daily charts in the patient's record, and RADR.
+Google wants to see each Health Connect data type in use, so reviewers need a clinician's
 login too. They can't use an authenticator app or receive the emailed device code, so this
 account signs in with its password alone.
 
@@ -15,16 +15,16 @@ community), `accounts.sh reviewer`, `STEADY_REVIEWERS` in `docker-compose.yml`, 
 
 ## What the account is
 
-- A psychologist marked demo, with three fictional patients (`accounts.sh demo-patients`) that
+- A clinician marked demo, with three fictional patients (`accounts.sh demo-patients`) that
   have watch data, check-ins and questionnaires. With `STEADY_DEMO_DAILY=on` they get a new day
   every night.
 - It signs in with its password alone, only where the server has `STEADY_REVIEWERS=on`.
-  Anywhere else it would need two-step sign-in like every other psychologist, so it can't sign in.
-- It sees only its own fictional patients. It isn't the master psychologist, and the community
+  Anywhere else it would need two-step sign-in like every other clinician, so it can't sign in.
+- It sees only its own fictional patients. It isn't the master clinician, and the community
   doesn't open for it.
 - Its password, email and sign-in can't be changed from the app, so one reviewer can't lock
   the next one out.
-- Patients' and real psychologists' sign-in doesn't change.
+- Patients' and real clinicians' sign-in doesn't change.
 
 ## Setting it up
 
@@ -43,7 +43,7 @@ stops working. `sudo ./accounts.sh list` shows it as the app store reviewer.
 ## What to give the stores
 
 - **Google Play:** Play Console > App content > App access. Choose "All or some functionality is
-  restricted" and add two sets of instructions: the patient's login, and this psychologist's
+  restricted" and add two sets of instructions: the patient's login, and this clinician's
   login. Say the server is `test.steadyapp.co.za`, that the data is fictional, and where the
   watch data shows: Patients > a patient > Wearable for the daily charts, and the RADR tab next to it.
 - **Apple:** App Store Connect > the version > App Review Information. Use the same two logins

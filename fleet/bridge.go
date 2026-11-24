@@ -5,7 +5,7 @@
 // reads from here): each practice's id, name, address, key, and the staff OpenWorks approved.
 // A dev turns a practice on over SSH: the fleet view makes its key and hands it to the server
 // with the fleet key (POST /api/steady/fleet/community), so no key is copied by hand and no
-// .env line is needed. The practice's master psychologist puts staff in (Settings > Practice >
+// .env line is needed. The practice's master clinician puts staff in (Settings > Practice >
 // Community); each new name waits here for a dev to approve. Someone the practice takes out
 // comes off the bridge's list at the next poll, without anyone doing anything.
 // SPDX-License-Identifier: AGPL-3.0-or-later

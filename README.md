@@ -1,17 +1,17 @@
 # Steady
 
-Between-session check-ins for a psychology practice. One app for Android, iPhone and the web:
+Between-session check-ins for mental healthcare practices: for psychologists, psychiatrists, counsellors, social workers, mental health nurses, occupational therapists and everyone else in the field (the app calls them all clinicians). One app for Android, iPhone and the web:
 
-- **Patients** do a quick daily check-in (mood, anxiety, sleep and energy on a 1 to 5 scale, plus a few words), complete the questionnaires and exercises their psychologist sends them, and see their own timeline.
-- **Watch data (optional)**: patients can share a daily summary of heart rate, sleep, steps and blood oxygen from Health Connect or Apple Health. Psychologists see it against each patient's own usual range, and in RADR, which shows how far a patient is from their own normal to improve care, with every number explained and flags they can mark as reviewed. No alerts: RADR only orders the psychologist's list, after answers waiting for review.
-- **Psychologists** see their patients most concerning first, send questionnaires or exercises (once, daily or weekly), keep short notes, mark flags as reviewed, and export a patient's record as a PDF, an Excel workbook or a text PDF for AI note-taking tools (only what's new since the last one).
+- **Patients** do a quick daily check-in (mood, anxiety, sleep and energy on a 1 to 5 scale, plus a few words), complete the questionnaires and exercises their clinician sends them, and see their own timeline.
+- **Watch data (optional)**: patients can share a daily summary of heart rate, sleep, steps and blood oxygen from Health Connect or Apple Health. Clinicians see it against each patient's own usual range, and in RADR, which shows how far a patient is from their own normal to improve care, with every number explained and flags they can mark as reviewed. No alerts: RADR only orders the clinician's list, after answers waiting for review.
+- **Clinicians** see their patients most concerning first, send questionnaires or exercises (once, daily or weekly), keep short notes, mark flags as reviewed, and export a patient's record as a PDF, an Excel workbook or a text PDF for AI note-taking tools (only what's new since the last one).
 - **The practice**: a master clinician and a practice admin manage accounts and see each patient's connection status (never their data); OpenWorks IT support looks after the server and sees no patients in the app.
 
 Built by [OpenWorks IT](https://openworks.co.za), with the clinical science and research of Kempie van Rooyen and VR Clinical Psychology (see [Credits](#credits)). Free software under the GNU AGPL v3 or later.
 
 Each practice runs Steady on its own server, and its patients' data stays there: OpenWorks IT looks after the servers, but OpenWorks' accounts in the app can't open any patient's information. (As the operator, OpenWorks can technically reach the server itself to keep it running; the practice's operator agreement covers that.)
 
-> **Status: version 1.2.8, live.** On [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady) and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (South Africa) since November 2026, and in use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
+> **Status: version 1.2.8, live; 1.3.0 on its way.** On [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady) and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (South Africa) since November 2026, and in use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
 
 ## What's in the box
 
@@ -22,7 +22,7 @@ Each practice runs Steady on its own server, and its patients' data stays there:
 | `app/` | The Flutter app for iOS and Android. |
 | `deploy/` | Docker Compose setup with Caddy for HTTPS, key generation, encrypted backups, the security check (`audit-server.sh`) and tripwires (`decoys.sh`). |
 | `fleet/` | OpenWorks IT's fleet view (Go): every practice server's state at a glance, its security checks and front door, and who may come into the community. Never anything about patients. |
-| `community/` | The Steady Community forum's setup (Discourse) and its sign-in bridge (Go), so psychologists come in through Steady. |
+| `community/` | The Steady Community forum's setup (Discourse) and its sign-in bridge (Go), so clinicians come in through Steady. |
 | `ops/` | A Caddy for a server of OpenWorks' own, kept for when the fleet view and the forum outgrow vps1 (not in use). |
 | `docs/` | Deployment, the app, the fleet view, the community, the front door, questionnaire format, privacy notes, upkeep and testing. |
 
@@ -30,20 +30,20 @@ Each practice runs Steady on its own server, and its patients' data stays there:
 
 Built in: **PHQ-9**, **GAD-7**, **PCL-5** and **WHO-5**, plus box breathing, 4-7-8 breathing, slow paced breathing, 5-4-3-2-1 grounding and a thought record.
 
-Psychologists can also:
+Clinicians can also:
 
 - **Create** their own questionnaires and exercises in the app (questions, answer scale, score bands, review flags).
 - **Import** from the open [ReproSchema library](https://github.com/ReproNim/reproschema-library) (90+ validated instruments), from a FHIR Questionnaire file, or from a Steady JSON file.
 
-Every instrument carries a licence status. Imported instruments wait as "Check licence" until a psychologist confirms the practice may use them; only cleared or practice-written instruments can be sent. WHO-5 ships under review because its CC BY-NC-SA licence has a non-commercial clause the practice should confirm. Copyright-protected entries in the library are blocked.
+Every instrument carries a licence status. Imported instruments wait as "Check licence" until a clinician confirms the practice may use them; only cleared or practice-written instruments can be sent. WHO-5 ships under review because its CC BY-NC-SA licence has a non-commercial clause the practice should confirm. Copyright-protected entries in the library are blocked.
 
 ## Safety and privacy, by design
 
 - **Not an emergency service.** Every patient screen shows crisis numbers (SADAG 0800 567 567, 112 from a mobile) and says the app isn't monitored around the clock. The practice should approve this wording.
-- **Flags are review aids, not risk scores.** PHQ-9 item 9, low mood in three check-ins in a row, high scores and missed check-ins are highlighted for the psychologist to look at.
+- **Flags are review aids, not risk scores.** PHQ-9 item 9, low mood in three check-ins in a row, high scores and missed check-ins are highlighted for the clinician to look at.
 - **No patient data in push notifications.** Every notification says "New notification" and nothing else, not even what kind of thing is new. The app fetches detail over its own authenticated connection.
-- **Patients don't see their scores.** Scores go to the psychologist.
-- **Access is narrow.** Patients see only their own data; psychologists see only their own patients. Every read of patient data through the app is written to an audit log before it's shown (if it can't be written, nothing is shown), and the master clinician and practice admin can read the log in the app.
+- **Patients don't see their scores.** Scores go to the clinician.
+- **Access is narrow.** Patients see only their own data; clinicians see only their own patients. Every read of patient data through the app is written to an audit log before it's shown (if it can't be written, nothing is shown), and the master clinician and practice admin can read the log in the app.
 - **Staff sign-in is layered.** Password, a code from an authenticator app, and a device linked with an emailed code; the phone app locks with the phone's own screen lock, and sensitive actions ask to confirm it's you. A lost phone can be locked from any device; only OpenWorks restores the account.
 - **Notifications through the phone's own service.** Android phones get them through Google's Firebase Cloud Messaging, iPhones through Apple; Firebase is only in the Android app, and nothing about the patient goes to either.
 - **Watched from outside.** Each server checks its own security and privacy every 6 hours, counts what it turns away (probes, the closed dashboard, failed sign-ins), and keeps tripwires that no one at the practice ever touches. All of it reports to OpenWorks' fleet view, never to anyone in the app ([docs/FRONTDOOR.md](docs/FRONTDOOR.md)).
