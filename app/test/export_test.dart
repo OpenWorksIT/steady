@@ -145,7 +145,7 @@ void main() {
     }
   });
 
-  // What 1.0 exports add: whether each flag was reviewed, the psychologist's notes, the methods,
+  // What 1.0 exports add: whether each flag was reviewed, the clinician's notes, the methods,
   // where things stood before, and the Heidi series.
   Map<String, dynamic> clinical(Map<String, dynamic> raw) {
     final p = (raw['patients'] as List).first as Map<String, dynamic>;

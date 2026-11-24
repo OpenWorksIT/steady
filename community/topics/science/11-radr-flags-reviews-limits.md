@@ -20,7 +20,7 @@ On the latest day, each counted domain at 1.5 or more is a flag, such as "Sleep 
 
 ### Marking as reviewed
 
-The patient's psychologist, or a colleague the patient is shared with, can mark a flag as reviewed, with an optional note (up to 500 characters). Steady records who and when and shows "Reviewed by [name], [date]" wherever the flag appears. The patient, the practice administrator and OpenWorks IT can't see reviews.
+The patient's clinician, or a colleague the patient is shared with, can mark a flag as reviewed, with an optional note (up to 500 characters). Steady records who and when and shows "Reviewed by [name], [date]" wherever the flag appears. The patient, the practice administrator and OpenWorks IT can't see reviews.
 
 A review holds until something new appears: another domain moving away from usual, or this domain coming back to usual and then moving away again. A domain moving further from usual within the same run doesn't count as new.
 
@@ -42,7 +42,7 @@ Tap any number, day, domain or flag. Steady shows, in plain words, what was meas
 
 ### Switching a domain off
 
-For one patient, their own psychologist can stop a domain counting, for example sleep for a shift worker, with a reason that shows wherever RADR does. The data is still collected and shown, just not counted in the watch index, the domains away or the list.
+For one patient, their own clinician can stop a domain counting, for example sleep for a shift worker, with a reason that shows wherever RADR does. The data is still collected and shown, just not counted in the watch index, the domains away or the list.
 
 ### Exports
 
@@ -50,7 +50,7 @@ PDF reports, Excel workbooks and the export for AI note-taking list the flags on
 
 ### Demo patients
 
-For training, OpenWorks IT can add three fictional demo patients (steady, gradual low mood, acute sleep disruption) to a psychologist's list, marked as made-up data wherever they appear. They are not a model of any illness and must never be mixed with real data in any analysis.
+For training, OpenWorks IT can add three fictional demo patients (steady, gradual low mood, acute sleep disruption) to a clinician's list, marked as made-up data wherever they appear. They are not a model of any illness and must never be mixed with real data in any analysis.
 
 ## Limits
 

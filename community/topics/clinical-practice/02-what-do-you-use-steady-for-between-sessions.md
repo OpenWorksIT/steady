@@ -1,6 +1,6 @@
 # What do you use Steady for between sessions?
 
-Every psychologist will use Steady a little differently, and some of the most useful knowledge in this community will come from comparing notes. This topic is for how you use it in practice: what you send, when you look, what you bring into the room, and what you've stopped doing.
+Every clinician will use Steady a little differently, and some of the most useful knowledge in this community will come from comparing notes. This topic is for how you use it in practice: what you send, when you look, what you bring into the room, and what you've stopped doing.
 
 ## What there is to work with
 

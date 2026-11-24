@@ -2,7 +2,7 @@
 //
 // RADR, the Research Amon Dîn Rating: how far a patient's watch data and check-ins are from
 // their own normal, by domain, and whether the two move together, to improve care. It is not a
-// risk score, prediction or diagnosis, and it orders the psychologist's list without raising
+// risk score, prediction or diagnosis, and it orders the clinician's list without raising
 // alerts. Every number opens its reasoning and the data behind it, and each flag can be marked
 // as reviewed (radr_explain.dart). The server works it out (server/pb_hooks/lib/radr.js);
 // docs/RADR.md explains the method and the research behind it.
@@ -14,6 +14,7 @@ import '../../app_state.dart';
 import '../../models.dart' show RadrFlag, Severity, asList, asMap;
 import '../theme.dart';
 import '../widgets.dart';
+import 'patient_care.dart' show radrDayText;
 import 'radr_explain.dart';
 
 const _domains = ['sleep', 'circadian', 'activity', 'cardiac'];
@@ -70,6 +71,10 @@ class _RadrTabState extends State<RadrTab> with AutomaticKeepAliveClientMixin {
             }),
           ),
           const SizedBox(height: 12),
+          if (asMap(r['baseline']).isNotEmpty) ...[
+            _Baseline(asMap(r['baseline']), '${r['ratedAgainFrom'] ?? ''}'),
+            const SizedBox(height: 12),
+          ],
           if (rated.isEmpty)
             Card(
               child: Padding(
@@ -547,6 +552,35 @@ class _Method extends StatelessWidget {
           ),
         ],
       );
+}
+
+/// The baseline started again for this patient, shown wherever RADR is.
+class _Baseline extends StatelessWidget {
+  final Map<String, dynamic> b;
+  final String ratedAgainFrom;
+  const _Baseline(this.b, this.ratedAgainFrom);
+  @override
+  Widget build(BuildContext context) {
+    final from = DateTime.tryParse('${b['from'] ?? ''}');
+    final again = DateTime.tryParse(ratedAgainFrom);
+    final today = DateTime.now();
+    final waiting = again != null && again.isAfter(DateTime(today.year, today.month, today.day));
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SectionHeader('Baseline started again${from == null ? '' : ' from ${radrDayText(from)}'}'),
+          Text('By ${b['by'] ?? ''}: ${b['reason'] ?? ''}', style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
+          const SizedBox(height: 4),
+          Text(
+              'From that day on, each day is compared only with their data from then.'
+              '${waiting ? ' RADR rates again from about ${radrDayText(again)}, once there are 2 weeks of it.' : ''}'
+              ' Days before it keep their rating. Change it in Patient settings.',
+              style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
+        ]),
+      ),
+    );
+  }
 }
 
 /// Measures switched off for this patient, shown wherever RADR is.

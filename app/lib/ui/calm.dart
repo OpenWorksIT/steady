@@ -2,7 +2,7 @@
 //
 // Calm motion for patients. Everything a patient sees moves at the pace of the daily start's
 // breathing circle: pages dissolve in slowly instead of sliding, pop-ups fade in, and nothing
-// (not even "a new version is ready") interrupts the calm start itself. Psychologists and
+// (not even "a new version is ready") interrupts the calm start itself. Clinicians and
 // administrators keep the normal, quicker transitions.
 import 'package:flutter/material.dart';
 

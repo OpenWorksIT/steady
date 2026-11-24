@@ -7,7 +7,7 @@
     "status": "todo"
   },
   {
-    "title": "Try the Community tab as the test psychologist, on the web and on a phone",
+    "title": "Try the Community tab as the test clinician, on the web and on a phone",
     "detail": "https://test.steadyapp.co.za in a browser (the web tab appears only under steadyapp.co.za), and the newest test APK. Opened straight in a browser, the forum should say it opens inside Steady. The test server's audit report should list each sign-in.",
     "area": "Community",
     "priority": "now",
@@ -21,7 +21,7 @@
     "status": "todo"
   },
   {
-    "title": "Take the test psychologist out of the community before it goes live",
+    "title": "Take the test clinician out of the community before it goes live",
     "detail": "Remove the address from the test practice's \"emails\" in /var/lib/steady-signin/config.json, then in the forum: Admin > Users > the test account > Log out (and Suspend).",
     "area": "Community",
     "priority": "later",

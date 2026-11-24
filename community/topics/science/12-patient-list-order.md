@@ -8,7 +8,7 @@ This topic also covers the 14-day view on each patient's page, and the three pla
 
 ## How it came about
 
-Steady's screens for psychologists follow a "deeper, not broader" rule: few things on the home screen, and the detail one tap down. So rather than a dashboard of numbers, the list itself answers "who should I look at first?". Routine outcome monitoring helps most when results reach the clinician in time to act, especially for patients who are not on track (de Jong et al. 2021), so the list puts unreviewed results first. What the patient told you directly comes before what Steady infers from watch data, because passive data has not yet been shown to beat asking (Büscher et al. 2024). "Stable, ease off" came from the opposite need: a way to stop a patient who is doing well from being highlighted, without losing their record.
+Steady's screens for clinicians follow a "deeper, not broader" rule: few things on the home screen, and the detail one tap down. So rather than a dashboard of numbers, the list itself answers "who should I look at first?". Routine outcome monitoring helps most when results reach the clinician in time to act, especially for patients who are not on track (de Jong et al. 2021), so the list puts unreviewed results first. What the patient told you directly comes before what Steady infers from watch data, because passive data has not yet been shown to beat asking (Büscher et al. 2024). "Stable, ease off" came from the opposite need: a way to stop a patient who is doing well from being highlighted, without losing their record.
 
 ## How it works
 
@@ -41,7 +41,7 @@ On a patient's page, below the flags: a "Last 14 days" chart of daily mean mood 
 
 ### Seeing them, stable, archived
 
-Set in the patient's settings, by their own psychologist:
+Set in the patient's settings, by their own clinician:
 
 | Status | In your list | Highlighting | Notifications | Records |
 |---|---|---|---|---|
@@ -53,7 +53,7 @@ Archived patients are under Settings > Archived patients, where you can bring th
 
 ### Shared patients
 
-A colleague's patient shared with you appears in your list, ordered the same way, marked "Shared by [name]". You can read everything and review RADR flags, but only their own psychologist can mark answer flags as reviewed or change their status.
+A colleague's patient shared with you appears in your list, ordered the same way, marked "Shared by [name]". You can read everything and review RADR flags, but only their own clinician can mark answer flags as reviewed or change their status.
 
 ## Limits
 

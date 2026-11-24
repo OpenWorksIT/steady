@@ -50,7 +50,7 @@ void main() {
     });
   });
 
-  test('a patient\'s own watch data comes from their own route, not a psychologist\'s', () async {
+  test('a patient\'s own watch data comes from their own route, not a clinician\'s', () async {
     _stored['steady.server'] = 'https://steady.test';
     final asked = <Uri>[];
     final client = MockClient((req) async {
@@ -95,7 +95,7 @@ void main() {
     expect(find.textContaining('optional, and you can stop'), findsOneWidget);
     for (final (title, body) in healthDataUses) {
       expect(find.text(title), findsOneWidget);
-      expect(body, contains('psychologist'), reason: '$title: who it helps');
+      expect(body, contains('clinician'), reason: '$title: who it helps');
       expect(body, contains('You'), reason: '$title: the patient sees it too');
     }
     expect(find.text(privacyNoticeTitle), findsOneWidget);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Where things are: a psychologist's bottom bar is Patients, Alerts and (when the server has it)
+// Where things are: a clinician's bottom bar is Patients, Alerts and (when the server has it)
 // Community; a practice admin's is People and Community, or no bar without the community; the
 // gear opens Settings as a page; Settings > Practice holds the library and the practice's own
 // business, each for whoever had it before.
@@ -75,7 +75,7 @@ void main() {
     });
   });
 
-  testWidgets("a psychologist's tabs are Patients, Alerts and, when the server has it, Community", (tester) async {
+  testWidgets("a clinician's tabs are Patients, Alerts and, when the server has it, Community", (tester) async {
     Widget bar({required bool community}) => MaterialApp(
           theme: buildTheme(Brightness.light),
           home: Scaffold(bottomNavigationBar: NavigationBar(destinations: clinicianTabs(unread: 2, community: community))),
@@ -132,7 +132,7 @@ void main() {
     expect(find.widgetWithText(AppBar, 'Patients'), findsOneWidget);
   });
 
-  testWidgets('Settings > Practice: every psychologist has the library, and only what they had before', (tester) async {
+  testWidgets('Settings > Practice: every clinician has the library, and only what they had before', (tester) async {
     await tester.pumpWidget(_app(await _signedIn('clinician'), const SettingsScreen()));
     expect(find.text('Library and feedback tickets'), findsOneWidget);
     await tester.tap(find.text('Practice'));
@@ -151,7 +151,7 @@ void main() {
   testWidgets("with a community, the master clinician also chooses who's in it", (tester) async {
     final state = await _signedIn('clinician', master: true);
     expect(practiceItems(state.api, community: true).map((p) => p.title), ['Library', 'People', 'Audit report', 'Community', 'Feedback tickets', 'Operator agreement']);
-    // not other psychologists, not the administrator
+    // not other clinicians, not the administrator
     expect(practiceItems((await _signedIn('clinician')).api, community: true).map((p) => p.title), isNot(contains('Community')));
     expect(practiceItems((await _signedIn('admin')).api, community: true).map((p) => p.title), isNot(contains('Community')));
   });

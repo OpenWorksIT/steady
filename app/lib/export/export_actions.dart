@@ -147,7 +147,7 @@ Future<void> exportHeidiPdf(BuildContext context, String patientId) async {
   });
 }
 
-/// An Excel workbook for one patient, or all of this psychologist's patients when [patientId] is null.
+/// An Excel workbook for one patient, or all of this clinician's patients when [patientId] is null.
 Future<void> exportExcel(BuildContext context, {String? patientId}) async {
   final api = AppScope.api(context);
   if (!await _confirm(context, patientId == null ? 'all your patients to Excel' : 'to Excel')) return;
@@ -174,7 +174,7 @@ Future<void> showTemporaryPassword(BuildContext context, String name, String pas
           if (emailed.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text('We\'ve also emailed $emailed a code. They need both to finish: the temporary password alone '
-                'can\'t set a new one. If the email doesn\'t arrive, their psychologist can reset it instead.'),
+                'can\'t set a new one. If the email doesn\'t arrive, their clinician can reset it instead.'),
           ],
         ]),
         actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Done'))],

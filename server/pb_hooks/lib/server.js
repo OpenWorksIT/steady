@@ -55,13 +55,13 @@ function requireRole(e, wanted) {
   requireSignedIn(e);
 }
 
-/** Psychologists, the practice admin and OpenWorks support. */
+/** Clinicians, the practice admin and OpenWorks support. */
 function isStaff(rec) {
   var r = rec.getString("role");
   return r === "clinician" || r === "admin" || r === "support";
 }
 
-/** OpenWorks support: psychologists and the system, never patients. */
+/** OpenWorks support: clinicians and the system, never patients. */
 function isSupport(rec) {
   return rec.getString("role") === "support";
 }
@@ -98,7 +98,7 @@ function needsTwoStep(rec) {
 }
 
 /** Who may check for and install server updates: the master clinician, OpenWorks support, and
- *  any psychologist marked "serverAdmin". The practice admin sees the server's health only. */
+ *  any clinician marked "serverAdmin". The practice admin sees the server's health only. */
 function canUpdate(rec) {
   return rec.getBool("serverAdmin") || isMaster(rec) || isSupport(rec);
 }
@@ -164,7 +164,7 @@ function findUser(app, id) {
 
 function activeClinician(app, id) {
   var c = findUser(app, id);
-  if (!c || c.getString("role") !== "clinician" || !c.getBool("active")) throw badRequest("Choose an active psychologist.");
+  if (!c || c.getString("role") !== "clinician" || !c.getBool("active")) throw badRequest("Choose an active clinician.");
   return c;
 }
 
@@ -186,7 +186,7 @@ function fleetKeyOk(e) {
   return key.length >= 24 && given.length > 0 && $security.equal(given, key);
 }
 
-/** The master psychologist, OpenWorks support and server admins, or the monitor key.
+/** The master clinician, OpenWorks support and server admins, or the monitor key.
  *  opts.practiceAdmin: the practice admin may see it too (server health). */
 function requireUpdaterOrMonitor(e, what, opts) {
   if (monitorKeyOk(e)) return;
@@ -194,7 +194,7 @@ function requireUpdaterOrMonitor(e, what, opts) {
   requireSignedIn(e);
   if (canUpdate(e.auth)) return;
   if (opts && opts.practiceAdmin && e.auth.getString("role") === "admin") return;
-  throw new ForbiddenError("Only the master psychologist and OpenWorks support can see " + what + ".");
+  throw new ForbiddenError("Only the master clinician and OpenWorks support can see " + what + ".");
 }
 
 /** OpenWorks support, or the monitor key (a central dashboard). */
@@ -244,7 +244,7 @@ function audit(app, e, action, target, patientId, strict) {
 
 /**
  * The patient overview shows each patient's latest check-in, flags and scores: a look at each
- * of them. Written once a day per psychologist and patient (the overview opens many times a
+ * of them. Written once a day per clinician and patient (the overview opens many times a
  * day), before the answer goes out; which ones are already written today is remembered in
  * memory, so a restart costs at most one more row per patient.
  */
@@ -301,7 +301,7 @@ function createInvite(app, e, clinicianId, label) {
 
 /* ---------- names ---------- */
 
-/** What the psychologist calls a patient: the invite name, else the patient's own name. */
+/** What the clinician calls a patient: the invite name, else the patient's own name. */
 /** How long an answer waited on the patient's phone before the server could be reached (the
  *  app's outbox), as the phone measured it: seconds in, ms out. A length of time rather than a
  *  clock time, so a phone whose clock is wrong still files it at the right time. 0 when not
@@ -620,6 +620,8 @@ function summaryOf(app, patient, tzOffset, now, cks, asg, older, recent, names, 
     joinedAt: toMs(patient, "created"),
     // the patient asked for their account to be deleted (lib/deletion.js)
     deletionRequestedAt: toMs(patient, "deletionRequestedAt"),
+    // may the practice contact them about what they share in Steady: "yes", "no", "" (not asked yet)
+    contact: { answer: patient.getString("contactConsent"), at: toMs(patient, "contactConsentAt") },
     active: patient.getBool("active"),
     lastCheckin: last,
     mood: core.dailySeries(rows, "mood", now, 14, tzOffset),
@@ -644,7 +646,12 @@ function wearableSummary(patient, recent) {
   };
 }
 
+/* The wording patients answer about being contacted ("my practice may contact me about what I
+   share in Steady", app/lib/ui/patient/contact_consent.dart): a new version when it changes. */
+var CONTACT_VERSION = "contact-1";
+
 module.exports = {
+  CONTACT_VERSION: CONTACT_VERSION,
   core: core,
   nowMs: nowMs,
   toMs: toMs,

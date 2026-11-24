@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The practice's branding on this server: its name, tagline, accent colour and logo.
 # It lives in deploy/brand, outside the code, so ./update.sh never touches it. OpenWorks IT
-# installs it; psychologists can't change it in the app. It takes effect straight away.
+# installs it; clinicians can't change it in the app. It takes effect straight away.
 #
 #   ./brand.sh check <folder>                  check a brand folder before installing it
 #   sudo ./brand.sh install <folder|file.tgz>  install it on this server

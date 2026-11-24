@@ -14,6 +14,6 @@ Reply whenever you like, as often as you like. A line is enough. You don't need 
 
 Keep it general, as everywhere here: about you and your work, not about patients, and not about colleagues who could be recognised.
 
-If things are heavier than a forum can hold, please talk to someone: your own therapist, your supervisor or a colleague you trust. SADAG's line, 0800 567 567, is free and open around the clock, for psychologists too.
+If things are heavier than a forum can hold, please talk to someone: your own therapist, your supervisor or a colleague you trust. SADAG's line, 0800 567 567, is free and open around the clock, for clinicians too.
 
 So: what's helping you this month?

@@ -138,8 +138,11 @@ class PatientStatus {
   final DateTime? consentAt, privacyAt, lastCheckinAt, watchPermissionSince;
   final bool consentCurrent, watchSharing, watchLapsed;
   final String consentVersion, watchPermission, watchLastDay, careStatus;
+  /// may the practice contact them about what they share: 'yes', 'no', '' (not asked yet)
+  final String contact;
   final List<String> notifications;
   PatientStatus({
+    this.contact = '',
     this.consentAt,
     this.privacyAt,
     this.lastCheckinAt,
@@ -159,6 +162,7 @@ class PatientStatus {
       consentAt: fromMs(c['at']),
       consentVersion: '${c['version'] ?? ''}',
       consentCurrent: c['current'] == true,
+      contact: '${c['contact'] ?? ''}',
       privacyAt: fromMs(j['privacyNoticeAt']),
       lastCheckinAt: fromMs(j['lastCheckinAt']),
       notifications: asList(j['notifications']).map((x) => '$x').toList(),
@@ -177,7 +181,7 @@ class PatientStatus {
 class Person {
   final String id, name, role, email;
   final bool active, master, serverAdmin, twoStep;
-  final bool community; // staff the master psychologist put in Steady Community
+  final bool community; // staff the master clinician put in Steady Community
   final String clinicianId, clinicianName;
   final DateTime? joinedAt;
   final String appBuild, appPlatform;
@@ -309,6 +313,10 @@ class Api {
 
   /// The version of the practice's consent statement this patient agreed to.
   String get myConsentVersion => me?.getStringValue('consentVersion') ?? '';
+
+  /// The patient's answer to "my practice may contact me about what I share in Steady": 'yes',
+  /// 'no', or '' (not asked yet).
+  String get myContactConsent => me?.getStringValue('contactConsent') ?? '';
 
   /* ---------------- session ---------------- */
 
@@ -462,7 +470,7 @@ class Api {
   bool get isStaff => role == 'clinician' || role == 'admin' || role == 'support';
 
   /// Choose a new password (also the way out of a temporary one).
-  /// [emailCode]: after a reset by the practice (not the psychologist), the code emailed to the patient.
+  /// [emailCode]: after a reset by the practice (not the clinician), the code emailed to the patient.
   Future<void> changePassword(String current, String next, {String? emailCode}) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/me/password',
         method: 'POST', body: {'password': current, 'newPassword': next, 'emailCode': ?emailCode});
@@ -516,6 +524,7 @@ class Api {
     required String email,
     required String password,
     required bool consent,
+    required bool contact,
   }) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/join', method: 'POST', body: {
       'code': code,
@@ -523,6 +532,7 @@ class Api {
       'email': email,
       'password': password,
       'consent': consent,
+      'contact': contact,
       'tzOffset': tzOffset,
     });
     pb.authStore.save('${res['token']}', RecordModel.fromJson(asMap(res['record'])));
@@ -624,9 +634,15 @@ class Api {
     });
   }
 
-  /// kind: privacy | wearable | consent. Refreshes the account afterwards so its consent fields are current.
-  Future<void> setConsent(String kind, String version, {bool accepted = true}) async {
-    await pb.send('/api/steady/consent', method: 'POST', body: {'kind': kind, 'version': version, 'accepted': accepted});
+  /// kind: privacy | wearable | consent | contact. With consent, [contact] answers the contact
+  /// question too. Refreshes the account afterwards so its consent fields are current.
+  Future<void> setConsent(String kind, String version, {bool accepted = true, bool? contact}) async {
+    await pb.send('/api/steady/consent', method: 'POST', body: {
+      'kind': kind,
+      'version': version,
+      'accepted': accepted,
+      'contact': ?contact,
+    });
     await pb.collection('users').authRefresh();
   }
 
@@ -666,7 +682,7 @@ class Api {
 
   String get _homeKey => 'steady.home.$myId';
 
-  /// What the patient's home screen and calm start show: what's waiting from the psychologist,
+  /// What the patient's home screen and calm start show: what's waiting from the clinician,
   /// recent check-ins (mood only) and the exercises they can start. Sends anything waiting on the
   /// phone first. When the practice can't be reached, the copy this phone kept last time (in its
   /// secure storage; deleted at sign-out), so the patient can still check in and answer what was
@@ -822,7 +838,7 @@ class Api {
     return Biometrics.fromJson(res);
   }
 
-  /// The signed-in patient's own watch data (1.2.4), the same as their psychologist sees.
+  /// The signed-in patient's own watch data (1.2.4), the same as their clinician sees.
   Future<Biometrics> myBiometrics({String? from, String? to}) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/me/biometrics', query: {
       'from': ?from,
@@ -867,7 +883,7 @@ class Api {
   }
 
   /// Opening the community: the address of its sign-in bridge, with a short note from this server
-  /// saying who is signed in (psychologists, practice admins and OpenWorks support;
+  /// saying who is signed in (clinicians, practice admins and OpenWorks support;
   /// server/pb_hooks/steady_community.pb.js).
   Future<String> communitySignIn() async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/community/sign-in', method: 'POST');
@@ -876,7 +892,7 @@ class Api {
     return url;
   }
 
-  /// Asks a patient to reconnect their watch (their psychologist, the master clinician, reception).
+  /// Asks a patient to reconnect their watch (their clinician, the master clinician, reception).
   Future<void> remindWatch(String patientId) => pb.send('/api/steady/patients/$patientId/remind-watch', method: 'POST');
 
   /// OpenWorks support: the practice's staff (no patients), and the server's current build.
@@ -914,13 +930,13 @@ class Api {
     );
   }
 
-  /// The master psychologist puts a staff member in Steady Community, or takes them out.
+  /// The master clinician puts a staff member in Steady Community, or takes them out.
   Future<Person> setCommunity(String userId, bool on) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/practice/community', method: 'POST', body: {'user': userId, 'on': on});
     return Person.fromJson(res);
   }
 
-  /// Active psychologists (names only).
+  /// Active clinicians (names only).
   Future<List<({String id, String name, bool you})>> clinicians() async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/clinicians');
     return asList(res['clinicians']).map((raw) {
@@ -988,6 +1004,16 @@ class Api {
       pb.send('/api/steady/patients/$patientId/radr-exclusions',
           method: 'POST', body: {'domain': domain, 'excluded': excluded, 'reason': reason});
 
+  /// Starts a patient's RADR baseline again from [from] (with why), or, with null, goes back to
+  /// all their data. Returns the first day RADR can rate again.
+  Future<DateTime?> setRadrBaseline(String patientId, DateTime? from, {String reason = ''}) async {
+    final res = await pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/radr-baseline', method: 'POST', body: {
+      'from': from == null ? '' : '${from.year}-${'${from.month}'.padLeft(2, '0')}-${'${from.day}'.padLeft(2, '0')}',
+      'reason': reason,
+    });
+    return DateTime.tryParse('${res['ratedAgainFrom'] ?? ''}');
+  }
+
   Future<void> reviewFlag(String patientId, Flag flag, String note) => pb.send('/api/steady/patients/$patientId/flags/review',
       method: 'POST', body: {'key': flag.key, 'label': flag.label, 'note': note});
 
@@ -1005,7 +1031,7 @@ class Api {
 
   /* ---------------- daily start ---------------- */
 
-  /// Words of encouragement: the psychologist's own (for their patients), or a psychologist's list.
+  /// Words of encouragement: the clinician's own (for their patients), or a clinician's list.
   Future<List<({String id, String text, String author, bool active})>> quotes() async {
     final list = await pb.collection('quotes').getFullList(sort: '-created');
     return list
@@ -1024,7 +1050,7 @@ class Api {
   Future<Map<String, dynamic>> exportPatient(String patientId, {String? from, String? to}) =>
       confirmed(() => pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/export', query: {'from': ?from, 'to': ?to}));
 
-  /// All of this psychologist's own patients.
+  /// All of this clinician's own patients.
   /// The patient's last Heidi-ready export, or null (for offering "since the last export").
   Future<Map<String, dynamic>?> lastHeidiExport(String patientId) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/patients/$patientId/heidi-export');
@@ -1101,7 +1127,7 @@ class Api {
   Future<void> systemRequest(String action) =>
       pb.send('/api/steady/system/request', method: 'POST', body: {'action': action});
 
-  /// Renames a patient on the psychologist's screens; returns the name now shown.
+  /// Renames a patient on the clinician's screens; returns the name now shown.
   Future<String> setPatientLabel(String id, String label) async {
     final res = await pb.send<Map<String, dynamic>>('/api/steady/patients/$id/label', method: 'POST', body: {'label': label});
     return '${res['name'] ?? label}';

@@ -68,21 +68,21 @@ function config() {
   return { url: url, forum: forum, key: key, support: support, fleet: false };
 }
 
-/** Staff the master psychologist has put in the community, for the fleet view to approve:
+/** Staff the master clinician has put in the community, for the fleet view to approve:
  *  name, email and role only. */
 function members(app) {
   return app.findRecordsByFilter("users", "role != 'patient' && role != 'support' && active = true && community = true", "email", 1000, 0, {})
     .map(function (u) { return { email: String(u.email()).toLowerCase(), name: u.getString("name"), role: u.getString("role") }; });
 }
 
-/** Why this account may not open the community, or "" when it may: psychologists, practice
+/** Why this account may not open the community, or "" when it may: clinicians, practice
  *  admins (the forum shows them the Steady manual only) and OpenWorks support (on OpenWorks' own
  *  server only, never a practice's), with two-step sign-in on (whatever the server's own
  *  setting), and an email. */
 function refusal(user, s, cfg) {
   var role = user.getString("role");
   if (role !== "clinician" && role !== "admin" && role !== "support") {
-    return "The community is for psychologists, practice administrators and OpenWorks IT.";
+    return "The community is for clinicians, practice administrators and OpenWorks IT.";
   }
   if (role === "support" && !(cfg && cfg.support)) {
     return "OpenWorks IT opens the community from its own server, not from a practice's.";
@@ -90,7 +90,7 @@ function refusal(user, s, cfg) {
   if (!s.twoStepOn(user)) return "Set up two-step sign-in in Steady first (Settings > Two-step sign-in).";
   if (!user.email()) return "This account has no email address. Ask the practice to add one.";
   if (role !== "support" && !user.getBool("community")) {
-    return "Your practice hasn't added you to the community yet. Ask your master psychologist (Settings > Practice > Community).";
+    return "Your practice hasn't added you to the community yet. Ask your master clinician (Settings > Practice > Community).";
   }
   return "";
 }

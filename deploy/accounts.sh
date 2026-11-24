@@ -13,7 +13,7 @@
 #                                         # "active on" unlocks an account its owner locked
 #   sudo ./accounts.sh audit [--patient <id>] [--actor <id>] [--days 90]
 #   sudo ./accounts.sh check              # proxy, rate limits, dashboard, operator agreement
-#   sudo ./accounts.sh demo-patients <psychologist email> [--remove]   # 3 fictional RADR patients
+#   sudo ./accounts.sh demo-patients <clinician email> [--remove]   # 3 fictional RADR patients
 #   sudo ./accounts.sh rotate-sessions    # signs EVERYONE out (new token secrets): after a
 #                                         # restore, or if a copy of the data may have leaked
 #   ./accounts.sh --test ...                                      # the test stack on a PC
@@ -113,7 +113,7 @@ case "$cmd" in
         *) usage ;;
       esac
     done
-    [ "$role" != clinician ] && [ "$master" = true ] && { echo "Only a psychologist can be the master clinician." >&2; exit 1; }
+    [ "$role" != clinician ] && [ "$master" = true ] && { echo "Only a clinician can be the master clinician." >&2; exit 1; }
     res="$(api POST /api/steady/ops/accounts "$(jq -n --arg n "$name" --arg e "$email" --arg r "$role" \
       --argjson m "$master" --argjson s "$server" '{name:$n,email:$e,role:$r,master:$m,serverAdmin:$s,create:true}')")"
     show_password "$res"

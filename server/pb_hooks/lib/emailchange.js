@@ -1,6 +1,6 @@
 /*
  * Steady - changing your own email address (Settings > Change email), for everyone: patients,
- * psychologists, practice administrators and OpenWorks support.
+ * clinicians, practice administrators and OpenWorks support.
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * 1. start: the current password and the new address. A 6-digit code goes to the new address,

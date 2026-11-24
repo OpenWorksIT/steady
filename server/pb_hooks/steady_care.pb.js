@@ -1,11 +1,12 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Steady - the psychologist looking after each patient: short notes, flags marked as
-// reviewed, archiving, "stable, ease off", and RADR measures switched off for one patient.
+// Steady - the clinician looking after each patient: short notes, flags marked as
+// reviewed, archiving, "stable, ease off", and RADR measures switched off (or its baseline
+// started again) for one patient.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Same rules as steady.pb.js: require() inside handlers, ES2015 only. Notes and settings are
-// the psychologist's own: never shown to the patient. Colleagues a patient is shared with can
-// read notes; only the patient's own psychologist changes anything.
+// the clinician's own: never shown to the patient. Colleagues a patient is shared with can
+// read notes; only the patient's own clinician changes anything.
 
 /* ---------- notes ---------- */
 
@@ -31,7 +32,7 @@ routerAdd("POST", "/api/steady/patients/{id}/notes", (e) => {
   return e.json(200, { id: n.id, text: n.getString("text"), by: n.getString("authorName"), at: s.toMs(n, "created") });
 }, $apis.requireAuth());
 
-/* ---------- where the patient is in the psychologist's work ---------- */
+/* ---------- where the patient is in the clinician's work ---------- */
 
 // status: "" (seeing them), "stable" (doing well: bottom of the list, nothing highlighted) or
 // "archived" (no longer seeing them: off the list; their account still works).
@@ -48,7 +49,7 @@ routerAdd("POST", "/api/steady/patients/{id}/care", (e) => {
   return e.json(200, { id: p.id, careStatus: status });
 }, $apis.requireAuth());
 
-// The psychologist's archived patients, to bring someone back (Settings > Archived patients).
+// The clinician's archived patients, to bring someone back (Settings > Archived patients).
 routerAdd("GET", "/api/steady/patients-archived", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   s.requireRole(e, "clinician");
@@ -82,6 +83,37 @@ routerAdd("POST", "/api/steady/patients/{id}/radr-exclusions", (e) => {
   // the reason stays with the patient's settings: the audit report is read by the practice admin
   s.audit($app, e, "patient.radr." + (b.excluded === true ? "exclude" : "include"), domain, p.id);
   return e.json(200, { exclusions: list });
+}, $apis.requireAuth());
+
+// Start a patient's RADR baseline again from a day (body: { from: "YYYY-MM-DD", reason }), or
+// go back to all their data (from: ""). For someone who joined Steady at a bad time in their
+// life: from that day on, each day is compared only with data from then. Nothing is deleted.
+// Dated, with who and why; the patient's own clinician only.
+routerAdd("POST", "/api/steady/patients/{id}/radr-baseline", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const w = require(`${__hooks}/lib/wearable.js`);
+  const R = require(`${__hooks}/lib/radr.js`);
+  const D = require(`${__hooks}/lib/radr_data.js`);
+  s.requireRole(e, "clinician");
+  const p = s.ownPatient($app, e.auth.id, e.request.pathValue("id"));
+  const b = s.body(e);
+  const from = String(b.from || "");
+  let kept = null;
+  if (from) {
+    const today = w.localDay(s.nowMs(), p.getInt("tzOffset") || 120);
+    if (!R.isDay(from) || !w.validDay(from) || from > today || from < R.addDays(today, -400)) {
+      throw s.badRequest("Choose a day from the last 400 days, up to today.");
+    }
+    const reason = s.core.str(b.reason, 200);
+    if (!reason) throw s.badRequest("Say briefly why, e.g. 'joined during a crisis, now settled'. It shows wherever RADR does.");
+    kept = { from: from, by: e.auth.getString("name"), at: new Date(s.nowMs()).toISOString(), reason: reason };
+  }
+  p.set("radrBaseline", kept);
+  $app.unsafeWithoutHooks().save(p);
+  D.refreshLatest($app, p);
+  // the reason stays with the patient's settings: the audit report is read by the practice admin
+  s.audit($app, e, "patient.radr.baseline" + (kept ? "" : ".undo"), kept ? "from:" + from : "", p.id);
+  return e.json(200, { baseline: kept, ratedAgainFrom: kept ? R.firstRated(from) : null });
 }, $apis.requireAuth());
 
 /* ---------- flags marked as reviewed ---------- */

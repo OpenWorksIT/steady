@@ -53,7 +53,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
             Text('You asked on ${relTime(asked)}. Your practice will delete your Steady account within 30 days, and '
                 'you\'ll get an email when it\'s done. Until then you can still use Steady.', style: ink2),
             const SizedBox(height: 12),
-            Text('If you change your mind, tell your psychologist.', style: ink2),
+            Text('If you change your mind, tell your clinician.', style: ink2),
           ] else ...[
             Text('What happens', style: context.tt.titleMedium),
             const SizedBox(height: 6),
@@ -63,12 +63,12 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
             const SizedBox(height: 16),
             Text('Why your practice does it', style: context.tt.titleMedium),
             const SizedBox(height: 6),
-            Text('South African law requires your psychologist to keep your clinical records: for at least six years '
+            Text('South African law requires your clinician to keep your clinical records: for at least six years '
                 'after your last contact, until your 21st birthday if you\'re under 18, and for life in some cases '
                 '(HPCSA Booklet 9). So your practice first copies what belongs in your clinical file, then deletes your '
                 'Steady account. A log of who opened your record, and when, is also kept.', style: ink2),
             const SizedBox(height: 16),
-            Text('If you\'re finding things hard right now, please talk to your psychologist first, or call one of the '
+            Text('If you\'re finding things hard right now, please talk to your clinician first, or call one of the '
                 'numbers at the bottom of this page.', style: ink2),
             const SizedBox(height: 20),
             TextField(

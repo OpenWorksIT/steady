@@ -60,7 +60,9 @@ function statusRows(app, patients) {
     var devs = devices[p.id] || [];
     var h = healthPerm(p);
     return {
-      consent: { at: s.toMs(p, "consentAt"), version: p.getString("consentVersion"), current: p.getString("consentVersion") === current },
+      consent: { at: s.toMs(p, "consentAt"), version: p.getString("consentVersion"), current: p.getString("consentVersion") === current,
+        // may the practice contact them about what they share: "yes", "no", "" (not asked yet)
+        contact: p.getString("contactConsent"), contactAt: s.toMs(p, "contactConsentAt") },
       privacyNoticeAt: s.toMs(p, "privacyNoticeAt"),
       notifications: devs.map(function (d) { return d.getString("provider"); }),
       watch: {

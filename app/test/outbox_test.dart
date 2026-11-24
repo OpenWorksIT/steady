@@ -86,7 +86,7 @@ void main() {
     await o.submit(item('a', now, kind: 'questionnaire', target: 'asg1', title: 'PHQ-9'));
     await o.submit(item('b', now));
     server.up = true;
-    server.refuse['a'.padRight(15, '0')] = ClientException(statusCode: 400, response: {'message': 'Your psychologist withdrew this one, so your answers weren\'t sent.'});
+    server.refuse['a'.padRight(15, '0')] = ClientException(statusCode: 400, response: {'message': 'Your clinician withdrew this one, so your answers weren\'t sent.'});
     expect(await o.flush(), 1);
     expect(o.waiting, 0);
     expect(o.refused.single.title, 'PHQ-9');

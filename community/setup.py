@@ -59,7 +59,7 @@ GROUPS = [
     {
         "name": "clinicians",
         "full_name": "Clinicians",
-        "bio_raw": "Psychologists at practices that use Steady. Only this group sees the clinical categories.",
+        "bio_raw": "Clinicians at practices that use Steady. Only this group sees the clinical categories.",
         "visibility_level": VIS_LOGGED_ON,
         "members_visibility_level": VIS_MEMBERS,
         "mentionable_level": ALIAS_MEMBERS_MODS_ADMINS,
@@ -100,7 +100,7 @@ CATEGORIES = [
         "slug": "manual",
         "color": "2C5F7C",
         "text_color": "FFFFFF",
-        "description": "How to use Steady, step by step with screenshots: for psychologists, practice administrators and the master psychologist, and what patients see. Questions in the replies: OpenWorks IT reads and answers here.",
+        "description": "How to use Steady, step by step with screenshots: for clinicians, practice administrators and the master clinician, and what patients see. Questions in the replies: OpenWorks IT reads and answers here.",
         # the one category practice administrators see
         "permissions": {"clinicians": CREATE_POST, "practice-admins": CREATE_POST, "openworks": FULL},
     },
@@ -159,7 +159,7 @@ CATEGORIES = [
 WELCOME_TITLE = "Welcome to Steady Community: please read first"
 WELCOME_TITLES_BEFORE = ["Welcome to the Steady community: please read first"]
 WELCOME_RAW = """\
-Welcome. Steady Community is for psychologists at practices that use Steady. It is a place to talk about the science, build questionnaires together, plan studies across practices, and shape how Steady develops.
+Welcome. Steady Community is for clinicians at practices that use Steady. It is a place to talk about the science, build questionnaires together, plan studies across practices, and shape how Steady develops.
 
 The first community is VR Clinical Psychology. Kempie van Rooyen is the community lead and runs the forum.
 
@@ -185,7 +185,7 @@ Data from studies run across practices will only ever be shared here as totals a
 | Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
 | Announcements, The science, Steady development | Clinicians and OpenWorks IT |
 | Steady manual | Clinicians, practice administrators and OpenWorks IT |
-| A practice's private category (if it has one) | That practice's psychologists only |
+| A practice's private category (if it has one) | That practice's clinicians only |
 
 OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements, the Steady manual, The science and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
 
@@ -391,8 +391,8 @@ def desired_settings(args):
         ("backup_frequency", "1"),                 # daily
         ("maximum_backups", "7"),
         ("title", args.title),
-        ("site_description", "For psychologists at practices that use Steady: the science behind between-session care, questionnaires and tools, and studies across practices."),
-        ("short_site_description", "For psychologists at practices that use Steady"),
+        ("site_description", "For clinicians at practices that use Steady: the science behind between-session care, questionnaires and tools, and studies across practices."),
+        ("short_site_description", "For clinicians at practices that use Steady"),
         ("contact_email", args.contact_email),
         # Steady Community, not Discourse: no maker's badge, no Discourse tutorial bot
         ("enable_powered_by_discourse", "false"),
@@ -508,7 +508,7 @@ def practice_groups(practices):
         out.append({
             "name": f"practice-{slug}",
             "full_name": label,
-            "bio_raw": f"Psychologists at {label}. Only they see the {label} private category.",
+            "bio_raw": f"Clinicians at {label}. Only they see the {label} private category.",
             "visibility_level": VIS_MEMBERS,
             "members_visibility_level": VIS_MEMBERS,
             "mentionable_level": ALIAS_MEMBERS_MODS_ADMINS,
@@ -556,7 +556,7 @@ def practice_categories(practices):
         "slug": f"practice-{slug}",
         "color": "8A6E9E",
         "text_color": "FFFFFF",
-        "description": f"Private to the psychologists at {label}.",
+        "description": f"Private to the clinicians at {label}.",
         "permissions": {f"practice-{slug}": FULL},
     } for slug, label in practices]
 
@@ -825,9 +825,9 @@ TEXTS = {
     "js.composer.reply_placeholder_no_images": "Type here. Never anything that could identify a patient: no names, dates of birth, places or rare details. Markdown works.",
     "js.welcome_banner.header.new_members": "Welcome to Steady Community, %{preferred_display_name}",
     "js.welcome_banner.header.logged_in_members": "Welcome back, %{preferred_display_name}",
-    "js.welcome_banner.subheader.logged_in_members": "Psychologists at practices that use Steady. No patient-identifying information, ever.",
+    "js.welcome_banner.subheader.logged_in_members": "Clinicians at practices that use Steady. No patient-identifying information, ever.",
     "js.welcome_banner.search_placeholder": "Search Steady Community",
-    "powered_by_html": "Steady Community, for psychologists at practices that use Steady",
+    "powered_by_html": "Steady Community, for clinicians at practices that use Steady",
 }
 
 def _welcome_message():
@@ -855,7 +855,7 @@ SEEDED_GUIDELINES_TITLES = {"faq/guidelines", "guidelines", "faq"}
 SYSTEM_USER_ID = -1
 
 GUIDELINES_RAW = """\
-Steady Community is for psychologists at practices that use Steady: the science behind between-session care, the questionnaires and tools, studies across practices, and how Steady develops. These are its guidelines.
+Steady Community is for clinicians at practices that use Steady: the science behind between-session care, the questionnaires and tools, studies across practices, and how Steady develops. These are its guidelines.
 
 ## No patient-identifying information, ever
 

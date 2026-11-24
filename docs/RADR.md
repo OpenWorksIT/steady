@@ -1,18 +1,18 @@
 # RADR: Research Amon Dîn Rating
 
-RADR is a view in the psychologist's app (patient > RADR tab). It shows, day by day, how far a
+RADR is a view in the clinician's app (patient > RADR tab). It shows, day by day, how far a
 patient's watch data and check-ins are from that person's own normal, **to improve care**,
 grouped into four domains, and whether the watch and the check-ins move together. It applies what
 the research below reports to ordinary care.
 
 **It is not a risk score, a prediction or a diagnosis**, it is not watched around the clock, and
-nothing is triggered by it. In the psychologist's list it only **orders** patients: an ordering of
+nothing is triggered by it. In the clinician's list it only **orders** patients: an ordering of
 data, not alerts, and always below answers waiting for review such as PHQ-9 item 9. The code is
 `server/pb_hooks/lib/radr.js` (version `radr-1`).
 
 Kempie van Rooyen (VR Clinical Psychology) approved RADR for use in care; its ethics and patient
 consent sit with him. Patients agree to share watch data separately (the watch consent in the app,
-`wearable-2`), which says the data may be added to their clinical record, where the psychologist decides how
+`wearable-2`), which says the data may be added to their clinical record, where the clinician decides how
 it is used in their care.
 
 ## What the research says, in short
@@ -40,7 +40,7 @@ it is used in their care.
   clinical-only models were similar and combining them roughly doubled recall (Lee et al. 2026).
 
 So RADR combines domains, compares each person with themselves, and keeps the check-ins beside the
-watch rather than inside it, so the psychologist can see whether the watch adds anything.
+watch rather than inside it, so the clinician can see whether the watch adds anything.
 
 ## How RADR works
 
@@ -65,9 +65,29 @@ watch rather than inside it, so the psychologist can see whether the watch adds 
 6. **Concordance**: Spearman correlation between the watch index and the check-in score, with the
    watch 0 to 3 days ahead.
 
+### Starting the baseline again (since 1.3.0)
+
+Someone who joins Steady at a bad time in their life has that time as their usual. When they get
+better, some of the better days count as away from usual: sleep duration and the body clock count
+in either direction, so longer, earlier sleep after weeks of short, late nights shows as a change.
+The rolling baseline catches up by itself after about five weeks, but until then RADR keeps
+pointing at a recovery.
+
+So a clinician can **start a patient's baseline again from a day** they choose (Patient settings >
+RADR baseline), with a reason, for example "joined during a crisis, now settled", or the day new
+medication started. From that day on:
+
+- each day is compared only with the patient's data **from that day on**, in the same way (28 days,
+  a week's gap, at least 14 days): it is rated again once there are 14 days of it, about 3 weeks
+  after the day chosen. A day further back can be chosen, so ratings can resume at once;
+- **days before it keep their rating**, so the record of how things were stays as it was;
+- nothing is deleted, it shows with the date, who and why wherever RADR does (the RADR tab, each
+  day's explanation, exports), the access log has the change (without the reason), and it can be
+  undone.
+
 ## Demo patients
 
-`sudo ./accounts.sh demo-patients <psychologist email>` adds three **fictional** patients with eight
+`sudo ./accounts.sh demo-patients <clinician email>` adds three **fictional** patients with eight
 weeks of watch data, check-ins and weekly PHQ-9 and GAD-7 results (`--remove` takes them out). They
 are shaped after the patterns above, not a validated model of any illness, and must never be mixed
 with real patients' data in any analysis.
@@ -109,7 +129,7 @@ the log can't be written, nothing is shown.
   from usual since Tue 28 Oct". Its key (`radr:<domain>:<first day>`) stays the same while that run
   of days away from usual lasts. Days without data don't end a run unless there are more than 7
   in a row.
-- The patient's psychologist, or a colleague the patient is shared with, can **mark a flag as
+- The patient's clinician, or a colleague the patient is shared with, can **mark a flag as
   reviewed**, with an optional note. Steady keeps who and when (`radrreviews`, readable only
   through the RADR routes, never by the patient, the practice admin or OpenWorks) and shows
   "Reviewed by <name>, <date>" wherever the flag appears.
@@ -126,8 +146,9 @@ the log can't be written, nothing is shown.
 
 ## In the app and in exports
 
-- Psychologists can **switch a domain off for one patient** (for example sleep for a shift worker),
+- Clinicians can **switch a domain off for one patient** (for example sleep for a shift worker),
   with a reason. It's still collected and shown, just not counted; exports list it.
+- They can **start a patient's baseline again** from a day (above), with a reason; exports say so.
 - Tapping any number, day, domain or flag opens the explanation above.
 - Exports for the clinical record (PDF, AI note-taking) list the flags on the latest day and whether each
   was marked as reviewed in Steady, as they do for the other flags.

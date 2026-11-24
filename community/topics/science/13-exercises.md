@@ -2,7 +2,7 @@
 
 ## What they are
 
-Steady has five built-in exercises a psychologist can send, and a patient can also start on their own from "Whenever you need it" on the home screen: three paced-breathing exercises and two step-by-step ones. Psychologists can write their own of either kind.
+Steady has five built-in exercises a clinician can send, and a patient can also start on their own from "Whenever you need it" on the home screen: three paced-breathing exercises and two step-by-step ones. Clinicians can write their own of either kind.
 
 | Exercise | Pattern | Length as built |
 |---|---|---|

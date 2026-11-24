@@ -6,7 +6,7 @@ Steady's questionnaires were chosen with adults in mind, but its consent stateme
 
 Steady's consent statement is the same for every practice. For patients under 18 it says:
 
-> If you are 12 or older and understand what this means, you can agree to it yourself; your psychologist will talk it through with you first. If you are younger than 12, a parent or guardian agrees for you.
+> If you are 12 or older and understand what this means, you can agree to it yourself; your clinician will talk it through with you first. If you are younger than 12, a parent or guardian agrees for you.
 
 This follows the Children's Act 38 of 2005, which lets a child over the age of 12 consent to their own medical treatment if they are of sufficient maturity and have the mental capacity to understand its benefits, risks, social and other implications ([section 129](https://www.acts.co.za/childrens/129_consent_to_medical_treatment_and_surgical_operation.php)). Judging that maturity is yours, as it is for therapy itself.
 
