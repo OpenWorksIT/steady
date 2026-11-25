@@ -12,8 +12,8 @@
  * Keep to ES2015 for goja; use PocketBase globals only inside functions.
  */
 
-var VERSION = "1.0";
-var TEXT_SHA256 = "9a0316b67692d33ae89a8dc8ed192062621ad1a0039dcf051244a4f5249b1551";
+var VERSION = "1.1";
+var TEXT_SHA256 = "7f93ed276cbbfc92fd6f844b728fa071d8ca4b3e8cd1b5999e5f4b2942331319";
 
 /** Blanks still to be filled in, in the text: "[To complete: ...]". */
 var BLANK = /\[To complete:/;
