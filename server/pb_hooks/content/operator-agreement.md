@@ -214,7 +214,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 20.3 Steady keeps a record of each signature that can't be changed through the app: the version of this agreement, its full text and that text's SHA-256 fingerprint, the details in the Schedule, the signer's account, name and email, and the time, internet address and app used. That record is evidence of this agreement and its terms.
 
-20.4 OpenWorks makes this agreement available in Steady and is bound by it when the Practice signs. Signed for OpenWorks by Tiaan van der Merwe, Director, Founder and Principal Engineer, who is authorised to do so.
+20.4 OpenWorks makes this agreement available in Steady and is bound by it when the Practice signs. Signed for OpenWorks by Tiaan van der Merwe, Principal Engineer and Director, who is authorised to do so.
 
 20.5 The master clinician, the practice administrator and OpenWorks can open the signed agreement in Steady at any time and download it as a PDF.
 

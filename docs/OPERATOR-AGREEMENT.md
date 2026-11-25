@@ -220,7 +220,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 20.3 Steady keeps a record of each signature that can't be changed through the app: the version of this agreement, its full text and that text's SHA-256 fingerprint, the details in the Schedule, the signer's account, name and email, and the time, internet address and app used. That record is evidence of this agreement and its terms.
 
-20.4 OpenWorks makes this agreement available in Steady and is bound by it when the Practice signs. Signed for OpenWorks by Tiaan van der Merwe, Director, Founder and Principal Engineer, who is authorised to do so.
+20.4 OpenWorks makes this agreement available in Steady and is bound by it when the Practice signs. Signed for OpenWorks by Tiaan van der Merwe, Principal Engineer and Director, who is authorised to do so.
 
 20.5 The master clinician, the practice administrator and OpenWorks can open the signed agreement in Steady at any time and download it as a PDF.
 
@@ -253,8 +253,9 @@ Recorded in Steady when the Practice signs, and printed with each signed copy:
 
 Versions: 1.0 (November 2026, first signed); 1.1 (25 November 2026, Steady 1.3.0): OpenWorks'
 street address taken out of clause 1.1 (the email, phone and WhatsApp stay, and clause 21.4 gives
-notices by email), and "clinician" for "psychologist", as Steady is for everyone in mental
-healthcare. Each master clinician signs 1.1 again; their 1.0 signature stays on record.
+notices by email), "clinician" for "psychologist", as Steady is for everyone in mental
+healthcare, and OpenWorks' signatory as Principal Engineer and Director. Each master clinician
+signs 1.1 again; their 1.0 signature stays on record.
 
 ### How it is signed and kept
 
@@ -294,8 +295,8 @@ are left). None are left.
 Filled in on 3 November: where domains.co.za keeps the Steady mailbox's mail (clause 7.1: South
 Africa, Teraco's data centre in Isando, from domains.co.za's email hosting page,
 https://www.domains.co.za/email-hosting), the registration number (2024/733128/07), the Information Officer (Tiaan van der Merwe), the phone
-and WhatsApp number, and who signs for OpenWorks (Tiaan van der Merwe, Director, Founder and
-Principal Engineer).
+and WhatsApp number, and who signs for OpenWorks (Tiaan van der Merwe, Principal Engineer and
+Director).
 
 The live list of what a lawyer should confirm, across this agreement, the consent statement and
 the privacy policy, is kept in the "Steady: for a lawyer to confirm" document; the points below
