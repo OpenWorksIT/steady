@@ -6,13 +6,13 @@
 
 # Operator agreement for Steady
 
-Version 1.0, November 2026
+Version 1.1, November 2026
 
 This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice whose details are recorded in the Schedule when this agreement is signed ("the Practice"). It is the written contract that section 21 of the Protection of Personal Information Act 4 of 2013 ("POPIA") requires between a responsible party and its operator.
 
 ## 1. The parties
 
-1.1 OpenWorks: OpenWorks IT (Pty) Ltd, registration number 2024/733128/07, of 24 Pelican Road, Port Elizabeth, 6070, South Africa. Email: info@openworks.co.za. Phone and WhatsApp: 076 768 9155. Information Officer: Tiaan van der Merwe, info@openworks.co.za.
+1.1 OpenWorks: OpenWorks IT (Pty) Ltd, registration number 2024/733128/07, South Africa. Email: info@openworks.co.za. Phone and WhatsApp: 076 768 9155. Information Officer: Tiaan van der Merwe, info@openworks.co.za.
 
 1.2 The Practice: the practice named in the Schedule, with the registration or practice number, physical address and contact details recorded there when this agreement is signed.
 
@@ -75,8 +75,8 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 - Location: the Server runs on a virtual server in South Africa, as its own instance of Steady with its own database.
 - Encryption in transit: Steady is reached only over HTTPS.
 - Backups: the Server's data is backed up every night. Each backup is encrypted before it is written, with a key whose private part is kept off the Server. Backups are kept in South Africa and deleted after 30 days.
-- Staff sign-in: psychologists, the practice administrator and OpenWorks support sign in with a password, a code from an authenticator app, and a device they have linked with a code sent to their email. On phones the app locks with the phone's own screen lock, and sensitive actions, such as exports, password resets and reading the access log, ask staff to confirm it is them.
-- Access control: the Server, not the app, decides what each account may see. Patients see only their own information. Psychologists see their own patients, and a patient a colleague has shared with them. The practice administrator sees patients' names and whether they are connected, never what they share.
+- Staff sign-in: clinicians, the practice administrator and OpenWorks support sign in with a password, a code from an authenticator app, and a device they have linked with a code sent to their email. On phones the app locks with the phone's own screen lock, and sensitive actions, such as exports, password resets and reading the access log, ask staff to confirm it is them.
+- Access control: the Server, not the app, decides what each account may see. Patients see only their own information. Clinicians see their own patients, and a patient a colleague has shared with them. The practice administrator sees patients' names and whether they are connected, never what they share.
 - OpenWorks support: OpenWorks' support accounts in the app see the Practice's staff and the Server, and no Patient Information, not even names. Reports that staff send with the app's Feedback button reach OpenWorks with a blurred screenshot; staff should not type Patient Information into them.
 - The access log: every time someone reads Patient Information through Steady, it is written to an access log before it is shown, and if it can't be written, nothing is shown. The master clinician and the practice administrator can read the log in the app.
 - Root access: as the operator that runs the Server, OpenWorks can technically reach the Server itself, as any host can. OpenWorks limits that access to the people who maintain the Server, and uses it only to maintain, back up, restore, update and repair the Server and to carry out the Practice's instructions. It does not read Patient Information while doing so unless a task the Practice asked for can't be done otherwise. PocketBase's own administration dashboard is switched off.
@@ -150,7 +150,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 11.2 If a data subject contacts OpenWorks directly, OpenWorks passes the request on to the Practice and does not answer it itself, except to say it has been passed on.
 
-11.3 Steady itself helps with these requests: patients can ask in the app to delete their account, psychologists can export a patient's record, and the master clinician and the practice administrator can read the access log.
+11.3 Steady itself helps with these requests: patients can ask in the app to delete their account, clinicians can export a patient's record, and the master clinician and the practice administrator can read the access log.
 
 ## 12. Deletion on request
 
@@ -162,7 +162,7 @@ This agreement is between OpenWorks IT (Pty) Ltd ("OpenWorks") and the practice 
 
 ## 13. Clinical records
 
-13.1 Patient Information in Steady is the Practice's. It becomes part of the Practice's clinical record when a psychologist exports it from Steady into the Practice's own records, for example as a PDF report, a workbook or a summary for the clinician's own tools.
+13.1 Patient Information in Steady is the Practice's. It becomes part of the Practice's clinical record when a clinician exports it from Steady into the Practice's own records, for example as a PDF report, a workbook or a summary for the clinician's own tools.
 
 13.2 From then on, the exported copy is part of the Practice's clinical record and the Practice's alone. Its storage, security, retention and any further sharing, including with any tool a clinician uses, are the Practice's responsibility. OpenWorks does not process it, and OpenWorks' responsibility for it ends when it is exported.
 
@@ -251,6 +251,11 @@ Recorded in Steady when the Practice signs, and printed with each signed copy:
 
 ## Notes (not part of the agreement)
 
+Versions: 1.0 (November 2026, first signed); 1.1 (25 November 2026, Steady 1.3.0): OpenWorks'
+street address taken out of clause 1.1 (the email, phone and WhatsApp stay, and clause 21.4 gives
+notices by email), and "clinician" for "psychologist", as Steady is for everyone in mental
+healthcare. Each master clinician signs 1.1 again; their 1.0 signature stays on record.
+
 ### How it is signed and kept
 
 - The practice's master clinician sees the agreement the first time they open Steady after their
@@ -288,8 +293,7 @@ are left). None are left.
 
 Filled in on 3 November: where domains.co.za keeps the Steady mailbox's mail (clause 7.1: South
 Africa, Teraco's data centre in Isando, from domains.co.za's email hosting page,
-https://www.domains.co.za/email-hosting), the registration number (2024/733128/07), the address
-(24 Pelican Road, Port Elizabeth, 6070), the Information Officer (Tiaan van der Merwe), the phone
+https://www.domains.co.za/email-hosting), the registration number (2024/733128/07), the Information Officer (Tiaan van der Merwe), the phone
 and WhatsApp number, and who signs for OpenWorks (Tiaan van der Merwe, Director, Founder and
 Principal Engineer).
 
