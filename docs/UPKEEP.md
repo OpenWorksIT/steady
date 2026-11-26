@@ -75,7 +75,7 @@ what to look at there, and what it can't see.
 ## 6. Mail, DNS and domains
 
 - [ ] DMARC reports (dmarc@steadyapp.co.za): any mail failing SPF or DKIM? After a few clean months, move the policy from `quarantine` to `reject`.
-- [ ] Domain renewals coming up: steadyapp.co.za, openworks.co.za and each practice's own domain.
+- [ ] Domain renewals coming up: steadyapp.co.za and openworks.co.za (every practice's server is under steadyapp.co.za).
 - [ ] The CAA records are still there.
 
 ## 7. OpenWorks' own computer
