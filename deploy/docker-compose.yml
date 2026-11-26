@@ -20,7 +20,7 @@ x-logging: &logging
 services:
   caddy:
     logging: *logging
-    image: caddy:2.11.8 # pinned: Dependabot proposes updates as pull requests into working
+    image: caddy:2.11.9 # pinned: Dependabot proposes updates as pull requests into working
     restart: unless-stopped
     ports:
       - "80:80"
@@ -57,7 +57,7 @@ services:
   # before 1.2.6, and a new volume starts out root's. Nothing but chown, on those two volumes.
   caddy-perms:
     logging: *logging
-    image: caddy:2.11.8 # the same image as caddy (Dependabot updates both)
+    image: caddy:2.11.9 # the same image as caddy (Dependabot updates both)
     user: "0:0"
     entrypoint: ["chown", "-R", "-h", "65531:65531", "/data", "/config"]
     volumes:
