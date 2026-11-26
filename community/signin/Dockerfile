@@ -3,7 +3,7 @@
 # runs (GET /version, deploy/code-of.sh), for the fleet view to check against its own release.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Go 1.27: each Go release gets security fixes until the second one after it comes out
-FROM golang:1.27.3-alpine3.24 AS build
+FROM golang:1.27.4-alpine3.24 AS build
 WORKDIR /src
 COPY community/signin/go.mod ./
 COPY community/signin/*.go ./
