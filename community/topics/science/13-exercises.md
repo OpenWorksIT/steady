@@ -34,7 +34,7 @@ VR Clinical Psychology's brief included being able to send exercises, breathing 
 
 **Steps.** One step at a time: a title, a prompt, and an optional box to write in (up to 2,000 characters), with Back and Next. Steady records what was written for each step, which may be nothing. The thought record's 0 to 100 ratings are written as text, not scored.
 
-**Sending and starting.** You can send an exercise once, daily or weekly, with a note, like a questionnaire. A patient can start a built-in exercise themselves at any time, and one of your own only after you have sent it to them. Crisis numbers are at the foot of every exercise screen.
+**Sending and starting.** You can send an exercise once, daily, weekly, fortnightly, monthly or quarterly, with a note, like a questionnaire. A patient can start a built-in exercise themselves at any time, and one of your own only after you have sent it to them. Crisis numbers are at the foot of every exercise screen.
 
 **What you see.** For an exercise you sent: an item in your Alerts list and a push ("Exercise finished in N min"), and on its result, the rounds and time or each written answer. For one the patient started themselves: an item in your Alerts list ("Started by the patient") but no push. Exports list exercises done, with minutes for breathing.
 

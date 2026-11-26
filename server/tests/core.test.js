@@ -360,3 +360,74 @@ test("the documented examples are valid", () => {
   assert.deepEqual(f.errors, []);
   assert.equal(f.def.items.length, 3);
 });
+
+test("AUDIT: WHO's wording, scores, zones and skips", () => {
+  const def = valid("audit");
+  assert.equal(def.items.length, 10);
+  assert.equal(def.licence.status, "cleared");
+  // never drinks: straight to 9 and 10, nothing else asked
+  const never = core.validateAnswers(def, { audit_1: 0, audit_9: 0, audit_10: 0 });
+  assert.deepEqual(never.errors, []);
+  assert.equal(core.scoreAnswers(def, never.answers).band, "Zone I, lower risk (0-7)");
+  // drinks, but 1 or 2 and never six: 4 to 8 skipped too
+  const light = core.validateAnswers(def, { audit_1: 1, audit_2: 0, audit_3: 0, audit_9: 0, audit_10: 2 });
+  assert.deepEqual(light.errors, []);
+  assert.equal(core.scoreAnswers(def, light.answers).total, 3);
+  // more than that: 4 to 8 are asked
+  assert.ok(core.validateAnswers(def, { audit_1: 2, audit_2: 1, audit_3: 0, audit_9: 0, audit_10: 0 }).errors.length > 0);
+  const most = core.scoreAnswers(def, core.validateAnswers(def, answersAll(def, 4)).answers);
+  assert.equal(most.total, 40);
+  assert.equal(most.max, 40);
+  assert.equal(most.band, "Zone IV, possible dependence (20-40)");
+  assert.equal(most.severity, "alert");
+  const zone2 = core.scoreAnswers(def, { audit_1: 2, audit_2: 1, audit_3: 1, audit_4: 1, audit_5: 1, audit_6: 0, audit_7: 1, audit_8: 1, audit_9: 0, audit_10: 0 });
+  assert.equal(zone2.total, 8);
+  assert.equal(zone2.severity, "warn");
+  // 9 and 10 score 0, 2 or 4
+  assert.deepEqual(core.validateAnswers(def, { audit_1: 0, audit_9: 1, audit_10: 0 }).errors.length, 1);
+});
+
+test("AWARE: 25 items, five scored the other way round, 25 to 175", () => {
+  const def = valid("aware");
+  assert.equal(def.items.length, 25);
+  assert.deepEqual(def.items.map((i) => i.id).filter((id) => ["aware_19", "aware_22", "aware_28"].includes(id)), []);
+  assert.equal(def.licence.status, "cleared");
+  // "Never" to everything: 20 items at 1, the five reversed at 7
+  const nev = core.scoreAnswers(def, core.validateAnswers(def, Object.fromEntries(def.items.map((i) => [i.id, i.responseSet === "reversed" ? 7 : 1]))).answers);
+  assert.equal(nev.total, 20 + 5 * 7);
+  // no warning signs at all: lowest everywhere ("Always" to the five reversed)
+  const none = core.scoreAnswers(def, core.validateAnswers(def, Object.fromEntries(def.items.map((i) => [i.id, 1]))).answers);
+  assert.equal(none.total, 25);
+  assert.equal(none.max, 175);
+  assert.equal(def.responseSets.reversed.find((o) => o.label === "Always").value, 1);
+  assert.equal(def.responseSets.often.find((o) => o.label === "Always").value, 7);
+  assert.equal(none.band, "");
+});
+
+test("single questions: drug use and heavy drinking in the past 7 days", () => {
+  const drugs = valid("drug-use-7d");
+  assert.equal(core.scoreAnswers(drugs, { drugs_7d: 0 }).severity, "none");
+  const used = core.scoreAnswers(drugs, { drugs_7d: 3 });
+  assert.equal(used.severity, "warn");
+  assert.equal(used.band, "Used in the past 7 days: review");
+  assert.ok(core.validateAnswers(drugs, { drugs_7d: 100 }).errors.length > 0);
+  const heavy = valid("heavy-drinking-7d");
+  assert.equal(core.scoreAnswers(heavy, { heavy_7d: 0 }).severity, "none");
+  assert.equal(core.scoreAnswers(heavy, { heavy_7d: 2 }).severity, "warn");
+  assert.equal(core.scoreAnswers(heavy, { heavy_7d: 2 }).max, 7);
+  assert.ok(core.validateAnswers(heavy, { heavy_7d: 8 }).errors.length > 0, "only 7 days in a week");
+});
+
+test("repeats: fortnightly, monthly and quarterly, in the patient's own days", () => {
+  const sast = 120;
+  const at = (iso) => Date.parse(iso);
+  // answered 14:00 on 31 January in Johannesburg: next month's is the last day of February
+  assert.equal(core.nextAvailable("monthly", at("2027-01-31T12:00:00Z"), sast), at("2027-02-28T00:00:00+02:00"));
+  assert.equal(core.nextAvailable("monthly", at("2028-01-31T12:00:00Z"), sast), at("2028-02-29T00:00:00+02:00"));
+  assert.equal(core.nextAvailable("quarterly", at("2026-11-26T08:00:00Z"), sast), at("2027-02-26T00:00:00+02:00"));
+  assert.equal(core.nextAvailable("quarterly", at("2026-11-30T23:30:00Z"), sast), at("2027-03-01T00:00:00+02:00"), "01:30 on 1 December there");
+  assert.equal(core.nextAvailable("fortnightly", at("2026-11-26T08:00:00Z"), sast), at("2026-12-10T00:00:00+02:00"));
+  assert.equal(core.nextAvailable("weekly", at("2026-11-26T08:00:00Z"), sast), at("2026-12-03T00:00:00+02:00"));
+  assert.equal(core.nextAvailable("once", at("2026-11-26T08:00:00Z"), sast), null);
+  assert.deepEqual(core.REPEATS, ["once", "daily", "weekly", "fortnightly", "monthly", "quarterly"]);
+});

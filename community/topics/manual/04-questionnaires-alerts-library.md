@@ -9,7 +9,7 @@
 
    ![Choosing what to send](images/34-psych-send-choose.webp)
 
-3. Under **How often**, choose **Once**, **Daily** or **Weekly**.
+3. Under **How often**, choose **Once**, **Daily**, **Weekly**, **Fortnightly**, **Monthly** or **Quarterly**.
 4. Optionally add a **Note for the patient** (for example, "before Thursday's session").
 5. Tap **Send [name]**.
 

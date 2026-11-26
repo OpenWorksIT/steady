@@ -5,7 +5,7 @@ Every clinician will use Steady a little differently, and some of the most usefu
 ## What there is to work with
 
 - **The daily check-in**: mood, anxiety, sleep and energy, each from 1 to 5, and a few words if the patient wants. On a patient's page you see the last fortnight as a line, with their words from each day.
-- **Questionnaires**, sent once, daily or weekly, with an optional note such as "before Thursday's session". PHQ-9, GAD-7, PCL-5 and WHO-5 are built in, and you can write or import others (see Questionnaires and tools).
+- **Questionnaires**, sent once or repeating (daily to quarterly), with an optional note such as "before Thursday's session". PHQ-9, GAD-7, PCL-5, WHO-5, the AUDIT, the AWARE and two single questions on drug use and heavy drinking are built in, and you can write or import others (see Questionnaires and tools).
 - **Exercises**: box breathing, 4-7-8 breathing, slow paced breathing, 5-4-3-2-1 grounding and a thought record, or exercises of your own. You can send them, and patients can also do them whenever they need them.
 - **Daily words**: a sentence or two of your own that your patients see at the start of the day, before their check-in, alongside Steady's own (Settings > Practice > Library, then the quotation-mark button).
 - **Watch data**, for patients who choose to share it (see "Talking to patients about watch data").

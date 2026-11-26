@@ -213,7 +213,8 @@ def main():
 
     s, insts = call("GET", "/api/collections/instruments/records", doc, query={"perPage": 50})
     by_key = {i["key"]: i for i in insts.get("items", [])}
-    check({"phq9", "gad7", "pcl5", "who5", "box-breathing"} <= set(by_key), "built-in instruments are installed", sorted(by_key))
+    check({"phq9", "gad7", "pcl5", "who5", "box-breathing", "audit", "aware", "drug-use-7d", "heavy-drinking-7d"} <= set(by_key),
+          "built-in instruments are installed", sorted(by_key))
 
     s, r = call("POST", "/api/collections/assignments/records", doc,
                 {"patient": pat_id, "clinician": doc_id, "instrument": by_key["who5"]["id"], "repeat": "once"})
@@ -246,6 +247,21 @@ def main():
     check(s == 200 and me and me[0]["flags"][0]["severity"] == "alert", "overview puts the item 9 flag first", me)
     s, r = call("GET", "/api/steady/overview", pat)
     check(s == 403, "patients can't see the clinician overview", r)
+
+    # the AUDIT every quarter (1.3.1): its skips, its score, and the next one three months on
+    s, aud = call("POST", "/api/collections/assignments/records", doc,
+                  {"patient": pat_id, "clinician": doc_id, "instrument": by_key["audit"]["id"], "repeat": "quarterly"})
+    check(s == 200 and aud.get("repeat") == "quarterly", "clinician sends the AUDIT every quarter", aud)
+    s, r = call("POST", f"/api/steady/assignments/{aud['id']}/complete", pat, {"answers": {"audit_1": 0, "audit_9": 0, "audit_10": 2}})
+    check(s == 200, "someone who never drinks answers only questions 1, 9 and 10", r)
+    s, done = call("GET", f"/api/collections/assignments/records/{aud['id']}", doc)
+    check((done.get("score") or {}).get("total") == 2, "the AUDIT scores 2", done.get("score"))
+    s, nxt = call("GET", "/api/collections/assignments/records", doc,
+                  query={"filter": f"instrument='{by_key['audit']['id']}' && status='pending'"})
+    nxt = nxt.get("items", [])
+    days = (time.mktime(time.strptime(nxt[0]["availableFrom"][:19], "%Y-%m-%d %H:%M:%S")) - time.mktime(time.gmtime())) / 86400 if nxt else 0
+    check(s == 200 and len(nxt) == 1 and nxt[0]["repeat"] == "quarterly" and 88 <= days <= 93,
+          "the next AUDIT waits about three months", {"days": round(days, 1), "next": nxt})
 
     example = pathlib.Path(__file__).resolve().parents[2] / "docs" / "examples" / "mini-wellbeing.fhir.json"
     if example.exists():
