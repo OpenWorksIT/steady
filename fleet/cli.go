@@ -199,7 +199,7 @@ func resetPassword(store *Store, args []string, in io.Reader, out io.Writer) err
 	if r.TwoStepCleared {
 		fmt.Fprintln(out, "  Two-step sign-in was cleared: they set it up again after signing in.")
 	}
-	fmt.Fprintln(out, "  Their devices are unlinked, and their master psychologist has been told.")
+	fmt.Fprintln(out, "  Their devices are unlinked, and their master clinician has been told.")
 	return nil
 }
 
@@ -294,7 +294,7 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "The community is on for %s. Its master psychologist adds staff in Settings > Practice > Community;\nthey show here to approve: fleet community %s people\n", sv.Name, id)
+		fmt.Fprintf(out, "The community is on for %s. Its master clinician adds staff in Settings > Practice > Community;\nthey show here to approve: fleet community %s people\n", sv.Name, id)
 		if len(approved) > 0 {
 			fmt.Fprintf(out, "Approved now: %s\n", strings.Join(approved, ", "))
 		}
@@ -358,7 +358,7 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 			fmt.Fprintf(out, "  %-9s %-34s %-28s %s%s\n", state, m.Email, m.Name, m.Role, note)
 		}
 		if len(members) == 0 {
-			fmt.Fprintln(out, "  Nobody yet: the master psychologist adds staff in Settings > Practice > Community.")
+			fmt.Fprintln(out, "  Nobody yet: the master clinician adds staff in Settings > Practice > Community.")
 		}
 		if len(waiting) > 0 {
 			fmt.Fprintf(out, "\nApprove with: fleet community %s approve <email>\n", id)
@@ -391,12 +391,12 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 				e = normEmail(e)
 				if pos[1] == "approve" {
 					if !listed[e] {
-						return false, fmt.Errorf("%s isn't on %s's list: its master psychologist adds them first (Settings > Practice > Community)", e, sv.Name)
+						return false, fmt.Errorf("%s isn't on %s's list: its master clinician adds them first (Settings > Practice > Community)", e, sv.Name)
 					}
 					if at := approvedAt(cp, e, id); len(at) > 0 {
 						return false, fmt.Errorf("%s is already approved at %s. One address comes in through one practice only: the sign-in bridge couldn't tell which practice they belong to.\n"+
 							"If they now belong to %s, take them off there first (fleet community %s remove %s), then approve them here.\n"+
-							"Otherwise %s's master psychologist puts them in with another address (their address at this practice).",
+							"Otherwise %s's master clinician puts them in with another address (their address at this practice).",
 							e, practiceNames(cp, at), sv.Name, at[0], e, sv.Name)
 					}
 					pr.Approved = union(pr.Approved, []string{e})

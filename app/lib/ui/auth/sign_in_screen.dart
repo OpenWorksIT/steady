@@ -138,9 +138,9 @@ class _SignInScreenState extends State<SignInScreen> {
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Forgot your password?'),
-          content: const Text('Ask your psychologist or the practice to reset it. They give you a temporary password, '
+          content: const Text('Ask your clinician or the practice to reset it. They give you a temporary password, '
               'and you choose a new one when you sign in.\n\n'
-              'Psychologists: the practice\'s master clinician resets yours.'),
+              'Clinicians: the practice\'s master clinician resets yours.'),
           actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
         ),
       );
@@ -237,7 +237,7 @@ class _SignInScreenState extends State<SignInScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('New here?', style: context.tt.titleMedium),
                   const SizedBox(height: 4),
-                  Text('Your psychologist will give you an invite QR code or code.', style: TextStyle(color: context.sc.ink2)),
+                  Text('Your clinician will give you an invite QR code or code.', style: TextStyle(color: context.sc.ink2)),
                   const SizedBox(height: 12),
                   if (canScanInvites) ...[const ScanInviteButton(), const SizedBox(height: 8)],
                   OutlinedButton(

@@ -1,13 +1,13 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Steady - RADR for psychologists: the RADR tab, each number explained, flags marked as
+// Steady - RADR for clinicians: the RADR tab, each number explained, flags marked as
 // reviewed; and the fictional demo patients that OpenWorks loads with deploy/accounts.sh
 // demo-patients.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // RADR (lib/radr.js, docs/RADR.md) shows how far a patient's watch data and check-ins are from
 // their own normal, to improve care: not a risk score, prediction or diagnosis. It orders the
-// psychologist's list and never raises an alert. Only staff who may see the patient use these
-// routes (their psychologist, or a colleague it's shared with); every read is access-logged
+// clinician's list and never raises an alert. Only staff who may see the patient use these
+// routes (their clinician, or a colleague it's shared with); every read is access-logged
 // before the answer goes out, and refused if it can't be.
 
 // The patient's RADR for the last `days` days (default 56, at most 365), with the flags on the
@@ -60,7 +60,7 @@ routerAdd("GET", "/api/steady/patients/{id}/radr/explain", (e) => {
 
 // Marks one flag on the latest day as reviewed (body: { key, note }): who and when. The flag
 // stays visible with that, and no longer moves the patient up the list until something new
-// appears. The patient's own psychologist or a colleague it's shared with.
+// appears. The patient's own clinician or a colleague it's shared with.
 routerAdd("POST", "/api/steady/patients/{id}/radr/review", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const D = require(`${__hooks}/lib/radr_data.js`);
@@ -79,7 +79,7 @@ routerAdd("POST", "/api/steady/patients/{id}/radr/review", (e) => {
   return e.json(200, { key: key, reviewed: reviewed });
 }, $apis.requireAuth());
 
-// Load (or remove) the three fictional demo patients for one psychologist. Terminal only.
+// Load (or remove) the three fictional demo patients for one clinician. Terminal only.
 routerAdd("POST", "/api/steady/ops/demo", (e) => {
   const s = require(`${__hooks}/lib/server.js`);
   const x = require(`${__hooks}/lib/practice.js`);
@@ -88,7 +88,7 @@ routerAdd("POST", "/api/steady/ops/demo", (e) => {
   const b = s.body(e);
   let c = null;
   try { c = $app.findAuthRecordByEmail("users", s.core.str(b.clinician, 200).toLowerCase()); } catch (_) { c = null; }
-  if (!c || c.getString("role") !== "clinician") throw new NotFoundError("No psychologist with that email.");
+  if (!c || c.getString("role") !== "clinician") throw new NotFoundError("No clinician with that email.");
 
   const db = $app.unsafeWithoutHooks();
   const existing = $app.findRecordsByFilter("users", "demo = true && clinician = {:c}", "", 100, 0, { c: c.id });

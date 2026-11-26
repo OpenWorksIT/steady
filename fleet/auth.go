@@ -13,9 +13,11 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -23,15 +25,18 @@ import (
 
 const (
 	pbkdfIter = 600000
-	// A session lasts while its tab is open: every page keeps it alive once a minute (the
-	// /alive frame) and nothing else ends it but signing out, a restart, or the browser closing
-	// (the cookie is for the browser session only). A closed tab, or a computer asleep, has
-	// stopped asking after this long, and the session ends.
-	sessionIdle  = 10 * time.Minute
-	aliveEvery   = 60 // seconds between the /alive frame's visits
-	failWindow   = 15 * time.Minute
-	failsPerIP   = 8
-	failsPerUser = 10
+	// The fleet view is a screen that stays on, so a sign-in lasts: up to sessionMax from signing
+	// in (then the password and a code again), and through a computer asleep overnight, a tab
+	// the browser put to sleep, a browser restart or a fleet view restart, as long as the browser
+	// asked within sessionIdle. An open tab asks once a minute (the /alive frame). Signing out,
+	// a changed password or authenticator, or being taken out of users.json ends it at once.
+	sessionMax       = 7 * 24 * time.Hour
+	sessionIdle      = 24 * time.Hour
+	sessionSaveEvery = 5 * time.Minute // how often an open tab's "last seen" is written down
+	aliveEvery       = 60              // seconds between the /alive frame's visits
+	failWindow       = 15 * time.Minute
+	failsPerIP       = 8
+	failsPerUser     = 10
 )
 
 // User is one person allowed into the fleet view.
@@ -49,6 +54,13 @@ type User struct {
 
 // IsDev: a dev's login (and anyone added before roles existed).
 func (u User) IsDev() bool { return u.Role == "dev" || u.Role == "" }
+
+// Cred is a short fingerprint of the user's password and authenticator secret (not the code
+// last used): a session remembers it, so changing either signs that person out everywhere.
+func (u User) Cred() string {
+	sum := sha256.Sum256([]byte("fleet-cred\x00" + u.Salt + "\x00" + u.Hash + "\x00" + u.TOTP))
+	return hex.EncodeToString(sum[:8])
+}
 
 func (u User) RoleName() string {
 	if u.IsDev() {
@@ -145,27 +157,75 @@ func OTPAuthURI(u User) string {
 // Session is one signed-in browser. Flash is a message for the next page (kept here, not in
 // the address, so nobody can put words on the page with a link).
 type Session struct {
-	User    string
-	Dev     bool // refreshed from users.json on every request
-	CSRF    string
-	Started time.Time
-	Seen    time.Time
-	Flash   string
+	User    string    `json:"user"`
+	Cred    string    `json:"cred"` // the user's Cred() when they signed in
+	Dev     bool      `json:"-"`    // refreshed from users.json on every request
+	CSRF    string    `json:"csrf"`
+	Started time.Time `json:"started"`
+	Seen    time.Time `json:"seen"`
+	Flash   string    `json:"-"`
 }
 
-// Sessions are kept in memory: a restart signs everyone out, which is fine for a few people.
+func (ss *Session) live(now time.Time) bool {
+	return now.Sub(ss.Seen) <= sessionIdle && now.Sub(ss.Started) <= sessionMax
+}
+
+// Sessions are kept in memory and in sessions.json in the data folder, so a restart of the
+// fleet view signs nobody out. The file holds a hash of each cookie, never the cookie itself:
+// a copy of it (a backup, say) signs nobody in.
 type Sessions struct {
-	mu sync.Mutex
-	m  map[string]*Session
+	mu    sync.Mutex
+	m     map[string]*Session // by sessionKey(the cookie's value)
+	path  string              // "" in memory only
+	saved time.Time
 }
 
+func sessionKey(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:])
+}
+
+// NewSessions keeps sessions in memory only.
 func NewSessions() *Sessions { return &Sessions{m: map[string]*Session{}} }
 
-func (s *Sessions) New(user string, now time.Time) (string, *Session) {
+// LoadSessions keeps sessions in the file at path too, starting with the live ones in it.
+func LoadSessions(path string, now time.Time) *Sessions {
+	s := &Sessions{m: map[string]*Session{}, path: path}
+	var saved map[string]*Session
+	if err := readJSON(path, &saved); err != nil {
+		fmt.Fprintln(os.Stderr, "fleet: sessions.json can't be read, so everyone signs in again:", err)
+	}
+	for k, ss := range saved {
+		if ss != nil && len(k) == 64 && ss.User != "" && ss.live(now) {
+			s.m[k] = ss
+		}
+	}
+	return s
+}
+
+// save writes the live sessions down (s.mu held). A failure only means a restart signs
+// people out.
+func (s *Sessions) save(now time.Time) {
+	for k, ss := range s.m {
+		if !ss.live(now) {
+			delete(s.m, k)
+		}
+	}
+	s.saved = now
+	if s.path == "" {
+		return
+	}
+	if err := writeJSON(s.path, s.m); err != nil {
+		fmt.Fprintln(os.Stderr, "fleet: sessions.json can't be written:", err)
+	}
+}
+
+func (s *Sessions) New(user, cred string, now time.Time) (string, *Session) {
 	id := base64.RawURLEncoding.EncodeToString(randomBytes(32))
-	ss := &Session{User: user, CSRF: base64.RawURLEncoding.EncodeToString(randomBytes(24)), Started: now, Seen: now}
+	ss := &Session{User: user, Cred: cred, CSRF: base64.RawURLEncoding.EncodeToString(randomBytes(24)), Started: now, Seen: now}
 	s.mu.Lock()
-	s.m[id] = ss
+	s.m[sessionKey(id)] = ss
+	s.save(now)
 	s.mu.Unlock()
 	return id, ss
 }
@@ -174,15 +234,20 @@ func (s *Sessions) New(user string, now time.Time) (string, *Session) {
 func (s *Sessions) Get(id string, now time.Time) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ss := s.m[id]
+	k := sessionKey(id)
+	ss := s.m[k]
 	if ss == nil {
 		return nil
 	}
-	if now.Sub(ss.Seen) > sessionIdle {
-		delete(s.m, id)
+	if !ss.live(now) {
+		delete(s.m, k)
+		s.save(now)
 		return nil
 	}
 	ss.Seen = now
+	if now.Sub(s.saved) >= sessionSaveEvery || now.Before(s.saved) {
+		s.save(now)
+	}
 	return ss
 }
 
@@ -200,9 +265,13 @@ func (s *Sessions) TakeFlash(ss *Session) string {
 	return m
 }
 
-func (s *Sessions) End(id string) {
+func (s *Sessions) End(id string, now time.Time) {
 	s.mu.Lock()
-	delete(s.m, id)
+	k := sessionKey(id)
+	if _, ok := s.m[k]; ok {
+		delete(s.m, k)
+		s.save(now)
+	}
 	s.mu.Unlock()
 }
 

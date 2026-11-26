@@ -20,7 +20,7 @@ class ClinicianBus extends ChangeNotifier {
   void changed() => notifyListeners();
 }
 
-/// The psychologist's tabs: Patients, Alerts (with the unread count) and, when the practice's
+/// The clinician's tabs: Patients, Alerts (with the unread count) and, when the practice's
 /// server has it, Community. The library and the practice's own business (its people, audit
 /// report, feedback and operator agreement) are under Settings > Practice, so the bar stays short.
 List<NavigationDestination> clinicianTabs({required int unread, required bool community}) => [

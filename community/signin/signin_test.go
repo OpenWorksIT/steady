@@ -189,12 +189,12 @@ func TestMovingPracticeLeavesTheOldPracticesGroup(t *testing.T) {
 
 func TestThePracticeAdminSeesTheManualOnly(t *testing.T) {
 	r := newRig(t, settings())
-	// on the practice's own list, like its psychologists
+	// on the practice's own list, like its clinicians
 	c := r.enter(vrKey, r.note("admin", "Desk@VRpsych.example"))
 	v := forumGets(t, r.get(forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login"), c))
 	want := map[string]string{
 		"external_id": "vr:abcdefghij12345", "email": "desk@vrpsych.example", "title": "VR Clinical Psychology",
-		// never clinicians, OpenWorks or the practice's private group (that's for its psychologists)
+		// never clinicians, OpenWorks or the practice's private group (that's for its clinicians)
 		"add_groups": "practice-admins", "remove_groups": "clinicians,openworks,practice-vr",
 	}
 	for k, x := range want {
@@ -208,13 +208,13 @@ func TestRefusalsSayWhoTheCommunityIsFor(t *testing.T) {
 	r := newRig(t, settings())
 	for _, n := range []note{r.note("patient", "p@vrpsych.example"), r.note("support", "it@openworks.example")} {
 		w := r.get(steadySays(vrKey, n))
-		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "psychologists, practice administrators and OpenWorks IT") {
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "clinicians, practice administrators and OpenWorks IT") {
 			t.Errorf("%s: %d %s", n.Role, w.Code, w.Body.String())
 		}
 	}
 }
 
-// Someone whose role changes in Steady (an administrator who becomes a psychologist, or the
+// Someone whose role changes in Steady (an administrator who becomes a clinician, or the
 // other way round) ends up in the right groups at their next sign-in.
 func TestGroupsFollowTheRole(t *testing.T) {
 	c := &Config{}
@@ -332,7 +332,7 @@ func TestSteadysNoteIsChecked(t *testing.T) {
 		"a practice admin with OpenWorks' address": func(r *rig) string {
 			return steadySays(testKey, r.note("admin", "it@openworks.example"))
 		},
-		"another practice's psychologist": func(r *rig) string {
+		"another practice's clinician": func(r *rig) string {
 			// the test server vouching for a VR address
 			return steadySays(testKey, r.note("clinician", "kempie@vrpsych.example"))
 		},

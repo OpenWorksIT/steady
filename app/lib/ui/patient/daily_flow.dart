@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // How the patient side opens, every time: a slow, calm sequence rather than a dashboard:
-//   1. a quiet screen with a few words and a breathing circle; tapping it starts
+//   1. a quiet screen with a few words and a breathing circle (breathing with it is offered, not
+//      asked; the words can be hidden one by one, or switched off in Settings); tapping it starts
 //   2. the check-in, if there hasn't been one today, then
-//   3. anything the psychologist has sent, one at a time, then
+//   3. anything the clinician has sent, one at a time, then
 //   4. a short thank-you, fading into the usual home screen (straight there if there was nothing to do).
 // A breathing glow runs behind every step and paces the transitions. Each step can be skipped;
 // tapping the circle or skipping it also refreshes the watch upload.
@@ -29,7 +30,7 @@ const _inhale = 4.0, _exhale = 6.0; // seconds
 const _cycle = Duration(milliseconds: 10000);
 
 /// Every time the app is opened: the calm start first, then the check-in or anything the
-/// psychologist sent if needed, then the home screen. Coming back after a short trip to
+/// clinician sent if needed, then the home screen. Coming back after a short trip to
 /// another app (under [_away]) returns to where the patient was.
 class PatientGate extends StatefulWidget {
   const PatientGate({super.key});
@@ -104,7 +105,8 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
   List<Assignment> _pending = const [];
   int _index = 0;
   bool _checkedInToday = false;
-  String _words = wordsForToday(const []);
+  // the clinician's own words, joining the built-in ones (content/daily_words.dart)
+  List<String> _extra = const [];
   Timer? _thanks;
 
   final _prepared = Completer<void>();
@@ -114,25 +116,44 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
     super.initState();
     // notices (such as a new app version) wait until the calm start is over (calm.dart)
     calmStartActive.value = true;
+    DailyWordsPrefs.instance.addListener(_prefsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare().whenComplete(() {
           if (!_prepared.isCompleted) _prepared.complete();
         }));
   }
 
+  void _prefsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Today's words, unless this patient switched them off; '' for none.
+  String _wordsNow(String userId) {
+    final prefs = DailyWordsPrefs.instance;
+    return prefs.isOff(userId) ? '' : wordsForToday(_extra, hidden: prefs.hidden(userId));
+  }
+
+  /// "Hide these words": not shown again on this phone; the next ones take their place.
+  Future<void> _hide(String userId, String words) async {
+    await DailyWordsPrefs.instance.hide(userId, words);
+    if (mounted) showSnack(context, 'Hidden. Show them again, or switch the words off, in Settings.');
+  }
+
   @override
   void dispose() {
+    DailyWordsPrefs.instance.removeListener(_prefsChanged);
     calmStartActive.value = false;
     _thanks?.cancel();
     _breath.dispose();
     super.dispose();
   }
 
-  /// Quietly, in the background: the psychologist's own words, what's waiting, today's check-in.
+  /// Quietly, in the background: the clinician's own words, what's waiting, today's check-in.
   Future<void> _prepare() async {
     final api = AppScope.api(context);
+    await DailyWordsPrefs.instance.load(api.myId);
     try {
       final q = await api.quotes();
-      if (mounted) setState(() => _words = wordsForToday(q.where((x) => x.active).map((x) => x.text).toList()));
+      if (mounted) setState(() => _extra = q.where((x) => x.active).map((x) => x.text).toList());
     } catch (_) {}
     try {
       // offline: the copy the phone kept, with answers waiting on it counted as done
@@ -195,11 +216,14 @@ class _DailyFlowState extends State<DailyFlow> with SingleTickerProviderStateMix
   @override
   Widget build(BuildContext context) {
     final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final userId = AppScope.api(context).myId;
+    final words = _wordsNow(userId);
     final Widget body = switch (_step) {
       _Step.breathe => _BreatheStep(
           key: const ValueKey('breathe'),
           breath: _breath,
-          words: _words,
+          words: words,
+          onHide: words.isEmpty ? null : () => _hide(userId, words),
           practice: AppScope.of(context).config.practiceName,
           checkedIn: _checkedInToday,
           onTap: _tapCircle,
@@ -320,7 +344,10 @@ class _BreatheStep extends StatelessWidget {
   final String words, practice;
   final bool checkedIn;
   final VoidCallback onTap;
-  const _BreatheStep({required this.breath, required this.words, required this.practice, required this.checkedIn, required this.onTap, super.key});
+  /// hides today's words (null: none shown)
+  final VoidCallback? onHide;
+  const _BreatheStep(
+      {required this.breath, required this.words, required this.practice, required this.checkedIn, required this.onTap, this.onHide, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -340,14 +367,25 @@ class _BreatheStep extends StatelessWidget {
             child: Text('$hello${first.isEmpty ? '' : ', $first'}.', textAlign: TextAlign.center, style: context.tt.titleMedium?.copyWith(color: context.sc.ink2)),
           ),
           const SizedBox(height: 18),
-          _SlowIn(
-            delay: 900,
-            child: Text(
-              words,
-              textAlign: TextAlign.center,
-              style: context.tt.headlineSmall?.copyWith(height: 1.35, fontWeight: FontWeight.w400),
+          if (words.isNotEmpty) ...[
+            _SlowIn(
+              delay: 900,
+              child: Text(
+                words,
+                textAlign: TextAlign.center,
+                style: context.tt.headlineSmall?.copyWith(height: 1.35, fontWeight: FontWeight.w400),
+              ),
             ),
-          ),
+            if (onHide != null)
+              _SlowIn(
+                delay: 2600,
+                child: TextButton(
+                  onPressed: onHide,
+                  style: TextButton.styleFrom(foregroundColor: context.sc.ink3, visualDensity: VisualDensity.compact),
+                  child: const Text('Not for me: hide these words'),
+                ),
+              ),
+          ],
           const Spacer(flex: 2),
           _SlowIn(
             delay: 1800,
@@ -391,7 +429,9 @@ class _BreatheStep extends StatelessWidget {
           _SlowIn(
             delay: 2600,
             child: Text(
-              checkedIn ? 'Breathe with the circle. Tap it when you\'re ready to carry on.' : 'Breathe with the circle for a moment. Tap it when you\'re ready to check in.',
+              checkedIn
+                  ? 'Breathe with the circle if you like, or just rest your eyes on it. Tap it when you\'re ready to carry on.'
+                  : 'Breathe with the circle if you like, or just rest your eyes on it. Tap it when you\'re ready to check in.',
               textAlign: TextAlign.center,
               style: context.tt.bodyMedium?.copyWith(color: context.sc.ink2),
             ),
@@ -438,7 +478,7 @@ class _ActivityStep extends StatelessWidget {
         const Spacer(flex: 2),
         if (count > 1) Text('$position of $count', style: context.tt.labelMedium?.copyWith(color: context.sc.ink3)),
         const SizedBox(height: 10),
-        Text('Your psychologist sent you $kind', textAlign: TextAlign.center, style: context.tt.titleMedium?.copyWith(color: context.sc.ink2)),
+        Text('Your clinician sent you $kind', textAlign: TextAlign.center, style: context.tt.titleMedium?.copyWith(color: context.sc.ink2)),
         const SizedBox(height: 14),
         Glyph(iconFor(a.instrument), calm: !(a.instrument?.isQuestionnaire ?? true)),
         const SizedBox(height: 14),

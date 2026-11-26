@@ -25,14 +25,14 @@ type Practice struct {
 	URL string `json:"url"`
 	// Key is STEADY_COMMUNITY_KEY on that server: it signs the notes the bridge trusts.
 	Key string `json:"key"`
-	// Groups: more forum groups for its psychologists (a practice's private group), never for
+	// Groups: more forum groups for its clinicians (a practice's private group), never for
 	// its administrators.
 	Groups []string `json:"groups,omitempty"`
-	// Emails: the addresses its psychologists and practice administrators use, each an address
+	// Emails: the addresses its clinicians and practice administrators use, each an address
 	// or "@domain" (the practice's own domain, never a public mail service's). Only these sign in
 	// through this practice, and the forum takes them as they are: an account already on the
 	// forum with the address carries on. No address or domain may be on two practices' lists, so
-	// no practice can sign someone in as another practice's psychologist.
+	// no practice can sign someone in as another practice's clinician.
 	Emails []string `json:"emails"`
 	// Support: OpenWorks support accounts may come in through this practice's server (with an
 	// address on the OpenWorks list). Only on a server OpenWorks alone runs: anyone who can make
@@ -121,7 +121,7 @@ func (c *Config) validateWith(noPractices bool) error {
 			p.Groups[j] = g
 		}
 		if len(p.Emails) == 0 {
-			return fmt.Errorf(`%s: "emails" must list the addresses (or "@domain") its psychologists and administrators use`, label)
+			return fmt.Errorf(`%s: "emails" must list the addresses (or "@domain") its clinicians and administrators use`, label)
 		}
 		if err := tidyList(p.Emails, label); err != nil {
 			return err

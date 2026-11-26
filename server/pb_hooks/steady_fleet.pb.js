@@ -14,7 +14,7 @@
 // A reset from the fleet view (a dev, over SSH) is for staff only and finishes only with a code
 // emailed to the person: the dev gets a temporary password to tell them by phone, the code goes
 // to their own inbox, so whoever holds the fleet key can't take an account over. The person and
-// the practice's master psychologists are told, and it's in the practice's access log.
+// the practice's master clinicians are told, and it's in the practice's access log.
 //
 // Feedback stays out of reach: the summary has how many new reports wait, never what they say.
 //
@@ -81,7 +81,7 @@ routerAdd("GET", "/api/steady/fleet", (e) => {
     // OpenWorks' own server (the test server), where OpenWorks support opens the community
     openworksServer: !!(require(`${__hooks}/lib/community.js`).config() || {}).support,
     // the community: on or off, whether the fleet view runs it, and the staff the master
-    // psychologist has put in (name, email, role), for OpenWorks to approve. Never the key.
+    // clinician has put in (name, email, role), for OpenWorks to approve. Never the key.
     community: (() => {
       const C = require(`${__hooks}/lib/community.js`);
       const cfg = C.config();
@@ -171,7 +171,7 @@ routerAdd("POST", "/api/steady/fleet/reset", (e) => {
   let u = null;
   try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
   if (!u) throw new NotFoundError("No account with that email on this server.");
-  if (!s.isStaff(u)) throw s.badRequest("Patients' passwords are reset by their psychologist, or with the code Steady emails them.");
+  if (!s.isStaff(u)) throw s.badRequest("Patients' passwords are reset by their clinician, or with the code Steady emails them.");
   if (!M.ready()) throw s.badRequest("This server can't send email, so a reset from the fleet view can't be finished safely. Reset on the server with accounts.sh.");
   // five resets an hour per server is plenty; more means something is wrong
   const recent = $app.findRecordsByFilter("auditlog", "action = 'fleet.account.reset-password' && created >= {:t}", "", 6, 0,
@@ -203,7 +203,7 @@ routerAdd("POST", "/api/steady/fleet/reset", (e) => {
   const pw = s.resetPassword($app, u);
   const unlinked = require(`${__hooks}/lib/devices.js`).unlinkAll($app, u);
   s.audit($app, e, "fleet.account.reset-password", "user:" + u.id + (b.twoStep === true ? " two-step" : "") + (unlinked ? " devices:" + unlinked : ""), "");
-  // the practice's master psychologists know OpenWorks did it
+  // the practice's master clinicians know OpenWorks did it
   $app.findRecordsByFilter("users", "role = 'clinician' && master = true && active = true && id != {:u}", "", 20, 0, { u: u.id }).forEach((m) => {
     M.notice($app, m, "OpenWorks reset a password", [
       "OpenWorks IT reset the Steady password of " + (u.getString("name") || "a staff member") + " (" + u.getString("role") + ") on " + new Date(s.nowMs()).toUTCString() + ", from the fleet view." +

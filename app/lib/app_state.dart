@@ -75,6 +75,18 @@ class AppState extends ChangeNotifier {
       api.myConsentVersion.isNotEmpty &&
       api.myConsentVersion != config.consentVersion;
 
+  /// The patient hasn't said whether the practice may contact them about what they share (they
+  /// joined before Steady asked): asked once, on the same screen.
+  bool get needsContactAnswer => isPatient && config.contactAsk && api.myContactConsent.isEmpty && !_contactDeferred;
+  bool _contactDeferred = false;
+
+  /// The answer couldn't be sent (no signal): asked again next time Steady opens, not now, so
+  /// the question never keeps a patient from checking in.
+  void deferContactAnswer() {
+    _contactDeferred = true;
+    notifyListeners();
+  }
+
   /// After the patient agreed (the account was refreshed): on to the app.
   void consentRecorded() => notifyListeners();
   bool get isAdmin => api.role == 'admin';

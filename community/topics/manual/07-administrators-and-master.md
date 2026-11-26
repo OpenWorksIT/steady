@@ -1,14 +1,14 @@
-# For practice administrators and the master psychologist
+# For practice administrators and the master clinician
 
 ## Who can do what
 
-| | Psychologist | Master psychologist | Practice administrator |
+| | Clinician | Master clinician | Practice administrator |
 |---|---|---|---|
 | Own patients, sending, notes, RADR, exports | Yes | Yes | No |
 | Library | Yes | Yes | No |
 | People: patients' set-up status, invites, patient password resets, moving and stopping patients | No | Yes | Yes |
-| Add psychologists and administrators | No | Yes | No |
-| Reset a psychologist's password, stop a staff member's access | No | Yes | Yes |
+| Add clinicians and administrators | No | Yes | No |
+| Reset a clinician's password, stop a staff member's access | No | Yes | Yes |
 | Reset the practice administrator's password | No | Yes | No |
 | Audit report | No | Yes | Yes |
 | Feedback tickets | Yes | Yes | Yes |
@@ -20,11 +20,11 @@ The practice administrator sees patients' names and whether their app is set up 
 
 ## Settings and Practice
 
-The master psychologist opens **Settings** from the gear on **Patients**. **Practice** holds **Library**, **People**, **Audit report**, **Feedback tickets** and **Operator agreement**. Lower down, **Steady version** has **Check for updates**, **Update now** and **Details and history**.
+The master clinician opens **Settings** from the gear on **Patients**. **Practice** holds **Library**, **People**, **Audit report**, **Feedback tickets** and **Operator agreement**. Lower down, **Steady version** has **Check for updates**, **Update now** and **Details and history**.
 
-![Settings for the master psychologist](images/61-master-settings.webp)
+![Settings for the master clinician](images/61-master-settings.webp)
 
-![Settings > Practice for the master psychologist](images/62-master-practice.webp)
+![Settings > Practice for the master clinician](images/62-master-practice.webp)
 
 The practice administrator starts on **Practice**, which is the **People** screen (see below). Their **Settings** has **Practice** (**Audit report**, **Feedback tickets** and **Operator agreement**) and **Server health**.
 
@@ -41,34 +41,34 @@ If the practice takes part in the Steady community, the practice administrator a
 *Purpose: check that each patient is set up and connected.*
 
 1. Go to **Settings > Practice > People** (the administrator's first screen). The **Patients** tab is open.
-2. Use **Find a patient or psychologist** to search.
+2. Use **Find a patient or clinician** to search.
 
    ![People: patients](images/66-master-people-patients.webp)
 
-Each patient shows their psychologist and their status, for example **app not used yet**, **no notifications**, **watch not shared**, **watch synced [date]**, **checked in [when]**, **uses the web app**, or **older consent**. Anything shown in amber needs a look.
+Each patient shows their clinician and their status, for example **app not used yet**, **no notifications**, **watch not shared**, **watch synced [date]**, **checked in [when]**, **uses the web app**, or **older consent**. Anything shown in amber needs a look.
 
-3. Tap ⋮ next to a patient for **Reset password**, **Move to another psychologist** or **Stop access** (or **Restore access**). If a patient's watch permissions have lapsed, there's also **Remind them to reconnect their watch** (a notice in their app; no health details).
+3. Tap ⋮ next to a patient for **Reset password**, **Move to another clinician** or **Stop access** (or **Restore access**). If a patient's watch permissions have lapsed, there's also **Remind them to reconnect their watch** (a notice in their app; no health details).
 
    ![A patient's options in People](images/67-master-people-patient-menu.webp)
 
 ## People: staff
 
-*Purpose: the practice's psychologists and administrators.*
+*Purpose: the practice's clinicians and administrators.*
 
 Open the **Staff** tab. Each person shows their email, their role, whether two-step sign-in is set up, and which app they use.
 
 ![People: staff](images/68-master-people-staff.webp)
 
-## Adding a psychologist or administrator
+## Adding a clinician or administrator
 
 1. On **People**, open **Staff** and tap **Add**.
-2. Choose **Add a psychologist** or **Add an administrator**.
+2. Choose **Add a clinician** or **Add an administrator**.
 
-   ![Add a psychologist or administrator](images/69-master-add-menu.webp)
+   ![Add a clinician or administrator](images/69-master-add-menu.webp)
 
 3. Type their **Name** and **Email** and tap **Add**. Confirm it's you if asked.
 
-   ![Add a psychologist](images/70-master-add-psychologist.webp)
+   ![Add a clinician](images/70-master-add-clinician.webp)
 
 4. Steady shows a **Temporary password**. Give it to them by phone or in person, not by email or chat. It isn't shown again.
 
@@ -78,7 +78,7 @@ They sign in with it, choose their own password and set up two-step sign-in (see
 
 **Good to know**
 
-- Only the master psychologist adds staff. The practice administrator sees "New staff accounts are added by the master clinician."
+- Only the master clinician adds staff. The practice administrator sees "New staff accounts are added by the master clinician."
 - OpenWorks IT support accounts are made by OpenWorks on the server, never in the app.
 
 ## Resetting a staff member's password
@@ -101,8 +101,8 @@ They sign in with it, choose their own password and set up two-step sign-in (see
 
 - They're signed out on every device. They choose a new password when they next sign in.
 - A reset here keeps their authenticator. If they've lost the phone with their authenticator and their recovery codes, contact OpenWorks IT for a full reset of two-step sign-in.
-- The master psychologist and the practice administrator can reset a psychologist's password; only the master psychologist can reset the administrator's. The master psychologist's own password is reset by OpenWorks IT.
-- Resetting a patient's password works the same way, from the patient's ⋮ in **People** or from their page. When anyone other than the patient's own psychologist resets it, Steady also emails the patient a 6-digit code, which they need to finish the reset. That way whoever reset it can't choose the new password themselves.
+- The master clinician and the practice administrator can reset a clinician's password; only the master clinician can reset the administrator's. The master clinician's own password is reset by OpenWorks IT.
+- Resetting a patient's password works the same way, from the patient's ⋮ in **People** or from their page. When anyone other than the patient's own clinician resets it, Steady also emails the patient a 6-digit code, which they need to finish the reset. That way whoever reset it can't choose the new password themselves.
 - **Reset password** still shows for a stopped staff account, but it doesn't restore access.
 
 ## Stopping a staff member's access
@@ -118,15 +118,15 @@ They're signed out everywhere and can't sign in. Their entry shows **stopped**.
 
 ![A stopped account](images/76-master-stopped.webp)
 
-**Good to know**: the master psychologist and the practice administrator can stop a staff member's access, but only OpenWorks IT can restore it, after checking it's really them. A patient's access, by contrast, can be restored from their ⋮ in **People** (**Restore access**).
+**Good to know**: the master clinician and the practice administrator can stop a staff member's access, but only OpenWorks IT can restore it, after checking it's really them. A patient's access, by contrast, can be restored from their ⋮ in **People** (**Restore access**).
 
-## Inviting a patient for a psychologist (administrator)
+## Inviting a patient for a clinician (administrator)
 
 1. On **Practice** (**People**), open **Patients** and tap **Add**.
-2. Choose the psychologist under **Invite a patient for**.
-3. Type the **Patient's name** and tap **Create code**, then show the patient the **Invite code for [psychologist]** screen, as in [Inviting a patient](#inviting-a-patient).
+2. Choose the clinician under **Invite a patient for**.
+3. Type the **Patient's name** and tap **Create code**, then show the patient the **Invite code for [clinician]** screen, as in [Inviting a patient](#inviting-a-patient).
 
-![Invite a patient for a psychologist](images/77-admin-invite-for.webp)
+![Invite a patient for a clinician](images/77-admin-invite-for.webp)
 
 ## The audit report
 
@@ -150,26 +150,26 @@ Each row shows who, what, when, which patient and the internet address it came f
 
 1. Go to **Settings > Practice > Operator agreement**.
 2. Tap **Download PDF** for a copy.
-3. The master psychologist can tap **Sign again with new details**, for example when the Information Officer changes. The newest signature counts.
+3. The master clinician can tap **Sign again with new details**, for example when the Information Officer changes. The newest signature counts.
 
    ![The signed operator agreement](images/80-master-operator-agreement-copy.webp)
 
-**Good to know**: the master psychologist, the practice administrator and OpenWorks IT can all open the signed copy.
+**Good to know**: the master clinician, the practice administrator and OpenWorks IT can all open the signed copy.
 
 ## Server and updates, and server health
 
 *Purpose: see how the practice's Steady server is coping, and install updates.*
 
-The master psychologist: in **Settings**, under **Steady version**, tap **Details and history** to open **Server and updates**. The practice administrator: **Settings > Server health**.
+The master clinician: in **Settings**, under **Steady version**, tap **Details and history** to open **Server and updates**. The practice administrator: **Settings > Server health**.
 
 **Server health** shows whether the server is **Running well**, requests in the last hour, how quickly they were answered, errors, a chart of the slowest requests over the last 24 hours, the database size and the number of active patients. Tap the refresh button to update it.
 
-![Server and updates (master psychologist)](images/81-master-server-updates.webp)
+![Server and updates (master clinician)](images/81-master-server-updates.webp)
 
 ![Server health (practice administrator)](images/82-admin-server-health.webp)
 
-**To install an update** (master psychologist): in **Settings**, under **Steady version**, tap **Check for updates**, then **Update now**.
+**To install an update** (master clinician): in **Settings**, under **Steady version**, tap **Check for updates**, then **Update now**.
 
 *(The test copy used for this manual doesn't have updates from the app switched on, so these screenshots show "Updates from the app aren't set up on this server yet". On your practice's server, OpenWorks IT switches this on when it sets the server up. Screenshot of the update panel to follow.)*
 
-**Good to know**: updates are installed by OpenWorks IT or the master psychologist. The practice administrator sees server health but doesn't start updates.
+**Good to know**: updates are installed by OpenWorks IT or the master clinician. The practice administrator sees server health but doesn't start updates.

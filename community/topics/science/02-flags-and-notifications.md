@@ -33,7 +33,7 @@ A made-up example: mood 2 on Monday, 1 on Tuesday, 2 on Wednesday raises the fla
 
 ## Marking a flag as reviewed
 
-Tap the flag on the patient's page and mark it, with a note if you like (up to 500 characters). Steady records who and when, keeps the flag visible as reviewed, and stops it moving the patient up your list. A note is also added to the patient's notes as "Reviewed [flag]: [note]". Only the patient's own psychologist can mark these flags; a colleague the patient is shared with sees them but can't mark them. Exports list each flag with whether, by whom and when it was reviewed.
+Tap the flag on the patient's page and mark it, with a note if you like (up to 500 characters). Steady records who and when, keeps the flag visible as reviewed, and stops it moving the patient up your list. A note is also added to the patient's notes as "Reviewed [flag]: [note]". Only the patient's own clinician can mark these flags; a colleague the patient is shared with sees them but can't mark them. Exports list each flag with whether, by whom and when it was reviewed.
 
 ## Item 9 in Steady
 
@@ -52,7 +52,7 @@ Tap the flag on the patient's page and mark it, with a note if you like (up to 5
 | An exercise you sent, finished | "Exercise finished in N min" | Yes |
 | An exercise the patient started themselves | "Started by the patient" | No |
 
-Patients are notified when you send them something ("From your psychologist") and at 07:00 South African time when a repeating activity becomes available ("Ready for today").
+Patients are notified when you send them something ("From your clinician") and at 07:00 South African time when a repeating activity becomes available ("Ready for today").
 
 Every push, on every phone, is titled "Steady" and says only "New notification": no name, score, words, or even what kind of thing is new. It goes through Apple or Google; the app fetches the detail over its own connection when you open it. The web app has no pushes. There are no quiet hours: a push arrives when the event happens, day or night, and your phone's own settings decide whether it makes a sound. In the Alerts list, an unread item has a dot in its severity's colour; red items carry "Review" and amber ones "Note". Items in the Alerts list are deleted after 90 days; the check-ins and results themselves stay.
 

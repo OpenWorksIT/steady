@@ -6,13 +6,13 @@
 
 Tap the gear on **Patients**.
 
-- **Practice**: the library, feedback tickets and, for the master psychologist, more (see *For practice administrators and the master psychologist*).
+- **Practice**: the library, feedback tickets and, for the master clinician, more (see *For practice administrators and the master clinician*).
 - **Notifications**: whether notifications are on.
 - **Archived patients**.
 - **Change password**, **Change email** (a code goes to the new address, and the old one is told), **Two-step sign-in** and **Your devices**. If you change your email and use the Community, OpenWorks IT approves the new address before you can open it again.
 - **Sign out**: signs you out on all your devices.
 
-![Settings for a psychologist](images/45-psych-settings.webp)
+![Settings for a clinician](images/45-psych-settings.webp)
 
 **Your devices** lists every phone and browser you can sign in on. Tap the bin next to one to remove it; it's signed out at once and needs a new emailed code to sign in again. **Lock my account** is for a lost or stolen phone.
 
@@ -33,13 +33,13 @@ To see what the practice has raised and where it stands, go to **Settings > Prac
 
 ![Feedback tickets](images/57-staff-feedback-tickets.webp)
 
-**Good to know**: feedback goes to OpenWorks IT and to your practice's master psychologist and administrator. Please don't name patients. Steady also sends the screen you were on, the time and your last steps in the app, so OpenWorks can retrace what happened; nothing you typed elsewhere is included.
+**Good to know**: feedback goes to OpenWorks IT and to your practice's master clinician and administrator. Please don't name patients. Steady also sends the screen you were on, the time and your last steps in the app, so OpenWorks can retrace what happened; nothing you typed elsewhere is included.
 
 ## Community
 
-If your practice takes part in the Steady community, psychologists have a **Community** tab in the bottom bar (see the patient list screenshot above). It opens the community forum inside Steady, already signed in as you. Practice administrators have the **Community** tab too, and see only the Steady manual there.
+If your practice takes part in the Steady community, clinicians have a **Community** tab in the bottom bar (see the patient list screenshot above). It opens the community forum inside Steady, already signed in as you. Practice administrators have the **Community** tab too, and see only the Steady manual there.
 
-**Who's in:** the master psychologist chooses, in **Settings > Practice > Community**: a switch for each psychologist and administrator. Someone switched on can open the tab once OpenWorks IT has approved them (usually the same day); someone switched off is out straight away. Until you're in, the tab says to ask your master psychologist.
+**Who's in:** the master clinician chooses, in **Settings > Practice > Community**: a switch for each clinician and administrator. Someone switched on can open the tab once OpenWorks IT has approved them (usually the same day); someone switched off is out straight away. Until you're in, the tab says to ask your master clinician.
 
 **Good to know**
 

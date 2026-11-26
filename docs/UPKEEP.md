@@ -18,7 +18,7 @@ an update comes in as a pull request and goes the same way as Steady's own chang
 - [ ] For each update worth taking, in this order:
   1. Merge it into `working` once CI is green.
   2. Open a pull request from `working` into `test` and merge it once CI is green.
-  3. vps1 updates from `test` ("Update now", or `sudo ./ctl/steady-ctl.sh update`). Use it there: sign in as a psychologist and as a patient, check in, send and complete a questionnaire, and look at the server log.
+  3. vps1 updates from `test` ("Update now", or `sudo ./ctl/steady-ctl.sh update`). Use it there: sign in as a clinician and as a patient, check in, send and complete a questionnaire, and look at the server log.
   4. Review it before it goes further:
      - Read the release notes.
      - The dependency check is green.
@@ -55,7 +55,7 @@ what to look at there, and what it can't see.
 - [ ] The fleet view and the sign-in bridge run the newest signed release (the overview's OpenWorks' own services; [FLEET.md](FLEET.md), "Updating the fleet view").
 - [ ] vps1's front-door count is running: `sudo systemctl status edge-frontdoor.timer` (the fleet view says when it stops).
 - [ ] The forum: updated this month, with a backup taken first ([COMMUNITY.md](COMMUNITY.md), "Updates"; afterwards, the welcome page fix if it's back).
-- [ ] The community sign-in bridge (`/var/lib/steady-signin/config.json`): each practice's address list still matches its psychologists and practice administrators, and the OpenWorks list its support staff ([COMMUNITY.md](COMMUNITY.md)).
+- [ ] The community sign-in bridge (`/var/lib/steady-signin/config.json`): each practice's address list still matches its clinicians and practice administrators, and the OpenWorks list its support staff ([COMMUNITY.md](COMMUNITY.md)).
 - [ ] The forum's sign-in bridge: `signin check` lists only the practices that should be there (no test server once the forum is live), each with its address list ([COMMUNITY.md](COMMUNITY.md)).
 - [ ] The forum's members (Admin > Users): nobody who has left a practice is still signed in.
 

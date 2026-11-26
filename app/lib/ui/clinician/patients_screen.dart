@@ -169,6 +169,23 @@ class _PatientRow extends StatelessWidget {
                     Flexible(child: Text(p.name, style: context.tt.titleMedium, overflow: TextOverflow.ellipsis)),
                     if (p.stable) ...[const SizedBox(width: 8), const FlagChip('Stable', Severity.none)],
                   ]),
+                  // they said no to "the practice may contact me about what I share in Steady":
+                  // right under the name, so it's seen before anyone picks up the phone
+                  if (p.contact == 'no')
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1, bottom: 1),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: Icon(Icons.speaker_notes_off_outlined, size: 14, color: context.sc.warn),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text('Asked not to be contacted about what they share in Steady',
+                              style: context.tt.bodySmall?.copyWith(color: context.sc.warn, fontWeight: FontWeight.w600)),
+                        ),
+                      ]),
+                    ),
                   Text(last, style: context.tt.bodySmall?.copyWith(color: context.sc.ink2)),
                   if (p.lastNote != null)
                     Row(children: [

@@ -192,7 +192,7 @@ func newFakeSteady(t *testing.T) *fakeSteady {
 			f.mu.Unlock()
 			if b["email"] == "pat@example.org" {
 				w.WriteHeader(400)
-				w.Write([]byte(`{"message":"Patients' passwords are reset by their psychologist, or with the code Steady emails them."}`))
+				w.Write([]byte(`{"message":"Patients' passwords are reset by their clinician, or with the code Steady emails them."}`))
 				return
 			}
 			w.Write([]byte(`{"temporaryPassword":"Tmp-4821-quiet-otter","emailedTo":"t***@example.org","twoStepCleared":` + fmt.Sprint(b["twoStep"] == true) + `,"account":{"name":"Dr Two","role":"clinician"}}`))
@@ -534,14 +534,19 @@ func TestAnOpenTabStaysSignedIn(t *testing.T) {
 	}
 }
 
-func TestAClosedTabSignsOut(t *testing.T) {
+func TestAClosedTabSignsOutAfterADay(t *testing.T) {
 	app, site, _, u, _ := setup(t)
 	start := time.Now()
 	clock := start
 	app.now = func() time.Time { return clock }
 	c := signIn(t, site, u, start)
-	// the tab closes: nothing asks for 11 minutes
-	clock = start.Add(11 * time.Minute)
+	// the computer sleeps overnight, or the browser puts the tab to sleep: still signed in
+	clock = start.Add(23 * time.Hour)
+	if res, _ := c.Get(site.URL + "/"); res.StatusCode != 200 {
+		t.Fatalf("signed out after a night asleep: %d", res.StatusCode)
+	}
+	// the tab closes: nothing asks for more than a day
+	clock = clock.Add(sessionIdle + time.Minute)
 	res, _ := c.Get(site.URL + "/alive")
 	if b := body(t, res); res.Header.Get("Refresh") != "" || !strings.Contains(b, "signed out") {
 		t.Fatalf("still alive after the tab closed: %q", b)
@@ -557,15 +562,122 @@ func TestAClosedTabSignsOut(t *testing.T) {
 	body(t, res)
 }
 
-func TestTheSignInCookieIsForTheBrowserSessionOnly(t *testing.T) {
+func TestASignInLastsAWeekAtMost(t *testing.T) {
+	app, site, _, u, _ := setup(t)
+	start := time.Now()
+	clock := start
+	app.now = func() time.Time { return clock }
+	c := signIn(t, site, u, start)
+	// a screen that stays on (checked here twice a day): signed in all week
+	for h := 12; h <= 7*24; h += 12 {
+		clock = start.Add(time.Duration(h) * time.Hour)
+		if res, _ := c.Get(site.URL + "/alive"); res.Header.Get("Refresh") != "60" {
+			t.Fatalf("signed out after %d hours with the tab open", h)
+		}
+	}
+	// then the password and a code again
+	clock = start.Add(sessionMax + time.Minute)
+	if res, _ := c.Get(site.URL + "/"); res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("still signed in after a week: %d", res.StatusCode)
+	}
+}
+
+func TestARestartSignsNobodyOut(t *testing.T) {
+	_, site, _, u, dir := setup(t)
+	c := signIn(t, site, u, time.Now())
+	site.Close()
+	// the fleet view starts again (an update): the same browser is still signed in
+	store := NewStore(dir)
+	app := NewApp(store, NewPoller(store), "")
+	app.insecureCookie = true
+	again := httptest.NewServer(app.Routes())
+	defer again.Close()
+	if res, _ := c.Get(again.URL + "/"); res.StatusCode != 200 {
+		t.Fatalf("signed out by a restart: %d", res.StatusCode)
+	}
+	// the file holds the cookie's hash, never the cookie
+	u0, _ := url.Parse(again.URL)
+	var cookie string
+	for _, k := range c.Jar.Cookies(u0) {
+		if k.Name == cookieName {
+			cookie = k.Value
+		}
+	}
+	b, err := os.ReadFile(dir + "/sessions.json")
+	if err != nil || cookie == "" {
+		t.Fatalf("no sessions.json or no cookie: %v", err)
+	}
+	if strings.Contains(string(b), cookie) || !strings.Contains(string(b), sessionKey(cookie)) {
+		t.Fatal("sessions.json holds the cookie itself")
+	}
+	if fi, _ := os.Stat(dir + "/sessions.json"); fi.Mode().Perm() != 0o600 {
+		t.Fatalf("sessions.json mode %v", fi.Mode().Perm())
+	}
+	// signing out ends it in the file too: a restart doesn't bring it back
+	res, _ := c.Get(again.URL + "/")
+	page := body(t, res)
+	i := strings.Index(page, `name="csrf" value="`)
+	if i < 0 {
+		t.Fatal("no form token on the page")
+	}
+	csrf := page[i+len(`name="csrf" value="`):]
+	csrf = csrf[:strings.Index(csrf, `"`)]
+	res, _ = c.PostForm(again.URL+"/logout", url.Values{"csrf": {csrf}})
+	body(t, res)
+	if LoadSessions(dir+"/sessions.json", time.Now()).Get(cookie, time.Now()) != nil {
+		t.Fatal("signed out, but still in sessions.json")
+	}
+}
+
+func TestANewPasswordOrAuthenticatorSignsOut(t *testing.T) {
+	_, site, _, u, dir := setup(t)
+	c := signIn(t, site, u, time.Now())
+	// signing in on a second browser (the code last used changes) leaves the first signed in
+	signIn(t, site, u, time.Now().Add(30*time.Second))
+	if res, _ := c.Get(site.URL + "/"); res.StatusCode != 200 {
+		t.Fatalf("a second sign-in signed the first out: %d", res.StatusCode)
+	}
+	for _, change := range []func(*User){
+		func(x *User) {
+			f := NewUser(x.Name, "another long password")
+			x.Salt, x.Hash, x.Iter = f.Salt, f.Hash, f.Iter
+		},
+		func(x *User) { x.TOTP, x.LastStep = NewUser(x.Name, "x").TOTP, 0 },
+	} {
+		store := NewStore(dir)
+		all, _ := store.Users()
+		all[0].LastStep = 0
+		store.SaveUsers(all)
+		c := signIn(t, site, u, time.Now())
+		all, _ = store.Users()
+		saved := all[0]
+		change(&all[0])
+		store.SaveUsers(all)
+		if res, _ := c.Get(site.URL + "/"); res.StatusCode != http.StatusSeeOther {
+			t.Fatalf("still signed in after the change: %d", res.StatusCode)
+		}
+		if res, _ := c.Get(site.URL + "/alive"); res.Header.Get("Refresh") != "" {
+			t.Fatal("/alive keeps the changed user in")
+		}
+		// put the user back, as they were, for the next change: the session stays ended
+		saved.LastStep = 0
+		store.SaveUsers([]User{saved})
+		if res, _ := c.Get(site.URL + "/"); res.StatusCode != http.StatusSeeOther {
+			t.Fatal("an ended session came back")
+		}
+	}
+}
+
+func TestTheSignInCookieLastsAWeekAtMost(t *testing.T) {
 	_, site, _, u, _ := setup(t)
 	c := client()
 	code, _ := totpAt(u.TOTP, time.Now().Unix()/30)
 	res, _ := c.PostForm(site.URL+"/login", url.Values{"name": {u.Name}, "password": {"a long enough password"}, "code": {code}})
 	body(t, res)
 	sc := res.Header.Get("Set-Cookie")
-	if !strings.HasPrefix(sc, cookieName+"=") || strings.Contains(sc, "Max-Age") || strings.Contains(sc, "Expires") {
-		t.Fatalf("the cookie outlives the browser: %s", sc)
+	if !strings.HasPrefix(sc, cookieName+"=") || !strings.Contains(sc, "Max-Age=604800") || !strings.Contains(sc, "HttpOnly") ||
+		!strings.Contains(sc, "SameSite=Strict") {
+		t.Fatalf("the cookie: %s", sc)
 	}
 }
 
@@ -1153,7 +1265,7 @@ func TestCommunityFromTheFleet(t *testing.T) {
 	if err := communityCmd(app.store, []string{short, "on"}, strings.NewReader("no\n"), &out); err == nil || !strings.Contains(err.Error(), "not confirmed") {
 		t.Fatalf("unconfirmed: %v", err)
 	}
-	// the practice already has its master psychologist in: --approve-all takes them
+	// the practice already has its master clinician in: --approve-all takes them
 	steady.mu.Lock()
 	steady.comm["members"] = []any{member("kempie@vrpsych.co.za", "Dr Kempie", "clinician")}
 	steady.mu.Unlock()
@@ -1177,7 +1289,7 @@ func TestCommunityFromTheFleet(t *testing.T) {
 		t.Fatalf("the bridge's file is %v", st.Mode().Perm())
 	}
 
-	// the master psychologist adds two more: they wait, and only listed staff can be approved
+	// the master clinician adds two more: they wait, and only listed staff can be approved
 	steady.mu.Lock()
 	steady.comm["members"] = []any{member("kempie@vrpsych.co.za", "Dr Kempie", "clinician"), member("two@vrpsych.co.za", "Dr Two", "clinician"), member("desk@vrpsych.co.za", "Front Desk", "admin")}
 	steady.mu.Unlock()
@@ -1304,7 +1416,7 @@ func TestEmptyPracticeOffTheBridge(t *testing.T) {
 	if len(bridge) != 1 || bridge[0].ID != "test" {
 		t.Fatalf("bridge file: %+v", bridge)
 	}
-	// updated, the practice has its master psychologist in: on again, and on the list
+	// updated, the practice has its master clinician in: on again, and on the list
 	steady.mu.Lock()
 	steady.comm = map[string]any{"on": true, "fleet": true, "members": []any{map[string]any{"email": "kempie@vrpsych.co.za", "name": "Dr Kempie", "role": "clinician"}}}
 	steady.commOld = false

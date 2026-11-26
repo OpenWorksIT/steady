@@ -50,7 +50,7 @@ jobs:
           NO_TUNNEL=1 deploy/test/start.sh 2>&1 | tee start.txt || { echo "::error title=start.sh::$(sed 's/%/%25/g' start.txt | tail -c 30000 | awk '{printf "%s%%0A", $0}')"; exit 1; }
       - name: security tests
         # tries to reach what each kind of account must not: other patients, other
-        # psychologists' patients, hidden fields, admin views of clinical data, the dashboard
+        # clinicians' patients, hidden fields, admin views of clinical data, the dashboard
         run: |
           set -o pipefail
           python3 deploy/test/security.py 2>&1 | tee security.txt || { echo "::error title=security tests::$(grep -A1 '^FAIL' security.txt | sed 's/%/%25/g' | tail -c 30000 | awk '{printf "%s%%0A", $0}')"; exit 1; }

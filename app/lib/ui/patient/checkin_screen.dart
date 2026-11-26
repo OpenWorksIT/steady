@@ -6,7 +6,7 @@ import '../widgets.dart';
 import 'done_screen.dart';
 
 /// What the patient is told when an answer was kept on the phone (the practice couldn't be reached).
-const keptOnPhone = 'Saved on this phone. Steady sends it to your psychologist as soon as it can reach the practice.';
+const keptOnPhone = 'Saved on this phone. Steady sends it to your clinician as soon as it can reach the practice.';
 
 /// The four questions and a few words. [onSent] runs after the check-in is saved: [sent] is
 /// false when the practice couldn't be reached and it was kept on the phone to send later.
@@ -14,7 +14,7 @@ class CheckinForm extends StatefulWidget {
   final Future<void> Function(bool sent) onSent;
   final String sendLabel;
   final bool showCrisis;
-  const CheckinForm({required this.onSent, this.sendLabel = 'Send to my psychologist', this.showCrisis = true, super.key});
+  const CheckinForm({required this.onSent, this.sendLabel = 'Send to my clinician', this.showCrisis = true, super.key});
   @override
   State<CheckinForm> createState() => _CheckinFormState();
 }
@@ -90,7 +90,7 @@ class CheckinScreen extends StatelessWidget {
           child: CheckinForm(
             onSent: (sent) async {
               Navigator.of(context).pushReplacement(MaterialPageRoute(
-                  builder: (_) => DoneScreen(message: sent ? 'Your check-in has been sent to your psychologist.' : keptOnPhone, kept: !sent)));
+                  builder: (_) => DoneScreen(message: sent ? 'Your check-in has been sent to your clinician.' : keptOnPhone, kept: !sent)));
             },
           ),
         ),

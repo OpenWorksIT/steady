@@ -56,7 +56,7 @@ function mayReset(s, actor, target, twoStep) {
   if (t === "support") return { ok: false, why: "OpenWorks accounts are reset on the server." };
   if (s.isMaster(target)) return { ok: support, why: "Only OpenWorks support can reset the master clinician's password." };
   if (t === "admin") return { ok: support || master, why: "Only the master clinician or OpenWorks support can reset the practice admin's password." };
-  return { ok: support || master || padmin, why: "Only the master clinician, the practice admin or OpenWorks support can reset a psychologist's password." };
+  return { ok: support || master || padmin, why: "Only the master clinician, the practice admin or OpenWorks support can reset a clinician's password." };
 }
 
 module.exports = { newStaff: newStaff, integrationClinician: integrationClinician, opsGuard: opsGuard, mayReset: mayReset };

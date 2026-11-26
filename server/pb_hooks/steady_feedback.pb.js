@@ -1,6 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Steady - feedback from staff screens: "Love this", "Don't like this", "Bug found" (lib/feedback.js).
-// Psychologists and administrators send it; the master psychologist and administrators read it
+// Clinicians and administrators send it; the master clinician and administrators read it
 // in Settings > Practice > Feedback tickets; OpenWorks IT reads it with deploy/feedback.sh (the monitor key).
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -55,7 +55,7 @@ routerAdd("GET", "/api/steady/feedback", (e) => {
     if (!s.isStaff(e.auth)) throw new ForbiddenError("Feedback is for the practice's staff.");
     full = s.isSupport(e.auth);
   }
-  // other psychologists see the tickets they raised themselves; the master clinician, the
+  // other clinicians see the tickets they raised themselves; the master clinician, the
   // practice admin and OpenWorks see everyone's
   let mine = "";
   if (!full && s.role(e) === "clinician" && !s.isMaster(e.auth)) mine = (filter ? " && " : "") + "who = {:me}";

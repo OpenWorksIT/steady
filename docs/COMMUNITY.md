@@ -1,10 +1,10 @@
 # Steady Community
 
-A private forum for psychologists at practices that use Steady: the **Community** tab in the
+A private forum for clinicians at practices that use Steady: the **Community** tab in the
 Steady app and web app. They talk about the science, build questionnaires together, plan studies
 across practices, and shape how Steady develops. Practice administrators have the tab too, and
 see only the Steady manual there. The first community is VR Clinical Psychology (three
-psychologists). Kempie van Rooyen is the community lead.
+clinicians). Kempie van Rooyen is the community lead.
 
 Steady Community is built on [Discourse](https://www.discourse.org) (free software, GPL v2),
 with Steady's own look and words in place of Discourse's ("How it looks" below). It runs at
@@ -29,7 +29,7 @@ The kit is in `community/`:
 
 These hold for everyone, admins included.
 
-1. **Psychologists only, inside Steady** (and practice administrators, for the Steady manual
+1. **Clinicians only, inside Steady** (and practice administrators, for the Steady manual
    only). The forum has no accounts of its own and no sign-up, and it doesn't open on its own
    in a browser: everyone comes in through the Community tab, as who they are in Steady.
 2. **Steady's sign-in for everyone**: password, authenticator code and a linked device, at the
@@ -88,7 +88,7 @@ clinical areas. They can't keep out someone who reads the database directly.
 ## Signing in through Steady
 
 The community opens only inside Steady: the **Community** tab of the app and the web app, for
-psychologists, practice administrators (the Steady manual only) and OpenWorks support. It opens
+clinicians, practice administrators (the Steady manual only) and OpenWorks support. It opens
 as whoever is signed in to Steady, with no second sign-in. Opened straight in a browser (a
 bookmark, a link in an email), it shows "The Steady Community opens inside Steady" instead.
 
@@ -106,7 +106,7 @@ Steady server:
 
 The forum is shown in a frame of the web app, and in a web view of its own in the phone app.
 Each time the tab is opened the person signs in again, so the forum always shows whoever is in
-Steady (another psychologist may have used the same computer). A forum session nobody uses ends
+Steady (another clinician may have used the same computer). A forum session nobody uses ends
 after 12 hours; signing out of Steady on a phone clears the community from the app too.
 
 **What the forum gets:** the person's name and email address as Steady has them, their practice
@@ -118,7 +118,7 @@ code. The bridge keeps nothing: a sign-in under way is held in memory for two mi
 
 | In Steady | In the community |
 |---|---|
-| Psychologist, address on the practice's list | `clinicians`, and the practice's own group if it has one |
+| Clinician, address on the practice's list | `clinicians`, and the practice's own group if it has one |
 | Practice administrator, address on the practice's list | `practice-admins` only: the Steady manual |
 | OpenWorks support, through the server marked `support`, address on the OpenWorks list | `openworks` only |
 | Patients | No Community tab, and refused |
@@ -128,15 +128,15 @@ Each sign-in is in the practice's access log (Settings > Practice > Audit report
 community forum").
 
 **Email addresses.** The bridge's settings list, for each practice, the addresses its
-psychologists and practice administrators use (one list covers both; the role in Steady decides
+clinicians and practice administrators use (one list covers both; the role in Steady decides
 which groups they join): its own domain (`@vrpsych.co.za`), or single addresses (always for
 Gmail and other public mail services). OpenWorks support's addresses are listed one by one, and
 come in only through the one server marked `support`, which OpenWorks alone runs. No address or
 domain may be on two lists, and the bridge refuses to start if one is. So a practice can only
-ever bring in its own people: it can't sign anyone in as another practice's psychologist, as
+ever bring in its own people: it can't sign anyone in as another practice's clinician, as
 Kempie, or as OpenWorks. Someone who already has a forum account with their address carries on with it; if
 their address moves to another practice's list, they leave the old practice's group, and if
-their role in Steady changes (an administrator who becomes a psychologist, or the other way
+their role in Steady changes (an administrator who becomes a clinician, or the other way
 round), their groups follow at their next sign-in.
 
 Kempie's address is the forum's developer address (`community.yml`): his account is made admin
@@ -232,23 +232,23 @@ sudo chown 65532:65532 /var/lib/steady-signin/config.json && sudo chmod 600 /var
     {"id": "vr", "name": "VR Clinical Psychology", "url": "https://vr.steadyapp.co.za",
      "key": "<VR's key>", "emails": ["@vrpsych.co.za"]},
     {"id": "test", "name": "Steady Test", "url": "https://test.steadyapp.co.za",
-     "key": "<the test server's key>", "emails": ["<the test psychologist's address>"], "support": true}
+     "key": "<the test server's key>", "emails": ["<the test clinician's address>"], "support": true}
   ]
 }
 ```
 
 - `id`: lower-case letters, digits and dashes. It is part of every forum account made through
   that practice: **never change it** once people have signed in.
-- `name`: shown beside its psychologists' and administrators' names in the forum.
+- `name`: shown beside its clinicians' and administrators' names in the forum.
 - `url`: the practice's Steady address.
-- `emails`: its psychologists' and practice administrators' addresses, or its own domain (see
+- `emails`: its clinicians' and practice administrators' addresses, or its own domain (see
   "Email addresses" above).
 - `openworks`: OpenWorks IT's support addresses, one by one.
 - `support` (one server only): OpenWorks support comes in through this one, a server OpenWorks
   alone runs (the test server). Anyone who can make a support account there could come in as
   OpenWorks, so never a practice's.
 - `groups` (optional): the practice's private group, e.g. `["practice-vr"]` (see "Adding a
-  practice"), for its psychologists only: its administrators never join it.
+  practice"), for its clinicians only: its administrators never join it.
 
 Changes are picked up within seconds; no restart needed. Check the file:
 
@@ -366,7 +366,7 @@ in the container, and the lines after it go to the wrong place.)
 ## 5. First visits
 
 Kempie first: in Steady, **Community**. His address is in `DISCOURSE_DEVELOPER_EMAILS`, so his
-account is made admin as he arrives. The other VR psychologists just choose Community too, and
+account is made admin as he arrives. The other VR clinicians just choose Community too, and
 so does VR's practice administrator, who lands in `practice-admins` and sees the Steady manual.
 Nobody is invited; nobody chooses a forum password.
 
@@ -384,7 +384,7 @@ Later admin work is Kempie's, in the community, or by making a temporary Global 
 
 ## The first topics
 
-So that the first psychologists find a community rather than an empty forum, `setup.py` posts
+So that the first clinicians find a community rather than an empty forum, `setup.py` posts
 the topics in `community/topics/<category>/`: the Steady manual (ten topics, step by step with
 screenshots from `manual/images/`, uploaded with the post), the Science section (one topic per part of
 Steady: the check-in, flags, each questionnaire, watch data, RADR, the patient list, the
@@ -448,7 +448,7 @@ server"). Nothing is copied by hand: no key, no `.env` lines, no `config.json` e
    alongside `config.json`). For a practice's private area, first run
    `sudo community/run-setup.sh --practice vr="VR Clinical Psychology"`, then add
    `--group practice-vr`. OpenWorks' own server (the test server) gets `--openworks`.
-2. **Its people:** the master psychologist chooses who's in, in Steady (Settings > Practice >
+2. **Its people:** the master clinician chooses who's in, in Steady (Settings > Practice >
    Community). Each name waits for OpenWorks: `fleet.sh community vr people` lists them, and
    `fleet.sh community vr approve kempie@vrpsych.co.za` lets them in, within seconds. The
    fleet view's page for the server, and Checks, show who's waiting. Someone the practice
@@ -463,7 +463,7 @@ a community already open; new staff start switched off.
 
 Each address comes into the community through one practice only. If two practices could both
 vouch for the same address, the bridge couldn't tell which practice the person belongs to, and
-either practice could sign them in as the other's psychologist. Addresses are compared in lower
+either practice could sign them in as the other's clinician. Addresses are compared in lower
 case, so `Kempie@VRpsych.co.za` and `kempie@vrpsych.co.za` are the same address.
 
 - **`approve` refuses** an address another practice has approved, and says which. If the person
@@ -511,27 +511,27 @@ it took off the fleet view's list for being on another list too.
 1. **Its Steady server:** a key and the three lines in its `.env` (step 2). For the web app's
    Community tab, a `steadyapp.co.za` address (see "Web addresses").
 2. **The bridge:** its entry in `config.json`, with its own `id`, key and address list. The
-   one list covers the practice's psychologists and its practice administrators.
+   one list covers the practice's clinicians and its practice administrators.
 3. **Optional, a private area:** `python3 community/setup.py --practice <id>="<Practice name>"`
    (with a key, as in step 4) makes the group `practice-<id>` and its category. Add
-   `"groups": ["practice-<id>"]` to the practice's entry, and its psychologists (not its
+   `"groups": ["practice-<id>"]` to the practice's entry, and its clinicians (not its
    administrators) join the group as they arrive.
 
 ## The test server in the community
 
 While the community is being tried out, the test server (vps1) can be a practice in the
-bridge's settings, so its test psychologist opens the Community tab like a real one and sees
-what a psychologist sees:
+bridge's settings, so its test clinician opens the Community tab like a real one and sees
+what a clinician sees:
 
 ```json
 {"id": "test", "name": "Steady Test", "url": "https://test.steadyapp.co.za",
- "key": "<the test server's key>", "emails": ["<the test psychologist's address>"], "support": true}
+ "key": "<the test server's key>", "emails": ["<the test clinician's address>"], "support": true}
 ```
 
 Keep its list to the test account, so the test server can't sign anyone in as a real
-psychologist. Before real clinical discussion starts, take its psychologist out again:
+clinician. Before real clinical discussion starts, take its clinician out again:
 
-1. Remove the test psychologist's address from its `emails` (keep the entry while OpenWorks
+1. Remove the test clinician's address from its `emails` (keep the entry while OpenWorks
    support comes in through it; `"emails"` can then list an OpenWorks-only address).
 2. Admin > Users > the test account > **Log out** (and **Suspend**, if it should never come back).
 
@@ -667,7 +667,7 @@ and flags it red when it doesn't: built from another folder, or not rebuilt afte
 
 ## Two-step sign-in, in practice
 
-- Everyone signs in with Steady, so Steady's two-step sign-in covers the forum: a psychologist
+- Everyone signs in with Steady, so Steady's two-step sign-in covers the forum: a clinician
   without it set up in Steady is refused until they set it up.
 - A lost phone is handled in Steady, as for Steady itself (the practice resets their two-step
   sign-in).
@@ -680,7 +680,7 @@ The bridge says why it refused someone in its log, never with names or addresses
 
 | Symptom | Check |
 |---|---|
-| No Community tab | The practice's server lacks one of the three `.env` lines (step 2), the key is under 32 characters, or `docker compose up -d` wasn't run after adding them. Only psychologists, practice administrators and OpenWorks support get the tab. |
+| No Community tab | The practice's server lacks one of the three `.env` lines (step 2), the key is under 32 characters, or `docker compose up -d` wasn't run after adding them. Only clinicians, practice administrators and OpenWorks support get the tab. |
 | "The community isn't available" | The bridge's `config.json` is missing or wrong: `signin check` (step 2) says what. |
 | "Your practice's Steady isn't set up for the community, or its key doesn't match" | The practice's `key` in `config.json` isn't the same as `STEADY_COMMUNITY_KEY` on its server, or the practice isn't in `config.json`. |
 | "...sends people to ..., not here" | `STEADY_COMMUNITY_SIGNIN` on that server isn't `https://signin.steadyapp.co.za`. |

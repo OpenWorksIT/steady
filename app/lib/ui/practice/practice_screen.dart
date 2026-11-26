@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Settings > Practice: the library and the practice's own business, out of the bottom bar so a
-// psychologist's tabs stay Patients, Alerts and Community. Each row keeps the access it had before
+// clinician's tabs stay Patients, Alerts and Community. Each row keeps the access it had before
 // it moved here (the server checks too). Patients have no Practice.
 import 'package:flutter/material.dart';
 
@@ -26,7 +26,7 @@ class PracticeItem {
 
 /// What Settings > Practice holds for this account, in order; empty for patients.
 List<PracticeItem> practiceItems(Api api, {bool community = false}) => [
-      // every psychologist sends from the library, not only the master clinician
+      // every clinician sends from the library, not only the master clinician
       if (api.role == 'clinician')
         PracticeItem(Icons.menu_book_outlined, 'Library', 'Questionnaires and exercises to send, and daily words', () => const LibraryScreen()),
       // the practice admin has the people as their first screen already

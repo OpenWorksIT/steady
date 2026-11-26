@@ -36,12 +36,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   bool get _master => AppScope.api(context).isMaster;
 
-  Future<String?> _pickClinician({String? exceptId, String title = 'Which psychologist?'}) async {
+  Future<String?> _pickClinician({String? exceptId, String title = 'Which clinician?'}) async {
     final list = await AppScope.api(context).clinicians();
     if (!mounted) return null;
     final choices = list.where((c) => c.id != exceptId).toList();
     if (choices.isEmpty) {
-      showSnack(context, 'There are no other active psychologists.');
+      showSnack(context, 'There are no other active clinicians.');
       return null;
     }
     return showDialog<String>(
@@ -71,7 +71,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
           textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(
             labelText: "Patient's name",
-            helperText: 'How the psychologist will see them. The patient chooses their own name in the app.',
+            helperText: 'How the clinician will see them. The patient chooses their own name in the app.',
             helperMaxLines: 2,
           ),
         ),
@@ -101,7 +101,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     final go = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text(role == 'admin' ? 'Add an administrator' : 'Add a psychologist'),
+        title: Text(role == 'admin' ? 'Add an administrator' : 'Add a clinician'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: name, autofocus: true, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Name')),
           const SizedBox(height: 10),
@@ -155,7 +155,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   Future<void> _move(Person p) async {
     final to = await _pickClinician(exceptId: p.clinicianId, title: 'Move ${p.name} to');
     if (to == null || !mounted) return;
-    await guarded(context, () => AppScope.api(context).reassignPatient(p.id, to), done: 'Moved. Both psychologists are told.');
+    await guarded(context, () => AppScope.api(context).reassignPatient(p.id, to), done: 'Moved. Both clinicians are told.');
     _reload();
   }
 
@@ -165,7 +165,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
       showDragHandle: true,
       builder: (c) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(title: Text(p.name, style: c.tt.titleMedium), subtitle: Text('With ${p.clinicianName.isEmpty ? 'no psychologist' : p.clinicianName}')),
+          ListTile(title: Text(p.name, style: c.tt.titleMedium), subtitle: Text('With ${p.clinicianName.isEmpty ? 'no clinician' : p.clinicianName}')),
           if (p.status?.watchLapsed == true)
             ListTile(
               leading: const Icon(Icons.watch_outlined),
@@ -186,7 +186,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.swap_horiz),
-            title: const Text('Move to another psychologist'),
+            title: const Text('Move to another clinician'),
             onTap: () {
               Navigator.pop(c);
               _move(p);
@@ -205,7 +205,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     );
   }
 
-  /// Psychologists: the master clinician or the practice admin. The practice admin: the master
+  /// Clinicians: the master clinician or the practice admin. The practice admin: the master
   /// clinician. The master clinician and OpenWorks accounts: OpenWorks (the server checks too).
   bool _canReset(Person p) {
     final api = AppScope.api(context);
@@ -284,7 +284,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   showDragHandle: true,
                   builder: (c) => SafeArea(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      ListTile(leading: const Icon(Icons.psychology_outlined), title: const Text('Add a psychologist'), onTap: () {
+                      ListTile(leading: const Icon(Icons.psychology_outlined), title: const Text('Add a clinician'), onTap: () {
                         Navigator.pop(c);
                         _addStaff('clinician');
                       }),
@@ -313,11 +313,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
             return TabBarView(children: [
               ListView(padding: const EdgeInsets.fromLTRB(16, 10, 16, 96), children: [
                 TextField(
-                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Find a patient or psychologist'),
+                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), labelText: 'Find a patient or clinician'),
                   onChanged: (v) => setState(() => _query = v),
                 ),
                 const SizedBox(height: 8),
-                Text('Whether each patient is set up and connected. What they share is only for their own psychologist.',
+                Text('Whether each patient is set up and connected. What they share is only for their own clinician.',
                     style: context.tt.bodySmall?.copyWith(color: context.sc.ink3)),
                 const SizedBox(height: 8),
                 if (pats.isEmpty) Text('No patients.', style: TextStyle(color: context.sc.ink2)),
@@ -327,7 +327,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                       leading: Avatar(_initials(p.name)),
                       title: Text(p.name),
                       subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('${p.clinicianName.isEmpty ? 'No psychologist' : p.clinicianName}${p.active ? '' : ' · stopped'}'
+                        Text('${p.clinicianName.isEmpty ? 'No clinician' : p.clinicianName}${p.active ? '' : ' · stopped'}'
                             '${p.status?.careStatus == 'archived' ? ' · archived' : ''}'),
                         if (p.status != null) _StatusLine(p, d.serverBuild),
                       ]),
@@ -338,7 +338,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   ),
               ]),
               ListView(padding: const EdgeInsets.fromLTRB(16, 10, 16, 96), children: [
-                SectionHeader('Psychologists', trailing: '${d.clinicians.length}'),
+                SectionHeader('Clinicians', trailing: '${d.clinicians.length}'),
                 for (final p in d.clinicians) _staffTile(context, p),
                 const SizedBox(height: 8),
                 SectionHeader('Administrators and support', trailing: '${d.admins.length}'),
@@ -399,6 +399,10 @@ class _StatusLine extends StatelessWidget {
           item(Icons.assignment_late_outlined, 'consent not given', bad: true)
         else if (!st.consentCurrent)
           item(Icons.assignment_outlined, 'older consent (${st.consentVersion})', bad: true),
+        if (st.consentAt != null)
+          item(st.contact == 'no' ? Icons.speaker_notes_off_outlined : Icons.forum_outlined,
+              st.contact == 'yes' ? 'may contact about their data' : st.contact == 'no' ? 'asked not to be contacted about their data' : 'contact: not asked yet',
+              bad: st.contact == 'no'),
         item(Icons.phone_android, app, bad: app.contains('older') || app.contains('not used')),
         if (p.appPlatform != 'web') item(Icons.notifications_none, st.notifications.isEmpty ? 'no notifications' : 'notifications on', bad: st.notifications.isEmpty),
         if (!st.watchSharing)

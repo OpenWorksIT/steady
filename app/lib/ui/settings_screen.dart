@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../content/daily_words.dart';
 import '../services/api.dart';
 import '../services/push.dart';
 import '../wearable/wearable_sync.dart';
@@ -19,6 +20,7 @@ import 'auth/two_step_screen.dart';
 import 'clinician/server_updates_screen.dart';
 import 'update_notice.dart';
 import 'source_link.dart';
+import 'patient/contact_consent.dart';
 import 'patient/delete_account_screen.dart';
 import 'patient/watch_screens.dart';
 import 'theme.dart';
@@ -81,7 +83,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 18),
               Text('Watch data', style: context.tt.titleMedium),
               const SizedBox(height: 4),
-              Text('Your daily watch summaries are shared with your psychologist.', style: TextStyle(color: context.sc.ink2)),
+              Text('Your daily watch summaries are shared with your clinician.', style: TextStyle(color: context.sc.ink2)),
               TextButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyWatchDataScreen())),
                 child: const Text('See your watch data'),
@@ -101,6 +103,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
             if (state.isPatient) const _CareTeam(),
+            if (state.isPatient && state.config.contactAsk) const _ContactSwitch(),
+            if (state.isPatient) const _DailyWordsSwitch(),
             if (state.isClinician) ...[
               const SizedBox(height: 12),
               Text('Your patients', style: context.tt.titleMedium),
@@ -198,7 +202,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     builder: (c) => AlertDialog(
                       title: Text(waiting == 1 ? '1 answer hasn\'t been sent' : '$waiting answers haven\'t been sent'),
                       content: const Text('Steady couldn\'t reach the practice yet. If you sign out now, they\'re deleted from this phone '
-                          'and your psychologist won\'t see them.'),
+                          'and your clinician won\'t see them.'),
                       actions: [
                         TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Stay signed in')),
                         TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Sign out and delete them')),
@@ -265,7 +269,7 @@ class _CareTeam extends StatelessWidget {
               t == null
                   ? (snap.hasError ? errorText(snap.error!) : '...')
                   : [
-                      if (t.clinician.isNotEmpty) 'Your psychologist, ${t.clinician}.',
+                      if (t.clinician.isNotEmpty) 'Your clinician, ${t.clinician}.',
                       if (t.shared.isNotEmpty) 'Also shared with ${t.shared.join(', ')}, who can read it but not change anything.',
                       if (t.clinician.isEmpty && t.shared.isEmpty) 'Nobody yet.',
                     ].join(' '),
@@ -274,6 +278,86 @@ class _CareTeam extends StatelessWidget {
           ]);
         },
       ),
+    );
+  }
+}
+
+/// Patients: whether the practice may contact them about what they share in Steady
+/// (patient/contact_consent.dart). Kept on their account, with when, for the practice to see.
+class _ContactSwitch extends StatefulWidget {
+  const _ContactSwitch();
+  @override
+  State<_ContactSwitch> createState() => _ContactSwitchState();
+}
+
+class _ContactSwitchState extends State<_ContactSwitch> {
+  bool _busy = false;
+
+  Future<void> _set(bool on) async {
+    final state = AppScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await state.api.setConsent('contact', contactConsentVersion, accepted: on);
+      messenger.showSnackBar(SnackBar(
+          content: Text(on
+              ? '${state.config.practiceName} may contact you about what you share in Steady.'
+              : 'Saved. ${state.config.practiceName} can still contact you about your appointments and care, as it always can.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(e))));
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = AppScope.of(context);
+    final on = state.api.myContactConsent == 'yes';
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      secondary: const Icon(Icons.forum_outlined),
+      title: Text('${state.config.practiceName} may contact me about what I share'),
+      subtitle: const Text('About my check-ins, answers or watch data. Steady isn\'t watched around the clock.'),
+      value: on,
+      onChanged: _busy ? null : _set,
+    );
+  }
+}
+
+/// Patients: the few words on Steady's opening screen, on or off, and any hidden ones shown again
+/// (content/daily_words.dart DailyWordsPrefs). Kept on this phone.
+class _DailyWordsSwitch extends StatelessWidget {
+  const _DailyWordsSwitch();
+  @override
+  Widget build(BuildContext context) {
+    final id = AppScope.api(context).myId;
+    final prefs = DailyWordsPrefs.instance;
+    prefs.load(id);
+    return ListenableBuilder(
+      listenable: prefs,
+      builder: (context, _) {
+        final hidden = prefs.hidden(id).length;
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.format_quote_outlined),
+            title: const Text('Words when Steady opens'),
+            subtitle: Text(prefs.isOff(id)
+                ? 'Off: Steady opens with just the circle'
+                : 'A few kind words each day. Tap "Not for me" under any you\'d rather not see again.'),
+            value: !prefs.isOff(id),
+            onChanged: (on) => prefs.setOff(id, !on),
+          ),
+          if (hidden > 0 && !prefs.isOff(id))
+            Padding(
+              padding: const EdgeInsets.only(left: 56),
+              child: TextButton(
+                onPressed: () => prefs.showAll(id),
+                child: Text('Show the $hidden hidden one${hidden == 1 ? '' : 's'} again'),
+              ),
+            ),
+        ]);
+      },
     );
   }
 }

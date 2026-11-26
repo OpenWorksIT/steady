@@ -2,7 +2,7 @@
 //
 // Answers a patient gives while Steady can't reach the practice (no signal, the server
 // restarting) are kept on the phone and sent, oldest first, as soon as it can: check-ins,
-// questionnaires, exercises the psychologist sent and exercises the patient started.
+// questionnaires, exercises the clinician sent and exercises the patient started.
 //
 // Each answer carries the phone's own id for it, so one that was sent twice (the reply was lost)
 // is stored once, and how long it waited, so the practice files it at the time it was given.

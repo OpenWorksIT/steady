@@ -157,7 +157,7 @@ function accountOf(e) {
     try { col = String(a.collection().name); } catch (err) { col = String(a.collectionName || ""); }
     if (col === "_superusers") return "a superuser";
     var role = String(a.getString("role") || "");
-    var staff = { clinician: "a psychologist's account", admin: "a practice admin's account", support: "an OpenWorks account" }[role];
+    var staff = { clinician: "a clinician's account", admin: "a practice admin's account", support: "an OpenWorks account" }[role];
     if (!staff) return "a patient's account";
     return staff + ": " + F.clean(a.getString("email"), 100);
   } catch (err) { return "an account"; }

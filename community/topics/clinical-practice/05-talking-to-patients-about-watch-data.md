@@ -8,9 +8,9 @@ When a patient connects a watch, Steady tells them, in plain words:
 
 - **what is shared**: heart rate (the lowest, average and highest each day, and resting heart rate), sleep (how long, when, and its stages), steps, and blood oxygen if the watch measures it
 - **how**: only daily totals and averages leave the phone, up to 30 days back when they connect and then new days as they use Steady
-- **who sees it**: their psychologist, and a colleague if their psychologist shares their record (for example while away); it helps the psychologist understand how they are doing between sessions, and may be used, without their name, to improve care
-- **what it doesn't do**: nobody watches it around the clock and it raises no alarms; it can help their psychologist decide whose information to look at first
-- **their record**: it may be added to their clinical record, and once it is, the psychologist decides how it's used in their care
+- **who sees it**: their clinician, and a colleague if their clinician shares their record (for example while away); it helps the clinician understand how they are doing between sessions, and may be used, without their name, to improve care
+- **what it doesn't do**: nobody watches it around the clock and it raises no alarms; it can help their clinician decide whose information to look at first
+- **their record**: it may be added to their clinical record, and once it is, the clinician decides how it's used in their care
 - **how to stop**: Settings > Stop sharing watch data; nothing new is added, and what was shared stays in the record
 
 They agree to this separately from joining Steady. On their side, Steady shows only that watch data is shared and when it last synced; the charts are on yours.
