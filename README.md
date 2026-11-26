@@ -11,7 +11,7 @@ Built by [OpenWorks IT](https://openworks.co.za), with the clinical science and 
 
 Each practice runs Steady on its own server, and its patients' data stays there: OpenWorks IT looks after the servers, but OpenWorks' accounts in the app can't open any patient's information. (As the operator, OpenWorks can technically reach the server itself to keep it running; the practice's operator agreement covers that.)
 
-> **Status: version 1.3.0, live.** On [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady) and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (South Africa) since November 2026, and in use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
+> **Status: version 1.3.1, live.** On [Google Play](https://play.google.com/store/apps/details?id=za.co.openworks.steady) and the [App Store](https://apps.apple.com/za/app/steady-check-in/id6827262084) (South Africa) since November 2026, and in use at VR Clinical Psychology after two beta rounds on Android, iPhone (TestFlight) and the web. Every push runs the server unit tests, the real server with adversarial security checks and an end-to-end flow, and the app's analysis, tests and Android build. See [docs/TESTING.md](docs/TESTING.md).
 
 ## What's in the box
 
@@ -28,7 +28,7 @@ Each practice runs Steady on its own server, and its patients' data stays there:
 
 ## Questionnaires and exercises
 
-Built in: **PHQ-9**, **GAD-7**, **PCL-5** and **WHO-5**, plus box breathing, 4-7-8 breathing, slow paced breathing, 5-4-3-2-1 grounding and a thought record.
+Built in: **PHQ-9**, **GAD-7**, **PCL-5** and **WHO-5**; for substance use, the **AUDIT**, the **AWARE** and single questions on drug use and heavy drinking in the past 7 days; plus box breathing, 4-7-8 breathing, slow paced breathing, 5-4-3-2-1 grounding and a thought record.
 
 Clinicians can also:
 
@@ -85,7 +85,8 @@ python3 fleet/test_edge_frontdoor.py         # vps1's front-door count
   through two beta rounds.
 - **Code, security and deployment: [OpenWorks IT](https://openworks.co.za).**
 - **Questionnaires:** PHQ-9 and GAD-7 (Spitzer, Williams, Kroenke and colleagues; Pfizer), PCL-5 (US National Center for
-  PTSD) and WHO-5 (World Health Organization). Their terms and the other third-party parts are in [NOTICE](NOTICE).
+  PTSD), WHO-5 and AUDIT (World Health Organization) and AWARE (Miller and Harris; CASAA). Their terms and the other
+  third-party parts are in [NOTICE](NOTICE).
 
 ## Reporting a security problem
 

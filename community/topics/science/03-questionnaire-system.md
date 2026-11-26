@@ -2,7 +2,7 @@
 
 ## What it is
 
-Every questionnaire in Steady, built in or added by a clinician, is a written definition that the server checks, presents and scores in the same way. Four come built in: PHQ-9, GAD-7, PCL-5 and WHO-5 (each has its own topic). Clinicians can add more by writing one in the app, uploading a file, or importing a FHIR Questionnaire or an instrument from the open ReproSchema library.
+Every questionnaire in Steady, built in or added by a clinician, is a written definition that the server checks, presents and scores in the same way. Eight come built in: PHQ-9, GAD-7, PCL-5 and WHO-5 (each has its own topic), and for substance use the AUDIT, the AWARE and two single questions, on drug use and on heavy drinking in the past 7 days (see Kempie van Rooyen's measurement paper, and "The questionnaire library and licences"). Clinicians can add more by writing one in the app, uploading a file, or importing a FHIR Questionnaire or an instrument from the open ReproSchema library.
 
 ## How it came about
 
@@ -54,7 +54,7 @@ Each instrument has a licence status: **cleared**, **review**, **blocked** or **
 
 ### Sending and repeats
 
-You send an instrument once, daily or weekly, with an optional note to the patient (up to 280 characters). It is available at once, and the patient is told "From your clinician". When the patient completes a repeating one, the next becomes available at the start of their next local day (daily), or seven days on (weekly), counted from when they completed it, not from when you first sent it. At 07:00 South African time, patients with something newly available are told "Ready for today". Patients can't start a questionnaire themselves, and stopping a patient's access cancels everything waiting.
+You send an instrument once, daily, weekly, fortnightly, monthly or quarterly, with an optional note to the patient (up to 280 characters). It is available at once, and the patient is told "From your clinician". When the patient completes a repeating one, the next becomes available at the start of their next local day (daily), 7 or 14 days on (weekly, fortnightly), or one or three calendar months on (monthly, quarterly; from the 31st, the month's last day), counted from when they completed it, not from when you first sent it. At 07:00 South African time, patients with something newly available are told "Ready for today". Patients can't start a questionnaire themselves, and stopping a patient's access cancels everything waiting.
 
 ## Limits
 

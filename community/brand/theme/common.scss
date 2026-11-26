@@ -111,6 +111,18 @@ h1, h2, h3, h4, .fancy-title, .category-title-header .category-title-name {
     background: transparent;
   }
   h1, h2, h3 { font-weight: 500; }
+  // tables (a paper's, say): Discourse leaves a cell's text in its middle, so a row with one
+  // long cell no longer lines up. Every cell starts at the top, with the same room on each side.
+  table { border-collapse: collapse; }
+  th, td {
+    vertical-align: top;
+    padding: 0.45em 0.9em 0.45em 0;
+  }
+  th { font-family: var(--heading-font-family); font-weight: 500; }
+  td { border-bottom: 1px solid var(--steady-line, var(--primary-low)); }
+  // nothing wider than the screen on a phone, not even a long unbroken line ("break-word",
+  // not "anywhere": a table's columns keep the width of their longest word)
+  p, li, td, th { overflow-wrap: break-word; }
 }
 .names .first { font-weight: 600; }
 

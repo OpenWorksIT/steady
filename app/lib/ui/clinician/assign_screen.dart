@@ -83,15 +83,23 @@ class _AssignScreenState extends State<AssignScreen> {
               const SectionHeader('Exercises'),
               for (final i in ex) option(i),
               const SectionHeader('How often'),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'once', label: Text('Once')),
-                  ButtonSegment(value: 'daily', label: Text('Daily')),
-                  ButtonSegment(value: 'weekly', label: Text('Weekly')),
-                ],
-                selected: {_repeat},
-                onSelectionChanged: (s) => setState(() => _repeat = s.first),
-              ),
+              // the cadences of Kempie's measurement paper: weekly check-ins, a monthly AWARE,
+              // a quarterly AUDIT (a server before 1.3.1 accepts once, daily and weekly)
+              Wrap(spacing: 8, runSpacing: 4, children: [
+                for (final r in const [
+                  ('once', 'Once'),
+                  ('daily', 'Daily'),
+                  ('weekly', 'Weekly'),
+                  ('fortnightly', 'Fortnightly'),
+                  ('monthly', 'Monthly'),
+                  ('quarterly', 'Quarterly'),
+                ])
+                  ChoiceChip(
+                    label: Text(r.$2),
+                    selected: _repeat == r.$1,
+                    onSelected: (_) => setState(() => _repeat = r.$1),
+                  ),
+              ]),
               const SizedBox(height: 16),
               TextField(
                 controller: _note,
