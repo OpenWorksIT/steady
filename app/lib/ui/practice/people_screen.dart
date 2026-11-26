@@ -401,7 +401,8 @@ class _StatusLine extends StatelessWidget {
           item(Icons.assignment_outlined, 'older consent (${st.consentVersion})', bad: true),
         if (st.consentAt != null)
           item(st.contact == 'no' ? Icons.speaker_notes_off_outlined : Icons.forum_outlined,
-              st.contact == 'yes' ? 'may contact about their data' : st.contact == 'no' ? 'not about their data' : 'contact: not asked yet'),
+              st.contact == 'yes' ? 'may contact about their data' : st.contact == 'no' ? 'asked not to be contacted about their data' : 'contact: not asked yet',
+              bad: st.contact == 'no'),
         item(Icons.phone_android, app, bad: app.contains('older') || app.contains('not used')),
         if (p.appPlatform != 'web') item(Icons.notifications_none, st.notifications.isEmpty ? 'no notifications' : 'notifications on', bad: st.notifications.isEmpty),
         if (!st.watchSharing)
