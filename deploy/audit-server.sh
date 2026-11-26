@@ -3,7 +3,7 @@
 # now and then afterwards. It changes nothing; each line is OK, WARN (worth a look) or FAIL.
 #
 #   sudo ./audit-server.sh                 # the host, Docker, files, and the live site
-#   sudo ./audit-server.sh --domain steady.example.co.za   # if STEADY_DOMAIN isn't in .env
+#   sudo ./audit-server.sh --domain yourpractice.steadyapp.co.za   # if STEADY_DOMAIN isn't in .env
 #   sudo ./audit-server.sh --quiet --json /var/lib/steady/ctl/out/audit.json
 #                                          # what the steady-audit service runs every 6 hours:
 #                                          # the results as JSON, which the server hands to
