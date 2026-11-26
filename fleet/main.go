@@ -259,7 +259,7 @@ func changeUser(store *Store, name string, password, totp bool) error {
 	if totp {
 		showTOTP(changed)
 	}
-	fmt.Println("Changed", changed.Name+". Anyone signed in keeps their session until it ends (restart the fleet view to end them now).")
+	fmt.Println("Changed", changed.Name+". Wherever they were signed in, they sign in again.")
 	return nil
 }
 
