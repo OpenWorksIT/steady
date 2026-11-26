@@ -215,6 +215,226 @@ var WHO5_DEF = {
   source: { name: "Built in", url: "https://www.who.int/" }
 };
 
+/*
+ * Substance use, from Kempie van Rooyen's "Substance Use Monitoring in Steady: Measurement
+ * Rationale and Clinical Framework" (Steady Community, November 2026). Built in here: the ones
+ * free of copyright or Steady's own. The DAST-10, PACS, BSCQ and 3-item Craving Scale wait for
+ * their copyright holders' permission (community/topics/questionnaires-and-tools).
+ */
+
+var AUDIT_FREQ = [
+  { label: "Never", value: 0 },
+  { label: "Less than monthly", value: 1 },
+  { label: "Monthly", value: 2 },
+  { label: "Weekly", value: 3 },
+  { label: "Daily or almost daily", value: 4 }
+];
+
+var AUDIT_YES = [
+  { label: "No", value: 0 },
+  { label: "Yes, but not in the last year", value: 2 },
+  { label: "Yes, during the last year", value: 4 }
+];
+
+// WHO's self-report wording, unchanged (its terms: not materially changed). The skips are the
+// manual's: after "Never" to question 1, and after no drinks to speak of in 2 and 3, straight
+// to questions 9 and 10.
+var AUDIT_DEF = {
+  key: "audit",
+  name: "AUDIT",
+  fullName: "Alcohol Use Disorders Identification Test",
+  kind: "questionnaire",
+  version: "1",
+  language: "en",
+  summary: "Alcohol use and its effects, 10 items, about 3 minutes",
+  instructions: "These questions are about your use of alcohol. Choose the answer closest to yours.",
+  responseSets: { freq: AUDIT_FREQ, yes: AUDIT_YES },
+  items: [
+    { id: "audit_1", text: "How often do you have a drink containing alcohol?", type: "choice", required: true, options: [
+      { label: "Never", value: 0 },
+      { label: "Monthly or less", value: 1 },
+      { label: "2-4 times a month", value: 2 },
+      { label: "2-3 times a week", value: 3 },
+      { label: "4 or more times a week", value: 4 }
+    ] },
+    { id: "audit_2", text: "How many drinks containing alcohol do you have on a typical day when you are drinking?", type: "choice", required: true,
+      options: [
+        { label: "1 or 2", value: 0 },
+        { label: "3 or 4", value: 1 },
+        { label: "5 or 6", value: 2 },
+        { label: "7 to 9", value: 3 },
+        { label: "10 or more", value: 4 }
+      ],
+      showIf: { anyOf: [{ item: "audit_1", op: ">", value: 0 }] } },
+    { id: "audit_3", text: "How often do you have six or more drinks on one occasion?", type: "choice", required: true, responseSet: "freq",
+      showIf: { anyOf: [{ item: "audit_1", op: ">", value: 0 }] } }
+  ].concat([
+    "How often during the last year have you found that you were not able to stop drinking once you had started?",
+    "How often during the last year have you failed to do what was normally expected of you because of drinking?",
+    "How often during the last year have you needed a first drink in the morning to get yourself going after a heavy drinking session?",
+    "How often during the last year have you had a feeling of guilt or remorse after drinking?",
+    "How often during the last year have you been unable to remember what happened the night before because of your drinking?"
+  ].map(function (t, i) {
+    return { id: "audit_" + (i + 4), text: t, type: "choice", required: true, responseSet: "freq",
+      showIf: { anyOf: [{ item: "audit_2", op: ">", value: 0 }, { item: "audit_3", op: ">", value: 0 }] } };
+  })).concat([
+    { id: "audit_9", text: "Have you or someone else been injured because of your drinking?", type: "choice", required: true, responseSet: "yes" },
+    { id: "audit_10", text: "Has a relative, friend, doctor, or other health care worker been concerned about your drinking or suggested you cut down?",
+      type: "choice", required: true, responseSet: "yes" }
+  ]),
+  scoring: {
+    method: "sum",
+    max: 40,
+    bands: [
+      { min: 0, max: 7, label: "Zone I, lower risk (0-7)", severity: "none" },
+      { min: 8, max: 15, label: "Zone II, hazardous (8-15)", severity: "warn" },
+      { min: 16, max: 19, label: "Zone III, harmful (16-19)", severity: "alert" },
+      { min: 20, max: 40, label: "Zone IV, possible dependence (20-40)", severity: "alert" }
+    ],
+    note: "WHO's zones. The Eastern Cape validation (pubmed 39893853) used 8 or more for men and 7 or more for women."
+  },
+  licence: {
+    name: "World Health Organization: in the public domain. No permission needed; any organisation may use and reproduce it, " +
+      "provided it isn't materially changed and nobody is charged for completing it.",
+    status: "cleared",
+    url: "https://auditscreen.org/about/faqs/"
+  },
+  source: { name: "Built in", url: "https://www.who.int/publications/i/item/WHO-MSD-MSB-01.6a" }
+};
+
+var AWARE7 = [
+  { label: "Never", value: 1 },
+  { label: "Rarely", value: 2 },
+  { label: "Sometimes", value: 3 },
+  { label: "Fairly often", value: 4 },
+  { label: "Often", value: 5 },
+  { label: "Almost always", value: 6 },
+  { label: "Always", value: 7 }
+];
+
+// The 25 items Kelly et al. (2011) validated for any substance: Miller and Harris's 28 without
+// the three about drinking (19, 22 and 28). Ids keep the original numbers. Five are said the
+// other way round (8, 14, 20, 24, 26) and score the other way round.
+var AWARE_ITEMS = [
+  [1, "I feel nervous or unsure of my ability to stay sober."],
+  [2, "I have many problems in my life."],
+  [3, "I tend to overreact or act impulsively."],
+  [4, "I keep to myself and feel lonely."],
+  [5, "I get too focused on one area of my life."],
+  [6, "I feel blue, down, listless, or depressed."],
+  [7, "I engage in wishful thinking."],
+  [8, "The plans that I make succeed."],
+  [9, "I have trouble concentrating and prefer to dream about how things could be."],
+  [10, "Things don't work out well for me."],
+  [11, "I feel confused."],
+  [12, "I get irritated or annoyed with my friends."],
+  [13, "I feel angry or frustrated."],
+  [14, "I have good eating habits."],
+  [15, "I feel trapped and stuck, like there is no way out."],
+  [16, "I have trouble sleeping."],
+  [17, "I have long periods of serious depression."],
+  [18, "I don't really care what happens."],
+  [20, "I am able to think clearly."],
+  [21, "I feel sorry for myself."],
+  [23, "I lie to other people."],
+  [24, "I feel hopeful and confident."],
+  [25, "I feel angry at the world in general."],
+  [26, "I am doing things to stay sober."],
+  [27, "I am afraid that I am losing my mind."]
+];
+var AWARE_REVERSED = [8, 14, 20, 24, 26];
+
+var AWARE_DEF = {
+  key: "aware",
+  name: "AWARE",
+  fullName: "Advance Warning of Relapse scale (25 items)",
+  kind: "questionnaire",
+  version: "1",
+  language: "en",
+  summary: "Relapse warning signs, 25 items, about 5 minutes",
+  instructions: "For each statement, choose how often it has been true for you recently.",
+  responseSets: {
+    often: AWARE7,
+    reversed: AWARE7.map(function (o) { return { label: o.label, value: 8 - o.value }; })
+  },
+  items: AWARE_ITEMS.map(function (p) {
+    return { id: "aware_" + p[0], text: p[1], type: "choice", required: true,
+      responseSet: AWARE_REVERSED.indexOf(p[0]) >= 0 ? "reversed" : "often" };
+  }),
+  scoring: {
+    method: "sum",
+    max: 175,
+    note: "25 (no warning signs) to 175; higher means more warning signs. No published cut-off: watch the trend."
+  },
+  licence: {
+    name: "Miller and Harris (2000), from CASAA, University of New Mexico: in the public domain, used without permission " +
+      "with acknowledgement. 25 items as validated by Kelly et al. (2011).",
+    status: "cleared",
+    url: "https://casaa.unm.edu/assets/inst/aware.pdf"
+  },
+  source: { name: "Built in", url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC3135308/" }
+};
+
+// Steady's own 7-day wording of two public single screening questions (Kempie van Rooyen's
+// paper, sections 5.5 and 5.6). The 7-day wording itself hasn't been validated.
+var DRUGS_7D = {
+  key: "drug-use-7d",
+  name: "Drug use, past 7 days",
+  fullName: "Single-item drug use question (7 days)",
+  kind: "questionnaire",
+  version: "1",
+  language: "en",
+  summary: "1 question, a few seconds",
+  instructions: "Count every time, even once.",
+  items: [
+    { id: "drugs_7d", type: "number", min: 0, max: 99, required: true,
+      text: "In the past 7 days, how many times have you used an illegal drug or used a prescription medication for reasons other than prescribed?" }
+  ],
+  scoring: {
+    method: "sum",
+    bands: [
+      { min: 0, max: 0, label: "None in the past 7 days", severity: "none" },
+      { min: 1, max: 99, label: "Used in the past 7 days: review", severity: "warn" }
+    ],
+    note: "Adapted from the NIDA single question (12 months) to 7 days; the 7-day wording isn't separately validated."
+  },
+  licence: {
+    name: "Steady's wording (Kempie van Rooyen), after the NIDA single-question drug screen (Smith et al., 2010)",
+    status: "cleared",
+    url: "https://pubmed.ncbi.nlm.nih.gov/20625025/"
+  },
+  source: { name: "Built in" }
+};
+
+var HEAVY_7D = {
+  key: "heavy-drinking-7d",
+  name: "Heavy drinking, past 7 days",
+  fullName: "Single-item alcohol use question (7 days)",
+  kind: "questionnaire",
+  version: "1",
+  language: "en",
+  summary: "1 question, a few seconds",
+  instructions: "Count the days.",
+  items: [
+    { id: "heavy_7d", type: "number", min: 0, max: 7, required: true,
+      text: "In the past 7 days, how many times have you had 5 or more drinks in a day (4 or more if you are a woman)?" }
+  ],
+  scoring: {
+    method: "sum",
+    bands: [
+      { min: 0, max: 0, label: "No heavy drinking in the past 7 days", severity: "none" },
+      { min: 1, max: 7, label: "Heavy drinking in the past 7 days: review", severity: "warn" }
+    ],
+    note: "Adapted from the NIAAA single alcohol screening question (12 months) to 7 days; the 7-day wording isn't separately validated."
+  },
+  licence: {
+    name: "Steady's wording (Kempie van Rooyen), after the NIAAA single alcohol screening question (Smith et al., 2009)",
+    status: "cleared",
+    url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC2695521/"
+  },
+  source: { name: "Built in" }
+};
+
 var BOX = {
   key: "box-breathing",
   name: "Box breathing",
@@ -348,6 +568,8 @@ var REPROSCHEMA_CATALOG = [
 ];
 
 module.exports = {
-  BUILTIN: [PHQ9, GAD7, PCL5_DEF, WHO5_DEF, BOX, B478, PACED, GROUND, THOUGHT],
+  BUILTIN: [PHQ9, GAD7, PCL5_DEF, WHO5_DEF, AUDIT_DEF, AWARE_DEF, DRUGS_7D, HEAVY_7D, BOX, B478, PACED, GROUND, THOUGHT],
+  // added after the first seeding: a migration adds them to servers that have the others
+  SUBSTANCE_KEYS: ["audit", "aware", "drug-use-7d", "heavy-drinking-7d"],
   REPROSCHEMA_CATALOG: REPROSCHEMA_CATALOG
 };

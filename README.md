@@ -28,7 +28,7 @@ Each practice runs Steady on its own server, and its patients' data stays there:
 
 ## Questionnaires and exercises
 
-Built in: **PHQ-9**, **GAD-7**, **PCL-5** and **WHO-5**, plus box breathing, 4-7-8 breathing, slow paced breathing, 5-4-3-2-1 grounding and a thought record.
+Built in: **PHQ-9**, **GAD-7**, **PCL-5** and **WHO-5**; for substance use, the **AUDIT**, the **AWARE** and single questions on drug use and heavy drinking in the past 7 days; plus box breathing, 4-7-8 breathing, slow paced breathing, 5-4-3-2-1 grounding and a thought record.
 
 Clinicians can also:
 
@@ -85,7 +85,8 @@ python3 fleet/test_edge_frontdoor.py         # vps1's front-door count
   through two beta rounds.
 - **Code, security and deployment: [OpenWorks IT](https://openworks.co.za).**
 - **Questionnaires:** PHQ-9 and GAD-7 (Spitzer, Williams, Kroenke and colleagues; Pfizer), PCL-5 (US National Center for
-  PTSD) and WHO-5 (World Health Organization). Their terms and the other third-party parts are in [NOTICE](NOTICE).
+  PTSD), WHO-5 and AUDIT (World Health Organization) and AWARE (Miller and Harris; CASAA). Their terms and the other
+  third-party parts are in [NOTICE](NOTICE).
 
 ## Reporting a security problem
 
