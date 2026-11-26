@@ -4,7 +4,7 @@ One small Linux server is enough for a practice: 1 vCPU, 1 GB RAM, 20 GB disk. H
 
 ## 1. Before you start
 
-- A domain name pointing at the server, e.g. `steady.yourpractice.co.za`
+- An address pointing at the server: for a practice OpenWorks hosts, always `<practice>.steadyapp.co.za` (e.g. `vr.steadyapp.co.za`), never the practice's own domain. The community forum opens inside Steady only from `*.steadyapp.co.za` (its `frame-ancestors`, `community/community.caddy`). Hosting it yourself, any domain works, without the community.
 - Docker with the Compose plugin
 - An Apple Developer account (for iPhone notifications)
 - A service-account key of OpenWorks IT's Firebase project (for Android notifications, step 3a)
