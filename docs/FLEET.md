@@ -165,7 +165,7 @@ gets a Docker network of its own (`fleet-edge`) that only it and Shap's Caddy ar
    sign-in bridge which code it runs (below).
 
 Other commands, the same way (in `/opt/steady-ops`): `passwd <name>`, `resettotp <name>` (a lost phone),
-`deluser <name>` (signs that person out at once).
+`deluser <name>`. Each signs that person out at once, wherever they were signed in.
 
 ## To do
 
@@ -309,10 +309,15 @@ uses.
 - Sign-in tries are limited to 8 per address (IPv6: per /64) per 15 minutes. Wrong
   authenticator codes after a right password are limited to 10 per name, so someone without the
   password can't lock you out. A code works only once.
-- A session lasts while its tab is open, for a screen that stays on: every page holds a hidden
-  frame (`/alive`, no scripts) that asks once a minute, and that keeps it going. It ends when you
-  sign out, when the browser closes (the cookie is for the browser session only), when the fleet
-  view restarts, or 10 minutes after the tab closed or the computer went to sleep.
+- The fleet view is a screen that stays on, so a sign-in lasts up to 7 days, then the password
+  and a code again. Every page holds a hidden frame (`/alive`, no scripts) that asks once a
+  minute; a computer asleep overnight, a tab the browser put to sleep, a browser restart or an
+  update of the fleet view doesn't sign you out, as long as the browser asked in the last 24
+  hours. It ends sooner when you sign out, when your password or authenticator is changed
+  (`passwd`, `resettotp`) or you're taken out (`deluser`). Sessions are kept in
+  `sessions.json` in the data folder (mode 600), which holds a hash of each cookie, never the
+  cookie: a copy of the file signs nobody in. To sign everyone out: stop the fleet view, delete
+  `sessions.json`, start it.
 - Pages aren't compressed (the Caddy site has no `encode`), so the form tokens can't be guessed
   through compression.
 - A leaked fleet key lets someone restart a server or install a release OpenWorks has already

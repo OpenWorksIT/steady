@@ -47,7 +47,7 @@ type App struct {
 
 func NewApp(store *Store, poller *Poller, trustedProxy string) *App {
 	t := template.Must(template.New("").ParseFS(webFS, "web/*.html"))
-	return &App{store: store, poller: poller, sessions: NewSessions(), limiter: NewLimiter(), pages: t, now: time.Now,
+	return &App{store: store, poller: poller, sessions: LoadSessions(store.path("sessions.json"), time.Now()), limiter: NewLimiter(), pages: t, now: time.Now,
 		hashing: make(chan struct{}, 2), hashWait: 10 * time.Second, proxy: trustedProxy, lookup: lookupOrigin, origins: &originCache{}}
 }
 
@@ -171,9 +171,10 @@ func (a *App) signedIn(h handler) http.HandlerFunc {
 			s = a.sessions.Get(c.Value, a.now())
 		}
 		if s != nil {
-			// someone removed from users.json is signed out at once
-			if u, err := a.store.User(s.User); err != nil || u == nil {
-				a.sessions.End(c.Value)
+			// someone removed from users.json, or given a new password or authenticator, is
+			// signed out at once
+			if u, err := a.store.User(s.User); err != nil || u == nil || u.Cred() != s.Cred {
+				a.sessions.End(c.Value, a.now())
 				s = nil
 			} else {
 				s.Dev = u.IsDev()
@@ -206,12 +207,12 @@ func (a *App) alive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if c, err := r.Cookie(cookieName); err == nil {
 		if s := a.sessions.Get(c.Value, a.now()); s != nil {
-			if u, err := a.store.User(s.User); err == nil && u != nil {
+			if u, err := a.store.User(s.User); err == nil && u != nil && u.Cred() == s.Cred {
 				w.Header().Set("Refresh", strconv.Itoa(aliveEvery))
 				w.Write([]byte("<!doctype html><title>alive</title>"))
 				return
 			}
-			a.sessions.End(c.Value)
+			a.sessions.End(c.Value, a.now())
 		}
 	}
 	w.Write([]byte("<!doctype html><title>signed out</title>"))
@@ -287,16 +288,18 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.limiter.Give(ipKey, now)
-	id, _ := a.sessions.New(u.Name, now)
-	// for this browser session only: closing the browser ends it (no MaxAge)
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: id, Path: "/", HttpOnly: true, Secure: !a.insecureCookie, SameSite: http.SameSiteStrictMode})
+	id, _ := a.sessions.New(u.Name, u.Cred(), now)
+	// kept through a browser restart, for as long as a sign-in can last (the server ends it
+	// sooner when the browser hasn't asked in sessionIdle)
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: id, Path: "/", HttpOnly: true, Secure: !a.insecureCookie, SameSite: http.SameSiteStrictMode,
+		MaxAge: int(sessionMax / time.Second)})
 	a.store.Audit(u.Name, ip, "signed in", "")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request, s *Session) {
 	if c, err := r.Cookie(cookieName); err == nil {
-		a.sessions.End(c.Value)
+		a.sessions.End(c.Value, a.now())
 	}
 	a.store.Audit(s.User, a.clientIP(r), "signed out", "")
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", HttpOnly: true, Secure: !a.insecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: -1})
