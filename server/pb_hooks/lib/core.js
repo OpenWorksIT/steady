@@ -454,10 +454,25 @@ function sortByAttention(list) {
  * Repeats and invite codes
  * ------------------------------------------------------------------ */
 
+/** How often an activity can repeat ("once" doesn't). */
+var REPEATS = ["once", "daily", "weekly", "fortnightly", "monthly", "quarterly"];
+
+/** Local midnight (as UTC ms) n calendar months after local midnight startMs; the 31st falls back to the month's last day. */
+function addMonths(startMs, n, tzOffsetMinutes) {
+  var off = (tzOffsetMinutes || 0) * 60000;
+  var d = new Date(startMs + off);
+  var y = d.getUTCFullYear(), m = d.getUTCMonth() + n;
+  var last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return Date.UTC(y, m, Math.min(d.getUTCDate(), last)) - off;
+}
+
 function nextAvailable(repeat, fromMs, tzOffsetMinutes) {
   var start = startOfDayUtc(fromMs, tzOffsetMinutes);
   if (repeat === "daily") return start + DAY;
   if (repeat === "weekly") return start + 7 * DAY;
+  if (repeat === "fortnightly") return start + 14 * DAY;
+  if (repeat === "monthly") return addMonths(start, 1, tzOffsetMinutes);
+  if (repeat === "quarterly") return addMonths(start, 3, tzOffsetMinutes);
   return null;
 }
 
@@ -695,6 +710,7 @@ module.exports = {
   sortByAttention: sortByAttention,
   rank: rank,
   nextAvailable: nextAvailable,
+  REPEATS: REPEATS,
   normaliseCode: normaliseCode,
   formatCode: formatCode,
   fromFhirQuestionnaire: fromFhirQuestionnaire,

@@ -398,21 +398,48 @@ function makeRuntime(opts = {}) {
   const makeUser = (fields) => makeRecord("users", Object.assign(
     ["clinician", "admin", "support"].indexOf(fields.role) >= 0 && !("confirmedAt" in fields) ? { confirmedAt: "2099-01-01 00:00:00.000Z" } : {}, fields));
 
-  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, mails, sandbox, opts, requestLog, tick: (ms) => { clock += ms; }, now: () => clock };
+  return { app, store, routes, crons, call, create, makeUser, makeRecord, pushes, audit, settings, hooks, mails, sandbox, opts, requestLog, tick: (ms) => { clock += ms; }, now: () => clock,
+    migration: (name) => run(path.join(ROOT, "pb_migrations", name)) };
 }
 
 /* ------------------------------------------------------------------ tests */
 
 const ENV = { STEADY_PUSHER_URL: "http://pusher:8090", STEADY_PUSHER_SECRET: "s3cret", STEADY_PRACTICE_NAME: "VR Demo Practice" };
 
-test("migrations create the schema and seed nine built-in instruments", () => {
+test("migrations create the schema and seed thirteen built-in instruments", () => {
   const rt = makeRuntime({ env: ENV });
   const names = rt.store.instruments.map((r) => r.getString("key"));
-  assert.equal(names.length, 9);
+  assert.equal(names.length, 13);
+  assert.ok(["audit", "aware", "drug-use-7d", "heavy-drinking-7d"].every((k) => names.includes(k)));
   assert.ok(names.includes("phq9") && names.includes("pcl5") && names.includes("thought-record"));
   const who5 = rt.store.instruments.find((r) => r.getString("key") === "who5");
   assert.equal(who5.getString("licenceStatus"), "review");
   assert.ok(JSON.parse(who5.getString("definition")).items.length === 5);
+});
+
+test("the substance measures reach a server seeded before them; the practice's changes stay", () => {
+  const rt = makeRuntime({ env: ENV });
+  const NEW = ["audit", "aware", "drug-use-7d", "heavy-drinking-7d"];
+  const byKey = (k) => rt.store.instruments.find((r) => r.getString("key") === k);
+  // a server from before: nine built-ins, the old repeats, WHO-5 confirmed and PHQ-9 archived by the practice
+  for (let i = rt.store.instruments.length - 1; i >= 0; i--) if (NEW.includes(rt.store.instruments[i].getString("key"))) rt.store.instruments.splice(i, 1);
+  const repeat = rt.app.findCollectionByNameOrId("assignments").fields.getByName("repeat");
+  repeat.values = ["once", "daily", "weekly"];
+  byKey("who5").set("licenceStatus", "cleared");
+  byKey("phq9").set("active", false);
+  rt.migration("1763000000_steady_substance_measures.js");
+  assert.equal(rt.store.instruments.length, 13);
+  for (const k of NEW) {
+    assert.equal(byKey(k).getString("licenceStatus"), "cleared", k);
+    assert.equal(byKey(k).getBool("builtin"), true, k);
+  }
+  assert.equal(byKey("who5").getString("licenceStatus"), "cleared");
+  assert.equal(byKey("phq9").getBool("active"), false);
+  assert.deepEqual(Array.from(rt.app.findCollectionByNameOrId("assignments").fields.getByName("repeat").values),
+    ["once", "daily", "weekly", "fortnightly", "monthly", "quarterly"]);
+  // run again: nothing added twice
+  rt.migration("1763000000_steady_substance_measures.js");
+  assert.equal(rt.store.instruments.length, 13);
 });
 
 test("full flow: invite, join, check-in, assign, complete, notify", () => {
