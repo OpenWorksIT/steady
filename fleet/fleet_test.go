@@ -1513,9 +1513,21 @@ func TestOneAddressOnePractice(t *testing.T) {
 	if err := communityCmd(app.store, []string{short, "people"}, strings.NewReader(""), &out); err != nil || !strings.Contains(out.String(), "(also approved at test: signs in through neither until one removes it)") {
 		t.Fatalf("people: %v\n%s", err, out.String())
 	}
-	// a practice whose only address is shared is left off the list altogether
+	// a practice whose only address is shared is left off the list altogether; OpenWorks' own
+	// server stays on it with nobody of its own (OpenWorks' addresses come in through it)
 	err = app.store.withCommunity(func(cp *CommunityPractices) (bool, error) {
 		cp.Practices["test"].Approved = []string{"kempie@vrpsych.co.za"}
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 2 || bridge[0].ID != short || strings.Join(bridge[0].Emails, ",") != "two@vrpsych.co.za" || bridge[1].ID != "test" || len(bridge[1].Emails) != 0 {
+		t.Fatalf("bridge file: %+v", bridge)
+	}
+	err = app.store.withCommunity(func(cp *CommunityPractices) (bool, error) {
+		cp.Practices["test"].OpenWorks = false
 		return true, nil
 	})
 	if err != nil {
@@ -1617,5 +1629,43 @@ func TestJump(t *testing.T) {
 		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
 			t.Fatalf("jump(%d, %d, %d) = %q, want %q", c.day, c.week, c.floor, got, c.want)
 		}
+	}
+}
+
+// OpenWorks' own server (--openworks) stays on the bridge's list with nobody approved there:
+// OpenWorks' addresses (config.json) come in through it, Steady's developer among them (1.3.3).
+// Its list is written as [], never null, and "Nobody is approved" isn't said for it.
+func TestOpenWorksServerOnTheBridgeWithNobodyApproved(t *testing.T) {
+	app, _, steady, _, dir := setup(t)
+	t.Setenv("FLEET_ACTOR", "tiaan")
+	writeJSON(dir+"/community.json", Community{URL: "https://community.steadyapp.co.za", StatsKey: strings.Repeat("5a", 32), Signin: "https://signin.steadyapp.co.za"})
+	steady.mu.Lock()
+	steady.comm = map[string]any{"on": true, "fleet": true, "members": []any{}}
+	steady.mu.Unlock()
+	var out strings.Builder
+	if err := communityCmd(app.store, []string{"127.0.0.1", "on", "--openworks", "--yes"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Nobody is approved") {
+		t.Fatalf("said for OpenWorks' own server:\n%s", out.String())
+	}
+	raw, err := os.ReadFile(dir + "/bridge/practices.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bridge []bridgePractice
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 1 || !bridge[0].Support || bridge[0].Emails == nil || len(bridge[0].Emails) != 0 || strings.Contains(string(raw), "null") {
+		t.Fatalf("bridge file: %s", raw)
+	}
+	// the same server without --openworks, nobody approved: off the list, as any practice
+	out.Reset()
+	if err := communityCmd(app.store, []string{"127.0.0.1", "on", "--yes"}, strings.NewReader(""), &out); err != nil {
+		t.Fatal(err)
+	}
+	bridge = nil
+	readJSON(dir+"/bridge/practices.json", &bridge)
+	if len(bridge) != 0 || !strings.Contains(out.String(), "Nobody is approved") {
+		t.Fatalf("bridge file: %+v\n%s", bridge, out.String())
 	}
 }

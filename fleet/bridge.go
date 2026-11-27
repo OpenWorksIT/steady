@@ -94,7 +94,8 @@ func (s *Store) CommunityPractices() (*CommunityPractices, error) {
 
 // writeBridge: the bridge's list, in its own format, sorted so it changes only when something
 // does. The bridge rereads it within seconds. A practice with nobody approved yet is left out:
-// nobody could come in through it, and the bridge refuses a practice without addresses.
+// nobody could come in through it, and the bridge refuses a practice without addresses. OpenWorks'
+// own server (--openworks) is the exception: OpenWorks' addresses come in through it.
 //
 // An address approved at two practices goes on neither's list: the bridge can't tell which
 // practice the person belongs to, and either could then sign them in. approve refuses this, so
@@ -119,8 +120,11 @@ func (s *Store) writeBridge(cp *CommunityPractices) error {
 				emails = append(emails, e)
 			}
 		}
-		if len(emails) == 0 {
+		if len(emails) == 0 && !p.OpenWorks {
 			continue
+		}
+		if emails == nil {
+			emails = []string{}
 		}
 		sort.Strings(emails)
 		out = append(out, bridgePractice{ID: p.ID, Name: p.Name, URL: p.URL, Key: p.Key, Emails: emails, Groups: p.Groups, Support: p.OpenWorks})

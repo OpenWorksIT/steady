@@ -70,9 +70,16 @@ func main() {
 		}
 		fmt.Printf("%s (and the fleet view's %s) is fine: the forum %s, %d practice(s):\n", path, fleetPath, cfg.Forum, len(cfg.Practices))
 		for _, p := range cfg.Practices {
-			fmt.Printf("  %-8s %s  %s  (%s)\n", p.ID, p.Name, p.URL, strings.Join(p.Emails, ", "))
+			who := strings.Join(p.Emails, ", ")
+			if who == "" {
+				who = "OpenWorks' own addresses only"
+			}
+			fmt.Printf("  %-8s %s  %s  (%s)\n", p.ID, p.Name, p.URL, who)
 		}
 		fmt.Printf("  OpenWorks support: %s\n", strings.Join(cfg.OpenWorks, ", "))
+		if len(cfg.Developer) > 0 {
+			fmt.Printf("  Steady's developer, in every area clinicians see: %s\n", strings.Join(cfg.Developer, ", "))
+		}
 		support := []string{}
 		for _, p := range cfg.Practices {
 			if p.Support {

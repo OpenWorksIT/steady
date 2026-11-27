@@ -545,8 +545,8 @@ func TestSettingsAreChecked(t *testing.T) {
 		"the clinicians group":  func(m map[string]any) { practice(m, 0)["groups"] = []string{"clinicians"} },
 		"the admins' group":     func(m map[string]any) { practice(m, 0)["groups"] = []string{"practice-admins"} },
 		"a group of admins":     func(m map[string]any) { practice(m, 0)["groups"] = []string{"admins x"} },
-		"no address list":       func(m map[string]any) { delete(practice(m, 1), "emails") },
-		"an empty list":         func(m map[string]any) { practice(m, 1)["emails"] = []string{} },
+		"no address list":       func(m map[string]any) { delete(practice(m, 0), "emails") },
+		"an empty list":         func(m map[string]any) { practice(m, 0)["emails"] = []string{} },
 		"a bad domain":          func(m map[string]any) { practice(m, 0)["emails"] = []string{"@nodot"} },
 		"a bad address":         func(m map[string]any) { practice(m, 0)["emails"] = []string{"not an address"} },
 		"a public mail domain":  func(m map[string]any) { practice(m, 1)["emails"] = []string{"@gmail.com"} },
@@ -747,5 +747,91 @@ func TestPracticesFromTheFleet(t *testing.T) {
 	// without a fleet path, config.json must still list a practice (as before)
 	if _, err = NewConfigFile(writeConfig(t, m)).Get(); err == nil {
 		t.Fatal("config.json with no practice and no fleet file was accepted")
+	}
+}
+
+// OpenWorks' own server as the fleet view runs it (1.3.3): Steady's developer is its master
+// clinician, so the fleet view approved him there, and he is on config.json's OpenWorks and
+// developer lists too. That isn't a clash: from that server he comes in only as himself. The
+// server stays in when nobody else is on its list, or nobody at all: OpenWorks' addresses come
+// in through it. Anywhere else his address is still one list too many.
+func TestSteadysDeveloperOnTheFleetsOwnServer(t *testing.T) {
+	dir := t.TempDir()
+	fleetFile := filepath.Join(dir, "practices.json")
+	write := func(v any) {
+		b, _ := json.Marshal(v)
+		os.WriteFile(fleetFile, b, 0o600)
+	}
+	vr := map[string]any{"id": "vr", "name": "VR Clinical Psychology", "url": "https://vr.example.org", "key": vrKey, "emails": []string{"kempie@vrpsych.example"}}
+	test := func(emails ...string) map[string]any {
+		return map[string]any{"id": "test", "name": "OpenWorks server", "url": "https://test.example.org", "key": testKey, "emails": emails, "support": true}
+	}
+	m := settings()
+	m["openworks"] = []string{"it@openworks.example", "support@openworks.example"}
+	m["developer"] = []string{"IT@openworks.example"}
+	m["practices"] = []map[string]any{}
+	cfgPath := writeConfig(t, m)
+	ask := forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login")
+	for name, tc := range map[string]struct {
+		list  []string
+		aside []string
+	}{
+		"the developer approved there":   {[]string{"it@openworks.example"}, nil},
+		"nobody approved there":          {[]string{}, nil},
+		"another OpenWorks address only": {[]string{"support@openworks.example"}, []string{`support@openworks.example: on practice "test" and OpenWorks support`}},
+	} {
+		write([]map[string]any{vr, test(tc.list...)})
+		f := NewConfigFile(cfgPath, fleetFile)
+		c, err := f.Get()
+		if err != nil || f.FleetErr() != nil || len(c.Practices) != 2 {
+			t.Fatalf("%s: %v %v %v", name, c, err, f.FleetErr())
+		}
+		if got := f.SetAside(); strings.Join(got, "\n") != strings.Join(tc.aside, "\n") {
+			t.Fatalf("%s: set aside %q", name, got)
+		}
+		r := &rig{t: t, clock: time.Now()}
+		r.app = NewApp(f, NewEntries(2*time.Minute, 5000, 20), "")
+		r.app.now = func() time.Time { return r.clock }
+		v := forumGets(t, r.get(ask, r.enter(testKey, r.note("clinician", "it@openworks.example"))))
+		if v.Get("add_groups") != "openworks,developer" || v.Get("title") != "OpenWorks IT" {
+			t.Fatalf("%s: developer: %v", name, v)
+		}
+		// and the server's frame may still open the bridge
+		if w := r.get("/"); !strings.Contains(w.Header().Get("Content-Security-Policy"), "https://test.example.org") {
+			t.Fatalf("%s: the test server isn't allowed to frame the bridge: %q", name, w.Header().Get("Content-Security-Policy"))
+		}
+	}
+	// VR's list naming him is still a clash: it comes off VR's list (and, as two of the fleet
+	// view's lists, off the test server's too, where he needs no list to come in)
+	vr["emails"] = []string{"kempie@vrpsych.example", "it@openworks.example"}
+	write([]map[string]any{vr, test("it@openworks.example")})
+	f := NewConfigFile(cfgPath, fleetFile)
+	c, err := f.Get()
+	if err != nil || len(c.Practices) != 2 || strings.Join(f.SetAside(), "\n") != `it@openworks.example: on practice "vr" and OpenWorks support and practice "test"`+"\n"+`it@openworks.example: on practice "test" and practice "vr"` {
+		t.Fatalf("on VR's list too: %v %q", err, f.SetAside())
+	}
+	// a practice that isn't OpenWorks' own and lists nobody is left out, as before
+	vr["emails"] = []string{"kempie@vrpsych.example"}
+	write([]map[string]any{vr, {"id": "koos", "name": "Koos", "url": "https://koos.example.org", "key": strings.Repeat("k", 40), "emails": []string{}}})
+	f = NewConfigFile(cfgPath, fleetFile)
+	if c, err = f.Get(); err != nil || f.FleetErr() != nil || len(c.Practices) != 1 || c.Practices[0].ID != "vr" {
+		t.Fatalf("an empty list at a practice: %v %v %v", c, err, f.FleetErr())
+	}
+	// the same in config.json by hand: the developer on the support server's list is fine, on
+	// another practice's it isn't, and only the support server may list nobody
+	for name, tc := range map[string]struct {
+		practices []map[string]any
+		bad       string
+	}{
+		"the developer at the support server": {[]map[string]any{test("it@openworks.example")}, ""},
+		"an empty support server":             {[]map[string]any{test()}, ""},
+		"the developer at VR":                 {[]map[string]any{{"id": "vr", "name": "VR", "url": "https://vr.example.org", "key": vrKey, "emails": []string{"it@openworks.example"}}, test()}, "both list it@openworks.example"},
+		"an empty practice":                   {[]map[string]any{{"id": "koos", "name": "Koos", "url": "https://koos.example.org", "key": strings.Repeat("k", 40), "emails": []string{}}}, `"emails" must list`},
+	} {
+		m["practices"] = tc.practices
+		_, err := NewConfigFile(writeConfig(t, m)).Get()
+		if (tc.bad == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tc.bad)) {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }
