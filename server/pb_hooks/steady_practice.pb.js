@@ -801,6 +801,22 @@ routerAdd("POST", "/api/steady/ops/accounts", (e) => {
   } else if (b.name) {
     u.set("name", s.core.str(b.name, 80));
   }
+  // a staff member's address, changed by OpenWorks on the server (accounts.sh set-email): as in
+  // Settings > Change email, but without a code to the new address, so only from the server
+  let movedFrom = "";
+  if (!pw && b.newEmail !== undefined && b.newEmail !== null && String(b.newEmail) !== "") {
+    const next = s.core.str(b.newEmail, 200).toLowerCase().trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(next)) throw s.badRequest("That isn't an email address.");
+    if (next !== u.email()) {
+      let other = null;
+      try { other = $app.findAuthRecordByEmail("users", next); } catch (_) { other = null; }
+      if (other) throw s.badRequest("That address belongs to another account.");
+      movedFrom = u.email();
+      u.setEmail(next);
+      u.setVerified(true);
+      u.set("emailChange", null);
+    }
+  }
   if (typeof b.master === "boolean") {
     if (b.master && u.getString("role") !== "clinician") throw s.badRequest("Only a clinician can be the master clinician.");
     u.set("master", b.master);
@@ -809,7 +825,54 @@ routerAdd("POST", "/api/steady/ops/accounts", (e) => {
   if (typeof b.active === "boolean") u.set("active", b.active);
   $app.save(u);
   s.audit($app, null, pw ? "ops.account.create" : "ops.account.update", u.getString("role") + ":" + u.id, "");
+  if (movedFrom) {
+    s.audit($app, null, "ops.account.email-changed", u.getString("role") + ":" + u.id, "");
+    const M = require(`${__hooks}/lib/mail.js`);
+    const mask = require(`${__hooks}/lib/devices.js`).mask;
+    M.send($app, movedFrom, "Steady: your email address was changed", [
+      "Hi " + (u.getString("name") || "there") + ",",
+      "",
+      "OpenWorks IT changed the email address for your Steady account to " + mask(u.email()) + " on " + new Date(s.nowMs()).toUTCString() + ". Sign-in codes and notices now go there.",
+      "",
+      "If you didn't ask for this, contact OpenWorks IT support."
+    ].join("\n") + M.FOOTER);
+  }
   return e.json(200, { account: s.personRow($app, u, null), temporaryPassword: pw });
+});
+
+// An OpenWorks support account removed for good (accounts.sh remove-support). Its record stays,
+// so the access log still says who did what: stopped, signed out everywhere, its devices
+// unlinked, no password, authenticator or address of its own (its address is free for another
+// account). Only support accounts: anyone else's access is stopped (set <email> active off).
+routerAdd("POST", "/api/steady/ops/accounts/remove-support", (e) => {
+  const s = require(`${__hooks}/lib/server.js`);
+  const x = require(`${__hooks}/lib/practice.js`);
+  x.opsGuard(e);
+  const email = s.core.str(s.body(e).email, 200).toLowerCase().trim();
+  let u = null;
+  try { u = $app.findAuthRecordByEmail("users", email); } catch (_) { u = null; }
+  if (!u) throw new NotFoundError("No account with that email.");
+  if (u.getString("role") !== "support") {
+    throw s.badRequest("Only OpenWorks support accounts are removed this way. Stop anyone else's access instead: set <email> active off.");
+  }
+  const unlinked = require(`${__hooks}/lib/devices.js`).unlinkAll($app, u);
+  u = $app.findRecordById("users", u.id);
+  u.set("active", false);
+  u.set("name", "Removed OpenWorks support");
+  u.setEmail("removed-" + u.id + "@steady.invalid");
+  u.setVerified(false);
+  u.setPassword($security.randomString(48));
+  u.set("totpSecret", "");
+  u.set("totpEnabledAt", "");
+  u.set("recoveryCodes", []);
+  u.set("resetCode", null);
+  u.set("emailChange", null);
+  u.set("emailCodeNeeded", false);
+  u.set("mustChangePassword", true);
+  u.refreshTokenKey();
+  $app.save(u);
+  s.audit($app, null, "ops.account.remove-support", "support:" + u.id + (unlinked ? " devices:" + unlinked : ""), "");
+  return e.json(200, { was: email, account: s.personRow($app, u, null) });
 });
 
 routerAdd("POST", "/api/steady/ops/accounts/reset", (e) => {

@@ -3203,3 +3203,54 @@ test("an address's trail: only for one that touched a tripwire, never what an ac
   // another address that touched nothing still isn't found
   assert.equal(trail("198.51.100.99").status, 404);
 });
+
+test("ops: rename and move a staff account, and remove an OpenWorks support account, from the server only", () => {
+  const rt = makeRuntime({ env: Object.assign({}, ENV, { STEADY_SUPERUSER_API: "open", STEADY_SMTP_HOST: "mail.test" }) });
+  const su = { isSuperuser: () => true, getString: () => "", id: "" };
+  const ops = (path, body, auth) => rt.call("POST", "/api/steady/ops/accounts" + path, { auth: auth || su, body });
+  const master = rt.makeUser({ name: "Test Clinician", role: "clinician", master: true, serverAdmin: true, active: true, email: "test@openworks.co.za" });
+  const sup = rt.makeUser({ name: "Tiaan vd Merwe", role: "support", active: true, email: "tiaan@openworks.co.za" });
+  const pat = rt.makeUser({ name: "Pat", role: "patient", active: true, clinician: master.id, email: "p@example.org" });
+
+  // the app can't: these are the server's own tools
+  assert.equal(ops("", { email: "test@openworks.co.za", name: "X" }, master).status, 404);
+  assert.equal(ops("/remove-support", { email: "tiaan@openworks.co.za" }, master).status, 404);
+  // an address another account has can't be taken
+  assert.equal(ops("", { email: "test@openworks.co.za", newEmail: "tiaan@openworks.co.za" }).status, 400);
+  assert.equal(ops("", { email: "test@openworks.co.za", newEmail: "not an address" }).status, 400);
+  // only OpenWorks support accounts are removed; anyone else is stopped instead
+  assert.equal(ops("/remove-support", { email: "test@openworks.co.za" }).status, 400);
+  assert.equal(ops("/remove-support", { email: "p@example.org" }).status, 400);
+  assert.equal(ops("/remove-support", { email: "nobody@example.org" }).status, 404);
+
+  const gone = ops("/remove-support", { email: "Tiaan@OpenWorks.co.za" });
+  assert.equal(gone.status, 200);
+  assert.equal(gone.data.was, "tiaan@openworks.co.za");
+  const s = rt.store.users.find((u) => u.id === sup.id);
+  assert.ok(s, "the record stays, so the access log still says who did what");
+  assert.equal(s.getBool("active"), false);
+  assert.equal(s.getString("name"), "Removed OpenWorks support");
+  assert.equal(s.email(), "removed-" + sup.id + "@steady.invalid");
+  assert.equal(s.getString("totpSecret"), "");
+
+  // its address is free: the master clinician moves to it, keeps the master and server-admin flags
+  const moved = ops("", { email: "test@openworks.co.za", newEmail: "Tiaan@OpenWorks.co.za" });
+  assert.equal(moved.status, 200, JSON.stringify(moved.data));
+  assert.equal(moved.data.account.email, "tiaan@openworks.co.za");
+  const renamed = ops("", { email: "tiaan@openworks.co.za", name: "Tiaan vd Merwe" });
+  assert.equal(renamed.status, 200);
+  const m = rt.store.users.find((u) => u.id === master.id);
+  assert.equal(m.getString("name"), "Tiaan vd Merwe");
+  assert.equal(m.email(), "tiaan@openworks.co.za");
+  assert.equal(m.getBool("master"), true);
+  assert.equal(m.getBool("serverAdmin"), true);
+  // the old address is told, without a code
+  const told = rt.mails.find((x) => x.to[0].address === "test@openworks.co.za");
+  assert.ok(told && /changed the email address/.test(told.text) && !/\d{6}/.test(told.text), "the old address is told");
+  // in the access log
+  const actions = rt.store.auditlog.map((a) => a.getString("action"));
+  assert.ok(actions.includes("ops.account.remove-support") && actions.includes("ops.account.email-changed"), actions.join(","));
+  // a patient's address isn't changed this way
+  assert.equal(ops("", { email: "p@example.org", newEmail: "q@example.org" }).status, 400);
+  assert.equal(rt.store.users.find((u) => u.id === pat.id).email(), "p@example.org");
+});
