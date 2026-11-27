@@ -220,7 +220,7 @@ func (a *App) discourse(w http.ResponseWriter, r *http.Request) {
 	external := p.ID + ":" + n.Sub
 	add, remove := groupsFor(n.Role, strings.ToLower(n.Email), p, cfg)
 	title := p.Name
-	if n.Role == "support" {
+	if n.Role == "support" || developerHere(p, cfg, strings.ToLower(n.Email)) {
 		title = "OpenWorks IT"
 	}
 	out := url.Values{
@@ -263,7 +263,7 @@ func (a *App) checkNote(n note, cfg *Config, p *Practice) (title, text, why stri
 	case !validEmail(email):
 		return "This email address can't be used", "Your Steady account's email address can't be used in the community. Ask your practice to check it.", "note email"
 	// one list per practice covers its staff: clinicians and practice administrators
-	case (n.Role == "clinician" || n.Role == "admin") && !listed(p.Emails, email):
+	case (n.Role == "clinician" || n.Role == "admin") && !listed(p.Emails, email) && !(n.Role == "clinician" && developerHere(p, cfg, email)):
 		return "This address isn't on the community's list", "Your email address isn't one " + p.Name + " has listed for the community. Ask the community lead to add it.", "email not on the practice's list"
 	case n.Role == "support" && !p.Support:
 		return forWhom, "OpenWorks support comes in through OpenWorks' own server, not " + p.Name + "'s.", "support from a practice not marked for it"
@@ -277,6 +277,14 @@ func (a *App) checkNote(n note, cfg *Config, p *Practice) (title, text, why stri
 
 const forWhom = "The community is for clinicians, practice administrators and OpenWorks IT"
 
+// developerHere: Steady's developer (the "developer" list) signing in from the server marked
+// support, OpenWorks' own test server, where he is a clinician too (its master clinician, so one
+// account tests Steady and talks in the forum). He comes in as himself, OpenWorks IT, never as
+// that practice's clinician; from any other practice's server his address is refused.
+func developerHere(p *Practice, cfg *Config, email string) bool {
+	return p.Support && listed(cfg.Developer, email)
+}
+
 // groupsFor: clinicians join clinicians and their practice's own groups; practice
 // administrators join practice-admins only (it sees the Steady manual, nothing else); OpenWorks
 // support joins openworks, and Steady's developer (an address on the "developer" list) joins
@@ -286,7 +294,11 @@ const forWhom = "The community is for clinicians, practice administrators and Op
 func groupsFor(role, email string, p *Practice, cfg *Config) (add, remove []string) {
 	switch role {
 	case "clinician":
-		add = append([]string{"clinicians"}, p.Groups...)
+		if developerHere(p, cfg, email) {
+			add = []string{"openworks", "developer"}
+		} else {
+			add = append([]string{"clinicians"}, p.Groups...)
+		}
 	case "admin":
 		// never clinicians or the practice's own groups: those are for its clinicians
 		add = []string{"practice-admins"}

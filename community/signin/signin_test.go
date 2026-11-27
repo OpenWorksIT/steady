@@ -202,6 +202,44 @@ func TestSteadysDeveloperJoinsDeveloperToo(t *testing.T) {
 	}
 }
 
+// On the test server (marked support) Steady's developer is its master clinician too: one
+// account to test Steady with and to talk in the forum. He still comes in as himself, OpenWorks
+// IT with openworks and developer, never as the test practice's clinician; the same address as a
+// clinician from any other practice's server, or as a practice administrator, is refused.
+func TestSteadysDeveloperAsTheTestServersClinician(t *testing.T) {
+	m := settings()
+	m["developer"] = []string{"it@openworks.example"}
+	r := newRig(t, m)
+	ask := forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login")
+	v := forumGets(t, r.get(ask, r.enter(testKey, r.note("clinician", "it@openworks.example"))))
+	if v.Get("add_groups") != "openworks,developer" || v.Get("remove_groups") != "clinicians,practice-admins,practice-vr" ||
+		v.Get("title") != "OpenWorks IT" || v.Get("external_id") != "test:abcdefghij12345" {
+		t.Fatalf("developer as the test server's clinician: %v", v)
+	}
+	for name, n := range map[string]struct {
+		key  string
+		note note
+	}{
+		"as VR's clinician":                  {vrKey, r.note("clinician", "it@openworks.example")},
+		"as the test server's administrator": {testKey, r.note("admin", "it@openworks.example")},
+	} {
+		req := httptest.NewRequest("GET", steadySays(n.key, n.note), nil)
+		w := httptest.NewRecorder()
+		r.app.Routes().ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s: %d, want refused", name, w.Code)
+		}
+	}
+	// not on the developer list: the same clinician sign-in is refused as before
+	r = newRig(t, settings())
+	req := httptest.NewRequest("GET", steadySays(testKey, r.note("clinician", "it@openworks.example")), nil)
+	w := httptest.NewRecorder()
+	r.app.Routes().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("without the developer list: %d, want refused", w.Code)
+	}
+}
+
 func TestMovingPracticeLeavesTheOldPracticesGroup(t *testing.T) {
 	r := newRig(t, settings())
 	c := r.enter(testKey, r.note("clinician", "tester@gmail.com"))
