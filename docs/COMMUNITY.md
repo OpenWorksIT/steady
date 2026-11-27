@@ -131,6 +131,7 @@ code. The bridge keeps nothing: a sign-in under way is held in memory for two mi
 | Practice administrator, address on the practice's list | `practice-admins` only: the Steady manual |
 | OpenWorks support, through the server marked `support`, address on the OpenWorks list | `openworks` only |
 | The same, address also on the `developer` list (Tiaan) | `openworks` and `developer` |
+| Clinician on the server marked `support` (the test server), address on the `developer` list (Tiaan, its master clinician) | `openworks` and `developer`, as himself: never the test practice's clinician |
 | Patients | No Community tab, and refused |
 | Staff without two-step sign-in | Refused until they set it up in Steady |
 
@@ -256,8 +257,12 @@ sudo chown 65532:65532 /var/lib/steady-signin/config.json && sudo chmod 600 /var
   "Email addresses" above).
 - `openworks`: OpenWorks IT's support addresses, one by one.
 - `developer`: of those, the one that is also a member of the whole community by name: Steady's
-  developer, Tiaan. It must be on `openworks` too, so it still comes in only as OpenWorks support
-  through the server marked `support`. Take it off and his next sign-in leaves `developer`.
+  developer, Tiaan. It must be on `openworks` too, and comes in only through the server marked
+  `support`: as an OpenWorks support account there, or as a clinician there (the test server's
+  master clinician, so one account tests Steady and talks in the forum). Either way the forum
+  gets him as himself, "OpenWorks IT" in `openworks` and `developer`, never as the test
+  practice's clinician; the same address from any other server is refused. Take it off and his
+  next sign-in leaves `developer`.
 - `support` (one server only): OpenWorks support comes in through this one, a server OpenWorks
   alone runs (the test server). Anyone who can make a support account there could come in as
   OpenWorks, so never a practice's.
