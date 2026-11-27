@@ -130,10 +130,20 @@ sudo ./accounts.sh add-support "OpenWorks support" support@openworks.co.za      
 sudo ./accounts.sh list                         # who has which role, and who still lacks two-step sign-in
 sudo ./accounts.sh reset <email> [--full]       # a temporary password (--full: also the authenticator)
 sudo ./accounts.sh set <email> master|server-admin|active on|off   # "active on" unlocks a locked account
+sudo ./accounts.sh rename <email> "Dr Thandi Example"   # a staff member's name; their flags stay
+sudo ./accounts.sh set-email <email> <new email>   # a staff member's address; the old one is told
+sudo ./accounts.sh remove-support <email>       # an OpenWorks support account, for good (see below)
 sudo ./accounts.sh audit --patient <id>         # who looked at a patient's data (POPIA access requests)
 sudo ./accounts.sh check                        # proxy header, rate limits, dashboard closed, operator agreement
 sudo ./accounts.sh demo-patients <email> [--remove]   # three fictional patients for the RADR tab
 ```
+
+`add-clinician` and the others, run on an address that already has an account, set its name and
+its flags (`--master`, `--server-admin`): a flag left off is taken off. To change only a name, use
+`rename`. `remove-support` keeps the account's record, so the access log still says who did what,
+but stops it for good: signed out everywhere, devices unlinked, no password, authenticator or
+address of its own, and its address free for another account. Anyone else's access is stopped
+with `set <email> active off`, in the app by the master clinician, or here.
 
 Each run makes a superuser that exists only for that command, signs in from inside the
 container, and deletes it again. New accounts and resets print a **temporary password**: give it

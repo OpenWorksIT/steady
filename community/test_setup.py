@@ -448,15 +448,99 @@ class TeaRoomTest(unittest.TestCase):
             api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
             spec = next(c for c in setup.CATEGORIES if c["slug"] == "tea-room")
             with redirect_stdout(io.StringIO()):
-                ids = setup.ensure_categories(api, [spec], {"clinicians"})
+                ids = setup.ensure_categories(api, [spec], {"clinicians", "developer"})
             self.assertEqual(ids, {"tea-room": 4})
             put = next(b for m, r, b in calls if m == "PUT" and r == "/categories/4.json")
-            self.assertEqual((put["name"], put["slug"], put["permissions"]), ("Tea room", "tea-room", {"clinicians": setup.FULL}))
+            self.assertEqual((put["name"], put["slug"], put["permissions"]),
+                             ("Tea room", "tea-room", {"clinicians": setup.FULL, "developer": setup.FULL}))
             post = next(b for m, r, b in calls if m == "PUT" and r == "/posts/20.json")
             self.assertEqual(post["post"]["raw"], spec["description"])
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+class DeveloperTest(unittest.TestCase):
+    """Steady's developer, by name: every area clinicians see, never a practice's own, and
+    OpenWorks' other accounts still only their four."""
+
+    def test_developer_sees_what_clinicians_see(self):
+        self.assertIn("developer", {g["name"] for g in setup.GROUPS})
+        self.assertIn("developer", setup.CLOSED_ELSEWHERE)
+        for c in setup.CATEGORIES:
+            if "openworks" in c["permissions"]:
+                self.assertNotIn("developer", c["permissions"], c["slug"])   # he's in openworks there
+            else:
+                self.assertEqual(c["permissions"], {"clinicians": setup.FULL, "developer": setup.FULL}, c["slug"])
+                self.assertIn("Tiaan", c["description"], c["slug"])
+        open_to_openworks = {c["slug"] for c in setup.CATEGORIES if "openworks" in c["permissions"]}
+        self.assertEqual(open_to_openworks, {"announcements", "manual", "science", "steady-development"})
+        self.assertIn("Nobody else at OpenWorks has that access", setup.WELCOME_RAW)
+        self.assertNotIn("reaches nobody", setup.WELCOME_RAW)
+
+
+class DescriptionsAndWelcomeTest(unittest.TestCase):
+    """A category's description and the welcome post follow their text with --update-topics, and
+    are only reported as differing without it (an admin may have edited them in the forum)."""
+
+    class Fake:
+        def __init__(self):
+            self.lock = threading.Lock()
+            self.about = "Clinicians only."
+            self.welcome = "an older welcome"
+            self.writes = []
+
+        def handle(self, method, path, body, ctype):
+            route = urlparse(path).path
+            if method != "GET":
+                self.writes.append((method, route))
+            spec = next(c for c in setup.CATEGORIES if c["slug"] == "clinical-practice")
+            if route == "/site.json":
+                return {"uncategorized_category_id": 1, "categories": [
+                    {"id": 7, "name": "Clinical practice", "slug": "clinical-practice", "description_text": self.about}]}
+            if route == "/c/7/show.json":
+                return {"category": {"topic_url": "/t/about-clinical-practice/70",
+                                     "group_permissions": [{"group_name": g, "permission_type": v} for g, v in spec["permissions"].items()]}}
+            if route == "/t/about-clinical-practice/70.json":
+                return {"post_stream": {"posts": [{"id": 700}]}}
+            if route == "/posts/700.json" and method == "PUT":
+                self.about = json.loads(body)["post"]["raw"]
+                return {}
+            if route == "/c/announcements/5.json":
+                return {"topic_list": {"topics": [{"id": 50, "title": setup.WELCOME_TITLE}]}}
+            if route == "/t/50.json":
+                return {"post_stream": {"posts": [{"id": 500}]}}
+            if route == "/posts/500.json":
+                if method == "PUT":
+                    self.welcome = json.loads(body)["post"]["raw"]
+                return {"raw": self.welcome}
+            return 404
+
+    def run_both(self, f, update):
+        srv = serve(f)
+        try:
+            api = setup.Discourse(f"http://127.0.0.1:{srv.server_address[1]}", "k", "system", False)
+            spec = next(c for c in setup.CATEGORIES if c["slug"] == "clinical-practice")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                setup.ensure_categories(api, [spec], {"clinicians", "developer"}, update=update)
+                setup.ensure_welcome(api, 5, update=update)
+            return out.getvalue()
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_left_without_update_and_set_with_it(self):
+        f = self.Fake()
+        out = self.run_both(f, update=False)
+        self.assertEqual((f.about, f.welcome), ("Clinicians only.", "an older welcome"))
+        self.assertEqual(out.count("--update-topics replaces it"), 2, out)
+        out = self.run_both(f, update=True)
+        spec = next(c for c in setup.CATEGORIES if c["slug"] == "clinical-practice")
+        self.assertEqual((f.about, f.welcome), (spec["description"], setup.WELCOME_RAW))
+        f.writes.clear()
+        out = self.run_both(f, update=True)
+        self.assertEqual(f.writes, [], out)   # the same again: nothing to write
 
 
 class SidebarTest(unittest.TestCase):

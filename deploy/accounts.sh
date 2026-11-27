@@ -7,10 +7,10 @@
 #   sudo ./accounts.sh add-clinician "Dr Thandi Example" thandi@yourpractice.co.za --master
 #   sudo ./accounts.sh add-admin "Front desk" reception@yourpractice.co.za       # practice admin
 #   sudo ./accounts.sh add-support "OpenWorks support" support@openworks.co.za # no patients
-#   sudo ./accounts.sh reset thandi@yourpractice.co.za [--full]   # temporary password; --full also
-#                                         # clears the authenticator (lost phone); devices unlink
-#   sudo ./accounts.sh set thandi@yourpractice.co.za master|server-admin|active on|off
-#                                         # "active on" unlocks an account its owner locked
+#   sudo ./accounts.sh reset thandi@yourpractice.co.za [--full]   # temporary password; --full: lost phone
+#   sudo ./accounts.sh set thandi@yourpractice.co.za master|server-admin|active on|off   # on: unlocks
+#   sudo ./accounts.sh rename <email> "Dr Thandi Example"  |  set-email <email> <new email>   # staff
+#   sudo ./accounts.sh remove-support support@openworks.co.za   # for good; the access log keeps it
 #   sudo ./accounts.sh audit [--patient <id>] [--actor <id>] [--days 90]
 #   sudo ./accounts.sh check              # proxy, rate limits, dashboard, operator agreement
 #   sudo ./accounts.sh demo-patients <clinician email> [--remove]   # 3 fictional RADR patients
@@ -132,6 +132,22 @@ case "$cmd" in
     case "$2" in master) k=master ;; server-admin) k=serverAdmin ;; active) k=active ;; *) usage ;; esac
     res="$(api POST /api/steady/ops/accounts "$(jq -n --arg e "$1" --arg k "$k" --argjson v "$v" '{email:$e} + {($k):$v}')")"
     show_password "$res"
+    ;;
+  rename)
+    [ $# -eq 2 ] || usage
+    res="$(api POST /api/steady/ops/accounts "$(jq -n --arg e "$1" --arg n "$2" '{email:$e,name:$n}')")"
+    jq -r '"Renamed: " + .account.name + " <" + .account.email + ">"' <<<"$res"
+    ;;
+  set-email)
+    [ $# -eq 2 ] || usage
+    res="$(api POST /api/steady/ops/accounts "$(jq -n --arg e "$1" --arg n "$2" '{email:$e,newEmail:$n}')")"
+    jq -r '"Moved to " + .account.email + ": " + .account.name + ". The old address is told; sign-in codes now go to the new one."' <<<"$res"
+    ;;
+  remove-support)
+    [ $# -eq 1 ] || usage
+    res="$(api POST /api/steady/ops/accounts/remove-support "$(jq -n --arg e "$1" '{email:$e}')")"
+    jq -r '"Removed OpenWorks support " + .was + ": it can never sign in again, and " + .was + " is free for another account."' <<<"$res"
+    echo "(Its record stays, renamed and without a password or address, so the access log still says who did what.)"
     ;;
   audit)
     q="days=90"
