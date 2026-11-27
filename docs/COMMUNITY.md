@@ -41,27 +41,35 @@ These hold for everyone, admins included.
 4. **Study data only as totals.** When practices run studies together, results are shared here
    only as aggregates (counts, averages), never as individual records. That work is for later.
 5. **OpenWorks IT sees four areas only:** Announcements, the Steady manual, the Science section and Steady development. Everywhere else it
-   sees only numbers (how many topics, posts and active members), never titles or text.
+   sees only numbers (how many topics, posts and active members), never titles or text. The one
+   exception is a person, not the company: **Tiaan van der Merwe**, who builds Steady, is a member
+   of the whole community by name (the `developer` group), to help with support and development
+   where the questions come up. Rule 3 is what keeps patients anonymous for him as for everyone,
+   and Steady never sends the forum anything about patients.
 
-Rules 1 and 2, and the outside-services part of rule 5, are enforced by the forum's settings,
-the sign-in bridge and the forum's Caddy site. Rule 5, and practice administrators' part of
-rule 1, are enforced by category permissions. Rules 3 and 4 depend on the people posting; the
+Rules 1 and 2 are enforced by the forum's settings, the sign-in bridge and the forum's Caddy
+site. Rule 5, and practice administrators' part of rule 1, are enforced by category permissions
+and by the bridge, which puts only the address on its `developer` list in the `developer` group. Rules 3 and 4 depend on the people posting; the
 welcome post and the "If someone posts patient information" steps below back them up.
 
 ## Who sees what
 
-| Area | Clinicians | Practice administrators | OpenWorks IT |
-|---|---|---|---|
-| Announcements | Read and reply | No | Read, post and reply |
-| Steady manual (how to use Steady, with screenshots) | Read and reply | Read and reply | Read, post and reply |
-| The science (how each part of Steady works and why, with references) | Read and reply | No | Read and reply |
-| Clinical practice | Read, post and reply | No | Numbers only |
-| Research and studies | Read, post and reply | No | Numbers only |
-| Questionnaires and tools | Read, post and reply | No | Numbers only |
-| Steady development | Read, post and reply | No | Read, post and reply |
-| Tea room (introductions, the work and life around it; Discourse's General, renamed) | Read, post and reply | No | Numbers only |
-| A practice's private category (optional) | That practice only | No | Numbers only |
-| Personal messages | Their own | None | Their own, including ones clinicians send to OpenWorks |
+| Area | Clinicians | Practice administrators | Tiaan van der Merwe (`developer`) | Other OpenWorks IT accounts |
+|---|---|---|---|---|
+| Announcements | Read and reply | No | Read, post and reply | Read, post and reply |
+| Steady manual (how to use Steady, with screenshots) | Read and reply | Read and reply | Read, post and reply | Read, post and reply |
+| The science (how each part of Steady works and why, with references) | Read and reply | No | Read and reply | Read and reply |
+| Clinical practice | Read, post and reply | No | Read, post and reply | Numbers only |
+| Research and studies | Read, post and reply | No | Read, post and reply | Numbers only |
+| Questionnaires and tools | Read, post and reply | No | Read, post and reply | Numbers only |
+| Steady development | Read, post and reply | No | Read, post and reply | Read, post and reply |
+| Tea room (introductions, the work and life around it; Discourse's General, renamed) | Read, post and reply | No | Read, post and reply | Numbers only |
+| A practice's private category (optional) | That practice only | No | Numbers only | Numbers only |
+| Personal messages | Their own | None | His own, including ones sent to OpenWorks | Their own, including ones sent to OpenWorks |
+
+Tiaan is in `openworks` too, so "OpenWorks IT" shows beside his name and a mention of
+`@openworks` reaches him wherever he can read it. Today he is the only address on the OpenWorks
+list as well, so "other OpenWorks IT accounts" is the rule for anyone added later.
 
 Forum admins (the community lead) can see everything. Admins and moderators can always post in
 Announcements.
@@ -73,7 +81,7 @@ only, and not by trust level (Discourse's default lets anyone at trust level 1 s
 
 **Talking to OpenWorks.** Post in Steady development and mention `@openworks`, or send a
 personal message to `@openworks` (the group) or to one of its people. A mention of `@openworks`
-in a clinical category reaches nobody, because OpenWorks can't see it.
+in a clinical category reaches Tiaan only, the one OpenWorks member who can read it.
 
 **The member list.** Every member, OpenWorks included, can see who the other members are
 (names, usernames, profiles). Posts in categories someone can't see never show on profiles
@@ -83,7 +91,8 @@ or in search for them.
 its database. That is true of any hosted system, this one included. OpenWorks IT has that
 access because it runs the server. What stops it is the hosting agreement and its
 confidentiality terms, not the software. Forum permissions keep OpenWorks' *accounts* out of the
-clinical areas. They can't keep out someone who reads the database directly.
+clinical areas, Tiaan's own membership aside. They can't keep out someone who reads the database
+directly.
 
 ## Signing in through Steady
 
@@ -121,6 +130,7 @@ code. The bridge keeps nothing: a sign-in under way is held in memory for two mi
 | Clinician, address on the practice's list | `clinicians`, and the practice's own group if it has one |
 | Practice administrator, address on the practice's list | `practice-admins` only: the Steady manual |
 | OpenWorks support, through the server marked `support`, address on the OpenWorks list | `openworks` only |
+| The same, address also on the `developer` list (Tiaan) | `openworks` and `developer` |
 | Patients | No Community tab, and refused |
 | Staff without two-step sign-in | Refused until they set it up in Steady |
 
@@ -228,6 +238,7 @@ sudo chown 65532:65532 /var/lib/steady-signin/config.json && sudo chmod 600 /var
   "forum": "https://community.steadyapp.co.za",
   "forumSecret": "<the forum's key>",
   "openworks": ["tiaan@openworks.co.za"],
+  "developer": ["tiaan@openworks.co.za"],
   "practices": [
     {"id": "vr", "name": "VR Clinical Psychology", "url": "https://vr.steadyapp.co.za",
      "key": "<VR's key>", "emails": ["@vrpsych.co.za"]},
@@ -244,6 +255,9 @@ sudo chown 65532:65532 /var/lib/steady-signin/config.json && sudo chmod 600 /var
 - `emails`: its clinicians' and practice administrators' addresses, or its own domain (see
   "Email addresses" above).
 - `openworks`: OpenWorks IT's support addresses, one by one.
+- `developer`: of those, the one that is also a member of the whole community by name: Steady's
+  developer, Tiaan. It must be on `openworks` too, so it still comes in only as OpenWorks support
+  through the server marked `support`. Take it off and his next sign-in leaves `developer`.
 - `support` (one server only): OpenWorks support comes in through this one, a server OpenWorks
   alone runs (the test server). Anyone who can make a support account there could come in as
   OpenWorks, so never a practice's.
@@ -325,19 +339,21 @@ does the guarding.)
 
 It:
 
-- creates the groups `clinicians`, `practice-admins` and `openworks`
+- creates the groups `clinicians`, `practice-admins`, `openworks` and `developer`
 - creates the eight categories with the permissions in "Who sees what" (the Tea room is
   Discourse's own General, renamed), and lists them in everyone's side menu (each member sees
   only the ones open to them)
-- closes every other category (Discourse's own General and so on) to OpenWorks, practice
-  administrators and "everyone", and opens it to clinicians instead. Discourse's own Site
+- closes every other category (Discourse's own General and so on) to OpenWorks, Steady's
+  developer, practice administrators and "everyone", and opens it to clinicians instead. Discourse's own Site
   Feedback can't be closed (Discourse won't change who sees it), so it is deleted: feedback goes
   to Steady development
 - sets the site settings: sign-in required, sign-in through Steady only, earlier versions of
   edited posts visible to staff only, permanent delete allowed, daily backups (seven kept),
   personal messages for clinicians and OpenWorks (not practice administrators)
 - checks the pinned settings it can read back, and that no outside sign-in is enabled
-- posts the welcome and guidelines topic in Announcements and pins it
+- posts the welcome and guidelines topic in Announcements and pins it; with `--update-topics`, sets
+  it and the categories' descriptions to their text in `setup.py` when they differ (otherwise it
+  only says so: an admin may have edited them)
 - posts the first topics, from `community/topics/` ("The first topics")
 - gives the forum the Steady Community look ("How it looks")
 - with `--stats-account`: creates the `openworks-stats` account and prints its key once (see

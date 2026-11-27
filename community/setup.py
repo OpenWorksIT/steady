@@ -24,6 +24,7 @@ DISCOURSE_API_KEY, --dry-run prints the intended configuration only.
 
 import argparse
 import hashlib
+import html
 import json
 import mimetypes
 import os
@@ -78,11 +79,22 @@ GROUPS = [
     {
         "name": "openworks",
         "full_name": "OpenWorks IT",
-        "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements, the Steady manual, The science and Steady development only. Mention @openworks there, or send a personal message.",
+        "bio_raw": "OpenWorks IT builds and hosts Steady. Members see Announcements, the Steady manual, The science and Steady development; Tiaan van der Merwe, Steady's developer, is a member of the whole community too. Mention @openworks, or send a personal message.",
         "visibility_level": VIS_LOGGED_ON,
         "members_visibility_level": VIS_LOGGED_ON,
         "mentionable_level": ALIAS_EVERYONE,
         "messageable_level": ALIAS_EVERYONE,
+    },
+    {
+        # the sign-in bridge's "developer" list (one address): Steady's developer, by name. He is
+        # in openworks too; this group adds every area clinicians see, never a practice's own.
+        "name": "developer",
+        "full_name": "Steady's developer",
+        "bio_raw": "Tiaan van der Merwe of OpenWorks IT, who builds Steady, as a member of the community by name: he reads and posts wherever clinicians do (not in a practice's private category), to help with support and development. Nobody else at OpenWorks IT has this access.",
+        "visibility_level": VIS_LOGGED_ON,
+        "members_visibility_level": VIS_LOGGED_ON,
+        "mentionable_level": ALIAS_MEMBERS_MODS_ADMINS,
+        "messageable_level": ALIAS_MEMBERS_MODS_ADMINS,
     },
 ]
 
@@ -118,24 +130,24 @@ CATEGORIES = [
         "slug": "clinical-practice",
         "color": "2F7F86",
         "text_color": "FFFFFF",
-        "description": "Between-session care, check-ins and flags in practice. Clinicians only. No patient-identifying information.",
-        "permissions": {"clinicians": FULL},
+        "description": "Between-session care, check-ins and flags in practice. Clinicians, and Tiaan from OpenWorks IT, who builds Steady. No patient-identifying information.",
+        "permissions": {"clinicians": FULL, "developer": FULL},
     },
     {
         "name": "Research and studies",
         "slug": "research-and-studies",
         "color": "D9894A",
         "text_color": "FFFFFF",
-        "description": "The science behind Steady, papers, and planning multi-practice studies. Clinicians only.",
-        "permissions": {"clinicians": FULL},
+        "description": "The science behind Steady, papers, and planning multi-practice studies. Clinicians, and Tiaan from OpenWorks IT, who builds Steady.",
+        "permissions": {"clinicians": FULL, "developer": FULL},
     },
     {
         "name": "Questionnaires and tools",
         "slug": "questionnaires-and-tools",
         "color": "4F8A6E",
         "text_color": "FFFFFF",
-        "description": "Co-developing questionnaires, exercises and score bands, and their licences. Clinicians only.",
-        "permissions": {"clinicians": FULL},
+        "description": "Co-developing questionnaires, exercises and score bands, and their licences. Clinicians, and Tiaan from OpenWorks IT, who builds Steady.",
+        "permissions": {"clinicians": FULL, "developer": FULL},
     },
     {
         "name": "Steady development",
@@ -151,8 +163,8 @@ CATEGORIES = [
         "was": ["general"],  # Discourse's own General, given a use
         "color": "A88C6B",
         "text_color": "FFFFFF",
-        "description": "The staff room: introductions, the work and the life around it, what's helping you. Clinicians only, and still no patient-identifying information.",
-        "permissions": {"clinicians": FULL},
+        "description": "The staff room: introductions, the work and the life around it, what's helping you. Clinicians, and Tiaan from OpenWorks IT; still no patient-identifying information.",
+        "permissions": {"clinicians": FULL, "developer": FULL},
     },
 ]
 
@@ -182,14 +194,16 @@ Data from studies run across practices will only ever be shared here as totals a
 
 | Area | Who can read it |
 |---|---|
-| Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians only |
+| Clinical practice, Research and studies, Questionnaires and tools, Tea room | Clinicians, and Tiaan van der Merwe of OpenWorks IT |
 | Announcements, The science, Steady development | Clinicians and OpenWorks IT |
 | Steady manual | Clinicians, practice administrators and OpenWorks IT |
 | A practice's private category (if it has one) | That practice's clinicians only |
 
-OpenWorks IT builds and hosts Steady. Their accounts can read and post only in Announcements, the Steady manual, The science and Steady development. Elsewhere they see only numbers (how many topics, posts and active members), never titles or text.
+OpenWorks IT builds and hosts Steady. Tiaan van der Merwe, who builds it, is a member of the community by name: he reads and posts wherever clinicians do (not in a practice's private category), so he can help with support and development where the questions come up. "OpenWorks IT" shows beside his name. Nobody else at OpenWorks has that access: any other OpenWorks account reads and posts only in Announcements, the Steady manual, The science and Steady development, and elsewhere sees only numbers (how many topics, posts and active members).
 
-To ask OpenWorks something, post in Steady development and mention @openworks, or send them a personal message. A mention of @openworks anywhere else reaches nobody, because they can't see it.
+The rule above is what keeps patients anonymous here, for everyone who reads it, Tiaan included. Steady itself never sends the community anything about patients.
+
+To ask OpenWorks something, post in Steady development and mention @openworks, or send a personal message to @openworks or to Tiaan.
 
 As with any hosted system, whoever runs the server could technically read its database. OpenWorks is bound by its hosting agreement and confidentiality terms not to.
 
@@ -592,9 +606,10 @@ def _describe_category(api, cat_id, text):
         api.put(f"/posts/{posts[0]['id']}.json", {"post": {"raw": text, "edit_reason": "Steady Community"}})
 
 
-def ensure_categories(api, specs, existing_groups, opened=None):
+def ensure_categories(api, specs, existing_groups, opened=None, update=False):
     """opened (a set), when given, collects the slugs of existing categories this run opened to
-    another group: ensure_sidebar adds those to existing members' side menus too."""
+    another group: ensure_sidebar adds those to existing members' side menus too. update: set an
+    existing category's description to its spec's (--update-topics), else only say it differs."""
     print("Categories")
     cats, _ = load_categories(api)
     by_slug = {c["slug"]: c for c in cats if not c.get("parent_category_id")}
@@ -642,12 +657,22 @@ def ensure_categories(api, specs, existing_groups, opened=None):
                 say("fixed", f"{spec['name']}: {describe(spec['permissions'])}")
                 if opened is not None and set(spec["permissions"]) - set(perms):
                     opened.add(spec["slug"])
+            # its description: the first post of its "About the ..." topic, which an admin may edit
+            shown = cat.get("description_text")
+            if shown is not None and _plain(shown) != _plain(spec["description"]):
+                if not update:
+                    say("left", f"{spec['name']}: its description differs (edited in the forum?); --update-topics replaces it")
+                elif api.dry_run:
+                    say("would describe", f"{spec['name']}: {spec['description']}")
+                else:
+                    _describe_category(api, cat_id, spec["description"])
+                    say("described", spec["name"])
         result[spec["slug"]] = cat_id
     return result
 
 
 # groups that see only the categories made for them (CATEGORIES), never any other
-CLOSED_ELSEWHERE = {"openworks", "practice-admins"}
+CLOSED_ELSEWHERE = {"openworks", "practice-admins", "developer"}
 
 
 def lock_other_categories(api, managed_slugs):
@@ -739,7 +764,8 @@ def ensure_sidebar(api, cat_ids, opened=()):
 
 # --- welcome topic --------------------------------------------------------------------
 
-def ensure_welcome(api, cat_id):
+def ensure_welcome(api, cat_id, update=False):
+    """update (--update-topics): set the welcome post to WELCOME_RAW when it differs, like the topics."""
     print("Welcome and guidelines topic")
     if cat_id is None:
         say("would add", f"'{WELCOME_TITLE}' in Announcements, pinned")
@@ -748,7 +774,17 @@ def ensure_welcome(api, cat_id):
     for topic in listing.get("topic_list", {}).get("topics", []):
         title = topic.get("title", "").strip().lower()
         if title == WELCOME_TITLE.lower():
-            say("ok", f"already posted (topic {topic['id']})")
+            posts = (api.get(f"/t/{topic['id']}.json") or {}).get("post_stream", {}).get("posts") or []
+            raw = (api.get(f"/posts/{posts[0]['id']}.json") or {}).get("raw", "") if posts else WELCOME_RAW
+            if _same_text(raw, WELCOME_RAW):
+                say("ok", f"already posted (topic {topic['id']})")
+            elif not update:
+                say("left", f"topic {topic['id']}: differs from WELCOME_RAW (edited in the forum?); --update-topics replaces it")
+            elif api.dry_run:
+                say("would set", f"topic {topic['id']} to WELCOME_RAW")
+            else:
+                api.put(f"/posts/{posts[0]['id']}.json", {"post": {"raw": WELCOME_RAW, "edit_reason": "Steady Community"}})
+                say("set", f"topic {topic['id']} to WELCOME_RAW")
             return
         if title in (t.lower() for t in WELCOME_TITLES_BEFORE):
             if api.dry_run:
@@ -1110,6 +1146,15 @@ TOPIC_IMAGE = re.compile(r"!\[([^\]]*)\]\(((?:images|shots)/[^)\s]+\.(?:png|jpe?
 ANY_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
 
+def _plain(text):
+    """A description as Discourse shows it and as written compare alike: its typographer's curly
+    quotes, entities and spacing aside."""
+    text = html.unescape(text or "")
+    for curly, straight in (("\u2019", "'"), ("\u2018", "'"), ("\u201c", '"'), ("\u201d", '"'), ("\u2026", "...")):
+        text = text.replace(curly, straight)
+    return " ".join(text.split())
+
+
 def _same_text(a, b):
     """Two posts say the same, images aside (in the forum they're upload:// addresses)."""
     return ANY_IMAGE.sub("![]()", a).strip() == ANY_IMAGE.sub("![]()", b).strip()
@@ -1381,7 +1426,7 @@ def run(api, args, groups, categories):
 
         group_ids = ensure_groups(api, groups)
         opened = set()
-        cat_ids = ensure_categories(api, categories, set(group_ids), opened)
+        cat_ids = ensure_categories(api, categories, set(group_ids), opened, update=args.update_topics)
         ensure_sidebar(api, cat_ids, opened)
         if not args.leave_other_categories:
             mismatched_categories = lock_other_categories(api, {c["slug"] for c in categories})
@@ -1389,7 +1434,7 @@ def run(api, args, groups, categories):
             mismatched_categories = []
         unknown, mismatched = apply_settings(api, args, group_ids)
         if not args.skip_welcome:
-            ensure_welcome(api, cat_ids.get("announcements"))
+            ensure_welcome(api, cat_ids.get("announcements"), update=args.update_topics)
         if not args.skip_topics:
             ensure_topics(api, cat_ids, args)
         brand_problems = [] if args.skip_brand else ensure_brand(api, args)

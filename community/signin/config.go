@@ -50,7 +50,13 @@ type Config struct {
 	ForumSecret string `json:"forumSecret"`
 	// OpenWorks: the addresses of OpenWorks IT's support accounts, one by one (no "@domain"). Only
 	// a practice marked "support" may sign someone in as OpenWorks support, with one of these.
-	OpenWorks []string   `json:"openworks"`
+	OpenWorks []string `json:"openworks"`
+	// Developer: of the OpenWorks addresses above, those that are also members of the whole
+	// community by name (Steady's developer, Tiaan van der Merwe): they join the "developer"
+	// group as well, which sees every area clinicians see (never a practice's private
+	// category). Each must be on the OpenWorks list too, so they still come in only as
+	// OpenWorks support, through the server marked "support".
+	Developer []string   `json:"developer,omitempty"`
 	Practices []Practice `json:"practices"`
 }
 
@@ -115,8 +121,8 @@ func (c *Config) validateWith(noPractices bool) error {
 		}
 		for j, g := range p.Groups {
 			g = strings.ToLower(strings.TrimSpace(g))
-			if !reGroup.MatchString(g) || g == "clinicians" || g == "practice-admins" || g == "openworks" {
-				return fmt.Errorf(`%s: group %q isn't a group name the bridge may add (clinicians, practice-admins and openworks come from the role)`, label, p.Groups[j])
+			if !reGroup.MatchString(g) || g == "clinicians" || g == "practice-admins" || g == "openworks" || g == "developer" {
+				return fmt.Errorf(`%s: group %q isn't a group name the bridge may add (clinicians, practice-admins, openworks and developer come from the role)`, label, p.Groups[j])
 			}
 			p.Groups[j] = g
 		}
@@ -133,6 +139,14 @@ func (c *Config) validateWith(noPractices bool) error {
 	for _, e := range c.OpenWorks {
 		if strings.HasPrefix(e, "@") {
 			return fmt.Errorf(`"openworks": list OpenWorks' support addresses one by one, not %q`, e)
+		}
+	}
+	if err := tidyList(c.Developer, `"developer"`); err != nil {
+		return err
+	}
+	for _, e := range c.Developer {
+		if strings.HasPrefix(e, "@") || !listed(c.OpenWorks, e) {
+			return fmt.Errorf(`"developer": %q must be one of the "openworks" addresses, listed one by one`, e)
 		}
 	}
 	// nobody's address may be vouched for by two lists
@@ -430,6 +444,7 @@ func withFleet(base *Config, path string) (merged *Config, aside []string, err e
 		m.Practices[i].Groups = append([]string{}, m.Practices[i].Groups...)
 	}
 	m.OpenWorks = append([]string{}, base.OpenWorks...)
+	m.Developer = append([]string{}, base.Developer...)
 	if err := m.validate(); err != nil {
 		return nil, nil, fmt.Errorf("with %s: %w", path, err)
 	}

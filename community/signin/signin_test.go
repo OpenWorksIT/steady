@@ -151,7 +151,7 @@ func TestThePsychologistInSteadyArrives(t *testing.T) {
 	want := map[string]string{
 		"nonce": "a1b2c3d4e5f6a7b8", "external_id": "vr:abcdefghij12345", "email": "kempie@vrpsych.example",
 		"name": "Dr Kempie van Rooyen", "title": "VR Clinical Psychology", "add_groups": "clinicians,practice-vr",
-		"remove_groups": "practice-admins,openworks", "require_activation": "false",
+		"remove_groups": "practice-admins,openworks,developer", "require_activation": "false",
 	}
 	for k, x := range want {
 		if v.Get(k) != x {
@@ -173,8 +173,32 @@ func TestOpenWorksSupportJoinsOpenWorksOnly(t *testing.T) {
 	r := newRig(t, settings())
 	c := r.enter(testKey, r.note("support", "it@openworks.example"))
 	v := forumGets(t, r.get(forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login"), c))
-	if v.Get("add_groups") != "openworks" || v.Get("remove_groups") != "clinicians,practice-admins,practice-vr" || v.Get("external_id") != "test:abcdefghij12345" || v.Get("title") != "OpenWorks IT" {
+	if v.Get("add_groups") != "openworks" || v.Get("remove_groups") != "clinicians,practice-admins,developer,practice-vr" || v.Get("external_id") != "test:abcdefghij12345" || v.Get("title") != "OpenWorks IT" {
 		t.Fatalf("support: %v", v)
+	}
+}
+
+// Steady's developer, by name: OpenWorks support that also joins developer, the group that sees
+// every area clinicians see. Only the address on the "developer" list; other OpenWorks support
+// stays in openworks alone, and leaves developer if their address comes off the list.
+func TestSteadysDeveloperJoinsDeveloperToo(t *testing.T) {
+	m := settings()
+	m["openworks"] = []string{"IT@OpenWorks.example", "other@openworks.example"}
+	m["developer"] = []string{"it@OPENWORKS.example"}
+	r := newRig(t, m)
+	ask := forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login")
+	v := forumGets(t, r.get(ask, r.enter(testKey, r.note("support", "it@openworks.example"))))
+	if v.Get("add_groups") != "openworks,developer" || v.Get("remove_groups") != "clinicians,practice-admins,practice-vr" || v.Get("title") != "OpenWorks IT" {
+		t.Fatalf("developer: %v", v)
+	}
+	v = forumGets(t, r.get(ask, r.enter(testKey, r.note("support", "other@openworks.example"))))
+	if v.Get("add_groups") != "openworks" || !strings.Contains(v.Get("remove_groups"), "developer") {
+		t.Fatalf("other OpenWorks support: %v", v)
+	}
+	// the test practice's clinician never joins developer, whatever server it signs in from
+	v = forumGets(t, r.get(ask, r.enter(testKey, r.note("clinician", "tester@gmail.com"))))
+	if strings.Contains(v.Get("add_groups"), "developer") || !strings.Contains(v.Get("remove_groups"), "developer") {
+		t.Fatalf("test clinician: %v", v)
 	}
 }
 
@@ -182,7 +206,7 @@ func TestMovingPracticeLeavesTheOldPracticesGroup(t *testing.T) {
 	r := newRig(t, settings())
 	c := r.enter(testKey, r.note("clinician", "tester@gmail.com"))
 	v := forumGets(t, r.get(forumAsks(forumSecret, "a1b2c3d4e5f6a7b8", forum+"/session/sso_login"), c))
-	if v.Get("add_groups") != "clinicians" || v.Get("remove_groups") != "practice-admins,openworks,practice-vr" {
+	if v.Get("add_groups") != "clinicians" || v.Get("remove_groups") != "practice-admins,openworks,developer,practice-vr" {
 		t.Fatalf("groups: %v", v)
 	}
 }
@@ -195,7 +219,7 @@ func TestThePracticeAdminSeesTheManualOnly(t *testing.T) {
 	want := map[string]string{
 		"external_id": "vr:abcdefghij12345", "email": "desk@vrpsych.example", "title": "VR Clinical Psychology",
 		// never clinicians, OpenWorks or the practice's private group (that's for its clinicians)
-		"add_groups": "practice-admins", "remove_groups": "clinicians,openworks,practice-vr",
+		"add_groups": "practice-admins", "remove_groups": "clinicians,openworks,developer,practice-vr",
 	}
 	for k, x := range want {
 		if v.Get(k) != x {
@@ -225,13 +249,13 @@ func TestGroupsFollowTheRole(t *testing.T) {
 	}
 	vr := c.practice("vr")
 	for role, want := range map[string][2]string{
-		"clinician": {"clinicians,practice-vr", "practice-admins,openworks"},
-		"admin":     {"practice-admins", "clinicians,openworks,practice-vr"},
-		"support":   {"openworks", "clinicians,practice-admins,practice-vr"},
+		"clinician": {"clinicians,practice-vr", "practice-admins,openworks,developer"},
+		"admin":     {"practice-admins", "clinicians,openworks,developer,practice-vr"},
+		"support":   {"openworks", "clinicians,practice-admins,developer,practice-vr"},
 		// refused before it gets here; if one ever did, it would join nothing
-		"patient": {"", "clinicians,practice-admins,openworks,practice-vr"},
+		"patient": {"", "clinicians,practice-admins,openworks,developer,practice-vr"},
 	} {
-		add, remove := groupsFor(role, vr, c)
+		add, remove := groupsFor(role, "it@openworks.example", vr, c)
 		if got := [2]string{strings.Join(add, ","), strings.Join(remove, ",")}; got != want {
 			t.Errorf("%s: add %q remove %q, want %q", role, got[0], got[1], want)
 		}
@@ -499,6 +523,11 @@ func TestSettingsAreChecked(t *testing.T) {
 			practice(m, 1)["emails"] = []string{"it@openworks.example"}
 		},
 		"OpenWorks as a whole domain": func(m map[string]any) { m["openworks"] = []string{"@openworks.example"} },
+		"a developer not on the OpenWorks list": func(m map[string]any) {
+			m["developer"] = []string{"someone@openworks.example"}
+		},
+		"a developer domain":                  func(m map[string]any) { m["developer"] = []string{"@openworks.example"} },
+		"a practice's group called developer": func(m map[string]any) { practice(m, 0)["groups"] = []string{"developer"} },
 	}
 	for name, f := range breaks {
 		m := settings()
