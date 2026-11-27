@@ -305,7 +305,7 @@ func communityCmd(store *Store, args []string, in io.Reader, out io.Writer) erro
 			fmt.Fprintf(out, "But %s still says the community is off: Steady before 1.2.1 can't read the fleet view's setting. Update it, then run this again.\n", sv.Name)
 		}
 		cp, _ := store.CommunityPractices()
-		if pr := cp.Practices[id]; pr == nil || len(pr.Approved) == 0 {
+		if pr := cp.Practices[id]; (pr == nil || len(pr.Approved) == 0) && !openworks {
 			fmt.Fprintf(out, "Nobody is approved yet, so the sign-in bridge doesn't list %s until someone is.\n", sv.Name)
 		}
 		return nil
