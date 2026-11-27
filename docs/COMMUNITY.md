@@ -265,7 +265,9 @@ sudo chown 65532:65532 /var/lib/steady-signin/config.json && sudo chmod 600 /var
   next sign-in leaves `developer`.
 - `support` (one server only): OpenWorks support comes in through this one, a server OpenWorks
   alone runs (the test server). Anyone who can make a support account there could come in as
-  OpenWorks, so never a practice's.
+  OpenWorks, so never a practice's. Its `emails` may be empty, since OpenWorks' own addresses
+  come in through it, and may list the developer's address (he is its master clinician): the
+  one address that may be on two lists, since from there he comes in only as himself.
 - `groups` (optional): the practice's private group, e.g. `["practice-vr"]` (see "Adding a
   practice"), for its clinicians only: its administrators never join it.
 
@@ -503,6 +505,12 @@ case, so `Kempie@VRpsych.co.za` and `kempie@vrpsych.co.za` are the same address.
   list keeps it. Before 1.2.6 a clash like that set aside the fleet view's whole list, and
   every practice with it. The fleet view's overview shows how many addresses the bridge set
   aside, and `signin check` says which.
+- **Steady's developer is the one exception.** He is the test server's master clinician, so
+  the fleet view approves him there, and he is on `openworks` and `developer` in `config.json`.
+  From the server marked `support` he comes in only as himself, so both lists say the same and
+  nothing is set aside; on any other practice's list his address is a clash like any other.
+  The server marked `support` also stays on the bridge's list with nobody approved there. (1.3.2
+  set his address aside, and the test server with it, so it refused to open: fixed in 1.3.3.)
 
 ### Moving a practice from config.json to the fleet view
 
@@ -517,7 +525,7 @@ sudo /opt/steady-ops/fleet/fleet.sh community vr on --approve-all      # with --
 `--approve-all` approves everyone the practice has switched on now, except an address another
 practice has approved ("One address, one practice"); it says so if the server still says the
 community is off, or nobody is approved yet. A practice with nobody approved isn't on the
-bridge's list until someone is. The fleet view's entry
+bridge's list until someone is (OpenWorks' own server, `--openworks`, is, from 1.3.3). The fleet view's entry
 replaces the one with the same id in `config.json` (`test`, `vr`), so forum accounts carry on
 (their ids start with the practice's id). Then take those entries out of `config.json` (keep
 `openworks` and the forum's settings; `"practices": []` is fine once the fleet view runs them
@@ -553,7 +561,7 @@ Keep its list to the test account, so the test server can't sign anyone in as a 
 clinician. Before real clinical discussion starts, take its clinician out again:
 
 1. Remove the test clinician's address from its `emails` (keep the entry while OpenWorks
-   support comes in through it; `"emails"` can then list an OpenWorks-only address).
+   support comes in through it; from 1.3.3 its `"emails"` may then be empty).
 2. Admin > Users > the test account > **Log out** (and **Suspend**, if it should never come back).
 
 ## Activity counts for OpenWorks

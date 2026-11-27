@@ -36,7 +36,9 @@ type Practice struct {
 	Emails []string `json:"emails"`
 	// Support: OpenWorks support accounts may come in through this practice's server (with an
 	// address on the OpenWorks list). Only on a server OpenWorks alone runs: anyone who can make
-	// a support account there, or holds its key, could come in as OpenWorks.
+	// a support account there, or holds its key, could come in as OpenWorks. Its "emails" may be
+	// empty, since OpenWorks' own addresses come in through it, and may list Steady's developer
+	// (the "developer" list): its master clinician, the one account that tests Steady there.
 	Support bool `json:"support,omitempty"`
 }
 
@@ -126,7 +128,7 @@ func (c *Config) validateWith(noPractices bool) error {
 			}
 			p.Groups[j] = g
 		}
-		if len(p.Emails) == 0 {
+		if len(p.Emails) == 0 && !p.Support {
 			return fmt.Errorf(`%s: "emails" must list the addresses (or "@domain") its clinicians and administrators use`, label)
 		}
 		if err := tidyList(p.Emails, label); err != nil {
@@ -149,10 +151,17 @@ func (c *Config) validateWith(noPractices bool) error {
 			return fmt.Errorf(`"developer": %q must be one of the "openworks" addresses, listed one by one`, e)
 		}
 	}
-	// nobody's address may be vouched for by two lists
+	// nobody's address may be vouched for by two lists; Steady's developer on the support
+	// server's list is the one exception (developerOnly)
 	lists := map[string][]string{"OpenWorks support": c.OpenWorks}
 	for _, p := range c.Practices {
-		lists[fmt.Sprintf("practice %q", p.ID)] = p.Emails
+		var own []string
+		for _, e := range p.Emails {
+			if !developerOnly(&p, c.Developer, e) {
+				own = append(own, e)
+			}
+		}
+		lists[fmt.Sprintf("practice %q", p.ID)] = own
 	}
 	for a, la := range lists {
 		for b, lb := range lists {
@@ -185,6 +194,14 @@ func (c *Config) practice(id string) *Practice {
 		}
 	}
 	return nil
+}
+
+// developerOnly: an address on the server marked support that is Steady's developer, one by
+// one (never by "@domain"). He is that server's master clinician and on the OpenWorks list too,
+// which would be two lists for anyone else; here both say the same, since from that server he
+// comes in only as himself (developerHere). Any other practice listing him is still a clash.
+func developerOnly(p *Practice, developer []string, email string) bool {
+	return p.Support && !strings.HasPrefix(email, "@") && listed(developer, email)
 }
 
 // listed: the (lower-case) address is on the list, itself or by its domain.
@@ -360,7 +377,9 @@ func (f *ConfigFile) Get() (*Config, error) {
 // OpenWorks support) comes off the fleet view's practice: OpenWorks writes config.json by hand.
 // One that two of the fleet view's practices list comes off both. Only that address is set
 // aside; the rest of the list carries on (before 1.2.6, the whole fleet list did). A practice
-// left with no address is left out, as the fleet view itself does. aside says what was set aside.
+// left with no address is left out, as the fleet view itself does, except the server marked
+// support, and Steady's developer stays on that server's list (developerOnly). aside says what
+// was set aside.
 func withFleet(base *Config, path string) (merged *Config, aside []string, err error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -403,6 +422,9 @@ func withFleet(base *Config, path string) (merged *Config, aside []string, err e
 		for _, x := range lower[i] {
 			var also []string
 			for label, list := range fixed {
+				if label == "OpenWorks support" && developerOnly(&p, base.Developer, x) {
+					continue
+				}
 				for _, y := range list {
 					if overlaps(x, y) {
 						also = append(also, label)
@@ -428,7 +450,8 @@ func withFleet(base *Config, path string) (merged *Config, aside []string, err e
 			sort.Strings(also)
 			aside = append(aside, fmt.Sprintf("%s: on practice %q and %s", x, p.ID, strings.Join(also, " and ")))
 		}
-		if len(keep) == 0 {
+		// the server marked support stays with an empty list: OpenWorks' addresses come in through it
+		if len(keep) == 0 && !p.Support {
 			if len(lower[i]) > 0 {
 				aside = append(aside, fmt.Sprintf("practice %q is left out: every address on its list is on another list too", p.ID))
 			}
