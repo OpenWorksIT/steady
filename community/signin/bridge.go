@@ -218,7 +218,7 @@ func (a *App) discourse(w http.ResponseWriter, r *http.Request) {
 	}
 	n := e.note
 	external := p.ID + ":" + n.Sub
-	add, remove := groupsFor(n.Role, p, cfg)
+	add, remove := groupsFor(n.Role, strings.ToLower(n.Email), p, cfg)
 	title := p.Name
 	if n.Role == "support" {
 		title = "OpenWorks IT"
@@ -279,10 +279,11 @@ const forWhom = "The community is for clinicians, practice administrators and Op
 
 // groupsFor: clinicians join clinicians and their practice's own groups; practice
 // administrators join practice-admins only (it sees the Steady manual, nothing else); OpenWorks
-// support joins openworks. Everyone leaves every other group the bridge hands out, so someone
+// support joins openworks, and Steady's developer (an address on the "developer" list) joins
+// developer too: a member of every area clinicians see, by name. Everyone leaves every other group the bridge hands out, so someone
 // whose role changed, or whose address moved to another practice's list (or to OpenWorks'),
 // keeps nothing of the old one.
-func groupsFor(role string, p *Practice, cfg *Config) (add, remove []string) {
+func groupsFor(role, email string, p *Practice, cfg *Config) (add, remove []string) {
 	switch role {
 	case "clinician":
 		add = append([]string{"clinicians"}, p.Groups...)
@@ -291,12 +292,15 @@ func groupsFor(role string, p *Practice, cfg *Config) (add, remove []string) {
 		add = []string{"practice-admins"}
 	case "support":
 		add = []string{"openworks"}
+		if listed(cfg.Developer, email) {
+			add = append(add, "developer")
+		}
 	}
 	adding := map[string]bool{}
 	for _, g := range add {
 		adding[g] = true
 	}
-	all := []string{"clinicians", "practice-admins", "openworks"}
+	all := []string{"clinicians", "practice-admins", "openworks", "developer"}
 	for _, q := range cfg.Practices {
 		all = append(all, q.Groups...)
 	}

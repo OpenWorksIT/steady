@@ -24,7 +24,7 @@ Status: known.
 These can look like problems but aren't:
 
 - **The forum opens only inside Steady.** Opened from a bookmark, or from a link in one of the forum's emails, it says it opens inside Steady. Open Steady and choose Community.
-- **Practice admins and patients have no Community tab.** The community is for clinicians, with OpenWorks IT in two categories.
+- **Patients have no Community tab, and practice admins see only the Steady manual.** The community is for clinicians. Tiaan van der Merwe of OpenWorks IT, who builds Steady, is a member too; other OpenWorks accounts see Announcements, the manual, the science and Steady development only.
 - **Notifications say only "New notification".** On purpose: nothing about a patient goes through Apple or Google.
 - **RADR never alerts.** It orders your list, after answers waiting for review, and never uses alarm colours.
 - **Patients don't see their questionnaire scores.** You talk them through.
