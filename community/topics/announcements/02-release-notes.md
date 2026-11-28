@@ -29,9 +29,22 @@ Your app's version is at the bottom of Settings. The master clinician also sees 
 | 1.0.2 | 30 Oct 2026 | Patients can ask to delete their account in the app; a link to Steady's source code, and its credits |
 | 1.0.4 | 3 Nov 2026 | Fixes from the November security review; patients agree again when the consent statement changes |
 | 1.0.5 | 3 Nov 2026 | Updating the server from the app works again; changes behind the scenes |
-| 1.1.0 | Nov 2026 | See "What's new in Steady 1.1" |
+| 1.1.0 | 5 Nov 2026 | See "What's new in Steady 1.1" |
+| 1.1.1 | 6 Nov 2026 | Change your own email address, in Settings |
+| 1.2.0 | 7 Nov 2026 | Patients check in and answer questionnaires without signal; the master clinician chooses who's in the Community, and OpenWorks approves each address; OpenWorks resets a forgotten password, and the practice's own server emails the code |
+| 1.2.2 | 7 Nov 2026 | The Community tab is back where 1.2.0 lost it |
+| 1.2.3 | 12 Nov 2026 | The sign-in screen and Settings say that Steady is not a medical device, as Google Play asks of health apps |
+| 1.2.4 | 16 Nov 2026 | Patients see the watch data they shared, as the daily charts their clinician sees, and what each kind of watch data is for |
+| 1.2.5 | 18 Nov 2026 | Steady is on Google Play and the App Store, and invite QR codes send patients there |
+| 1.2.6 | 18 Nov 2026 | One address, one practice in the Community; security work behind the scenes |
+| 1.2.7 | 19 Nov 2026 | Security work behind the scenes |
+| 1.2.8 | 20 Nov 2026 | Security work behind the scenes |
+| 1.3.0 | 26 Nov 2026 | From Kempie van Rooyen's review: starting a patient's RADR baseline again, contact consent, reworded daily words, "clinician" throughout, and the operator agreement 1.1. See "What's new in Steady 1.2 and 1.3" |
+| 1.3.1 | 26 Nov 2026 | The AUDIT, the AWARE and two single questions on drug use and heavy drinking; fortnightly, monthly and quarterly repeats; tables in posts line up |
+| 1.3.2 | 27 Nov 2026 | Tiaan vd Merwe, who builds Steady, is in the forum by name, in every area clinicians see |
+| 1.3.3 | 27 Nov 2026 | A fix for 1.3.2: signing in to the forum from OpenWorks' own server |
 
-1.0.1 and 1.0.3 were never released on their own.
+1.0.1, 1.0.3 and 1.2.1 were never released on their own.
 
 Steady is free software, so the full record is public: [Steady's versions](https://github.com/OpenWorksIT/steady/blob/main/docs/VERSIONS.md) and [every change, one by one](https://github.com/OpenWorksIT/steady/commits/main), in its source on GitHub.
 

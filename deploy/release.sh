@@ -96,5 +96,8 @@ git -c gpg.ssh.allowedSignersFile="$signers" verify-tag "$tag"
 git -c gpg.ssh.allowedSignersFile="$signers" verify-tag "$web"
 git push -q origin "$tag" "$web"
 echo "Published. Servers offer $tag under Settings > Server and updates (and check every night)."
+echo "Then tell Steady Community: once vps1 runs $tag, community/run-setup.sh --update-topics there,"
+echo "  and a reply in \"Steady release notes\" (Announcements); for a large update, a \"What's new\" post"
+echo "  too (docs/VERSIONS.md, \"Making a release\")."
 # a copy of the release on this computer (see backup-repo.sh); a failure here changes nothing above
 deploy/backup-repo.sh || echo "  (The local backup didn't run; try deploy/backup-repo.sh by hand.)" >&2

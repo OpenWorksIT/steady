@@ -29,6 +29,13 @@ servers, the security check).
 3. On your own computer, once the "Test builds" run for main has finished: `deploy/release.sh`.
    It signs `v1.1.0` only if `VERSION` on main says 1.1.0, the number is higher than every
    release so far, and CI's web build of that commit is marked 1.1.0.
+4. **Tell Steady Community, every release.** The release's row goes in the table in
+   `community/topics/announcements/02-release-notes.md` (with its date, in the release's pull
+   request, like the row here), in words for clinicians. Once it's signed and vps1 runs it,
+   `sudo community/run-setup.sh --update-topics` there puts the table up, and Tiaan posts a reply
+   in "Steady release notes" (Announcements) with the outline that topic gives. A large update
+   (.1) also gets a "What's new" post in Announcements, as 1.1 did, and 1.2 and 1.3 together.
+   `deploy/release.sh` says so when it has published.
 
 ## The store apps
 
